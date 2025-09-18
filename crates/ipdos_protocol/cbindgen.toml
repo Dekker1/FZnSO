@@ -1,0 +1,5 @@
+language = "C"
+
+# Wrapping header contents
+include_guard = "ipdos_protocol_h"
+documentation_style = "c99"
