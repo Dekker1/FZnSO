@@ -1,6 +1,6 @@
 [workspace]
 
-members = ["crates/ipdos_protocol"]
+members = ["rust/ipdos-solver-template","rust/ipdos-types"]
 
 resolver = "2"
 

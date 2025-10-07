@@ -1,10 +1,8 @@
-#ifndef ipdos_protocol_h
-#define ipdos_protocol_h
+#ifndef ipdos_types_h
+#define ipdos_types_h
 
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdlib.h>
+#include <stdbool>
+#include <stdint>
 
 // The status returned by `ipdos_solver_run`, indicating whether the solver
 // completed its search.
@@ -53,6 +51,16 @@ typedef enum IpdosValueKind {
   IpdosValueList,
 } IpdosValueKind;
 
+// The handle to a the data of a solution instance.
+//
+// This type is opaque to the user. Only pointers of this type are ever used.
+//
+// In implementation of the IPDOS interface, a pointer is generally cast to
+// this type, i.e. `(IpdosSolutionData*) my_solution`. A similar cast can be
+// used to cast the pointer back to the original type, e.g. `(MySolution*)
+// ipdos_solution`.
+typedef void IpdosAnnotation;
+
 // Representation of a type to signal and check whether an argument takes the
 // correct type.
 typedef struct IpdosType {
@@ -91,34 +99,14 @@ typedef struct IpdosConstraintList {
   const struct IpdosConstraintType *constraints;
 } IpdosConstraintList;
 
-// A list of [`IpdosType`]s.
+// The handle of a model instance.
 //
-// This type is for example used to return from [`ipdos_decision_list`].
-typedef struct IpdosTypeList {
-  // The number of elements in the `constraints` array.
-  uint64_t len;
-  // An array of constraint types.
-  const struct IpdosType *types;
-} IpdosTypeList;
-
-// Representation of a type of objective strategies, discerned by its
-// identifier and the type of its argument.
-typedef struct IpdosObjective {
-  // The identifier of the objective type.
-  const char *ident;
-  // The type of the expected argument for the constraint type.
-  struct IpdosType arg_type;
-} IpdosObjective;
-
-// A list of [`IpdosObjective`]s.
+// This type is opaque to the user. Only pointers of this type are ever used.
 //
-// This type is, for example, used to return from [`ipdos_objective_list`].
-typedef struct IpdosObjectiveList {
-  // The number of elements in the `options` array.
-  uint64_t len;
-  // An array of option definitions.
-  const struct IpdosObjective *options;
-} IpdosObjectiveList;
+// In implementation of the IPDOS interface, a pointer is generally cast to
+// this type, i.e. `(IpdosModelData*) my_model`. A similar cast can be used to
+// cast the pointer back to the original type, e.g. `(MyModel*) ipdos_model`.
+typedef void IpdosModel;
 
 // The storage of the value content of a [`IpdosValue`].
 typedef union IpdosValueContent {
@@ -179,56 +167,6 @@ typedef struct IpdosValue {
   // The storage of the actual data of the value.
   union IpdosValueContent content;
 } IpdosValue;
-
-// The definition of an option that is available to be set for the solver.
-typedef struct IpdosOption {
-  // The identifier used to set the option or get the current value of the
-  // option.
-  const char *ident;
-  // The type of value that is expected for this option.
-  struct IpdosValue arg_ty;
-  // The default value for this option.
-  struct IpdosType arg_def;
-} IpdosOption;
-
-// A list of [`IpdosOption`]s.
-//
-// This type is, for example, used to return from [`ipdos_option_list`].
-typedef struct IpdosOptionList {
-  // The number of elements in the `options` array.
-  uint64_t len;
-  // An array of option definitions.
-  const struct IpdosOption *options;
-} IpdosOptionList;
-
-// The handle to a solver instance.
-//
-// This type is opaque to the user. Only pointers of this type are ever used.
-//
-// In implementation of the IPDOS interface, a pointer is generally cast to
-// this type, i.e. `(IpdosSolver*) my_solver`. A similar cast can be used to
-// cast the pointer back to the original type, e.g. `(MySolverType*)
-// ipdos_solver`.
-typedef void IpdosSolver;
-
-// The handle of a model instance.
-//
-// This type is opaque to the user. Only pointers of this type are ever used.
-//
-// In implementation of the IPDOS interface, a pointer is generally cast to
-// this type, i.e. `(IpdosModelData*) my_model`. A similar cast can be used to
-// cast the pointer back to the original type, e.g. `(MyModel*) ipdos_model`.
-typedef void IpdosModel;
-
-// The handle to a the data of a solution instance.
-//
-// This type is opaque to the user. Only pointers of this type are ever used.
-//
-// In implementation of the IPDOS interface, a pointer is generally cast to
-// this type, i.e. `(IpdosSolutionData*) my_solution`. A similar cast can be
-// used to cast the pointer back to the original type, e.g. `(MySolution*)
-// ipdos_solution`.
-typedef void IpdosAnnotation;
 
 // A struct containing the function pointers to interact with theIpdosModel`
 typedef struct IpdosModelMethods {
@@ -374,6 +312,46 @@ typedef struct IpdosModelRef {
   const struct IpdosModelMethods *methods;
 } IpdosModelRef;
 
+// Representation of a type of objective strategies, discerned by its
+// identifier and the type of its argument.
+typedef struct IpdosObjective {
+  // The identifier of the objective type.
+  const char *ident;
+  // The type of the expected argument for the constraint type.
+  struct IpdosType arg_type;
+} IpdosObjective;
+
+// A list of [`IpdosObjective`]s.
+//
+// This type is, for example, used to return from [`ipdos_objective_list`].
+typedef struct IpdosObjectiveList {
+  // The number of elements in the `options` array.
+  uint64_t len;
+  // An array of option definitions.
+  const struct IpdosObjective *options;
+} IpdosObjectiveList;
+
+// The definition of an option that is available to be set for the solver.
+typedef struct IpdosOption {
+  // The identifier used to set the option or get the current value of the
+  // option.
+  const char *ident;
+  // The type of value that is expected for this option.
+  struct IpdosValue arg_ty;
+  // The default value for this option.
+  struct IpdosType arg_def;
+} IpdosOption;
+
+// A list of [`IpdosOption`]s.
+//
+// This type is, for example, used to return from [`ipdos_option_list`].
+typedef struct IpdosOptionList {
+  // The number of elements in the `options` array.
+  uint64_t len;
+  // An array of option definitions.
+  const struct IpdosOption *options;
+} IpdosOptionList;
+
 // The handle to a the data of a solution instance.
 //
 // This type is opaque to the user. Only pointers of this type are ever used.
@@ -384,53 +362,36 @@ typedef struct IpdosModelRef {
 // ipdos_solution`.
 typedef void IpdosSolution;
 
-// Returns the list of available constraint that can be added to the solver.
-struct IpdosConstraintList ipdos_constraint_list(void);
-
-// Returns the list of types for which decision variable can be created by the
-// solver.
-struct IpdosTypeList ipdos_decision_list(void);
-
-// Returns the list of available objective that can be achieved by the solver.
-struct IpdosObjectiveList ipdos_objective_list(void);
-
-// Returns the list of available options that can be set of the solver.
-struct IpdosOptionList ipdos_option_list(void);
-
-// Create a new solver instance
-IpdosSolver *ipdos_solver_create(void);
-
-// Free a solver instance, releasing all resources associated with it.
+// Structure used to represent a solution emitted by the solver.
 //
-// The pointer to the solver instance will be invalid after this function has
-// been called.
-void ipdos_solver_free(IpdosSolver *solver);
+// The caller can use the `get_value` function to retrieve the value of the
+// used decision variables.
+typedef struct IpdosSolutionRef {
+  // The data pointer to be the first argument of `get_value`.
+  const IpdosSolution *data;
+  // Function callback to retrieve the value assigned to a decision variable
+  // in the solution.
+  struct IpdosValue (*get_value)(const IpdosSolution *data, uint64_t decision_index);
+} IpdosSolutionRef;
 
-// Get the current value of an option for the solver.
+// The handle to a solver instance.
 //
-// Note that this is only valid to be called with options named by
-// `ipdos_option_list`.
-struct IpdosValue ipdos_solver_option_get(const IpdosSolver *solver, const char *ident);
-
-// Set the current value of an option for the solver.
+// This type is opaque to the user. Only pointers of this type are ever used.
 //
-// Note that this is only valid to be called with options named by
-// `ipdos_option_list`, and the value must be of the correct type.
-bool ipdos_solver_option_set(IpdosSolver *solver, const char *ident, struct IpdosValue value);
+// In implementation of the IPDOS interface, a pointer is generally cast to
+// this type, i.e. `(IpdosSolver*) my_solver`. A similar cast can be used to
+// cast the pointer back to the original type, e.g. `(MySolverType*)
+// ipdos_solver`.
+typedef void IpdosSolver;
 
-// Read an error message from the solver.
+// A list of [`IpdosType`]s.
 //
-// This function is expected to be called after solver interactions signal an
-// error has occurred. For example, if [`ipdos_solver_run`] returns
-// [`IpdosError`] or [`ipdos_solver_push`] returns `false`.
-void ipdos_solver_read_error(IpdosSolver *solver,
-                             void *context,
-                             void (*read_error)(void *context, const char *error));
+// This type is for example used to return from [`ipdos_decision_list`].
+typedef struct IpdosTypeList {
+  // The number of elements in the `constraints` array.
+  uint64_t len;
+  // An array of constraint types.
+  const struct IpdosType *types;
+} IpdosTypeList;
 
-// Run the solver with the given model
-enum IpdosStatus ipdos_solver_run(IpdosSolver *solver,
-                                  struct IpdosModelRef model,
-                                  void *context,
-                                  void (*on_solution)(void *context, const IpdosSolution *solution));
-
-#endif  /* ipdos_protocol_h */
+#endif  /* ipdos_types_h */

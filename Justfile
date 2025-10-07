@@ -3,7 +3,8 @@ default: build check
 # Build the Huub solver
 build:
     cargo build
-    cbindgen --config crates/ipdos_protocol/cbindgen.toml --crate ipdos_protocol --output crates/ipdos_protocol/ipdos_protocol.h
+    cbindgen --config cbindgen_types.toml --crate ipdos-types --output c/ipdos_types.h
+    cbindgen --config cbindgen_template.toml --crate ipdos-solver-template --output c/ipdos_solver_template.c
 
 # Check the codebase using all CI linters
 check:

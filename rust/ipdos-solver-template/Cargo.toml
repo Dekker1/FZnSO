@@ -1,12 +1,18 @@
 [package]
-name = "ipdos_protocol"
+name = "ipdos-solver-template"
 repository.workspace = true
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
 
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
 [dependencies]
+ipdos-types = { path = "../ipdos-types" }
 
 [lints]
 workspace = true

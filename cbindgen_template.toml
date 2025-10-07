@@ -1,0 +1,34 @@
+language = "C"
+
+# Wrapping header contents
+documentation_style = "c99"
+no_includes = true
+includes = ["ipdos_types.h"]
+cpp_compat = false
+
+[parse]
+parse_deps = true
+
+[export]
+exclude = [
+  "IpdosAnnotation",
+  "IpdosConstraintType",
+  "IpdosConstraintList",
+  "IpdosModelRef",
+  "IpdosModel",
+  "IpdosModelMethods",
+  "IpdosObjective",
+  "IpdosObjectiveList",
+  "IpdosOption",
+  "IpdosOptionList",
+  "IpdosSolutionRef",
+  "IpdosSolution",
+  "IpdosSolver",
+  "IpdosStatus",
+  "IpdosType",
+  "IpdosTypeBase",
+  "IpdosTypeList",
+  "IpdosValue",
+  "IpdosValueContent",
+  "IpdosValueKind",
+]
