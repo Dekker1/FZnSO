@@ -9,8 +9,8 @@
 use core::ffi;
 
 use ipdos_types::{
-	IpdosConstraintList, IpdosModelRef, IpdosObjectiveList, IpdosOptionList, IpdosSolution,
-	IpdosSolver, IpdosStatus, IpdosTypeList, IpdosValue,
+	IpdosConstraintList, IpdosModelRef, IpdosObjectiveList, IpdosOptionList, IpdosSolutionRef,
+	IpdosSolver, IpdosStatisticList, IpdosStatus, IpdosTypeList, IpdosValueRef,
 };
 
 #[unsafe(no_mangle)]
@@ -40,7 +40,7 @@ pub extern "C" fn ipdos_option_list() -> IpdosOptionList<'static> {
 
 #[unsafe(no_mangle)]
 /// Create a new solver instance
-pub extern "C" fn ipdos_solver_create() -> Box<IpdosSolver> {
+pub extern "C" fn ipdos_solver_create() -> *mut IpdosSolver {
 	unimplemented!()
 }
 
@@ -49,7 +49,7 @@ pub extern "C" fn ipdos_solver_create() -> Box<IpdosSolver> {
 /// The pointer to the solver instance will be invalid after this function has
 /// been called.
 #[unsafe(no_mangle)]
-pub extern "C" fn ipdos_solver_free(solver: Box<IpdosSolver>) {
+pub extern "C" fn ipdos_solver_free(solver: *mut IpdosSolver) {
 	let _ = solver;
 	unimplemented!()
 }
@@ -62,7 +62,7 @@ pub extern "C" fn ipdos_solver_free(solver: Box<IpdosSolver>) {
 pub extern "C" fn ipdos_solver_option_get(
 	solver: &IpdosSolver,
 	ident: *const ffi::c_char,
-) -> IpdosValue<'_> {
+) -> IpdosValueRef<'_> {
 	let _ = solver;
 	let _ = ident;
 	unimplemented!()
@@ -76,7 +76,7 @@ pub extern "C" fn ipdos_solver_option_get(
 pub extern "C" fn ipdos_solver_option_set(
 	solver: &mut IpdosSolver,
 	ident: *const ffi::c_char,
-	value: IpdosValue<'_>,
+	value: IpdosValueRef<'_>,
 ) -> bool {
 	let _ = solver;
 	let _ = ident;
@@ -103,17 +103,22 @@ pub extern "C" fn ipdos_solver_read_error(
 
 #[unsafe(no_mangle)]
 /// Run the solver with the given model
-///
-/// cbindgen:no-export
 pub extern "C" fn ipdos_solver_run(
 	solver: &mut IpdosSolver,
 	model: IpdosModelRef,
 	context: &mut ffi::c_void,
-	on_solution: extern "C" fn(context: &mut ffi::c_void, solution: &IpdosSolution),
+	on_solution: extern "C" fn(context: &mut ffi::c_void, solution: IpdosSolutionRef),
 ) -> IpdosStatus {
 	let _ = solver;
 	let _ = model;
 	let _ = context;
 	let _ = on_solution;
+	unimplemented!()
+}
+
+#[unsafe(no_mangle)]
+/// Returns the list of available statistical information that can be requested
+/// from the solver and its solutions.
+pub extern "C" fn ipdos_statistic_list() -> IpdosStatisticList<'static> {
 	unimplemented!()
 }

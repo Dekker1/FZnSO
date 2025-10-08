@@ -3,29 +3,33 @@ language = "C"
 # Wrapping header contents
 include_guard = "ipdos_types_h"
 documentation_style = "c99"
-sys_includes = ["stdbool", "stdint"]
+sys_includes = ["stdbool.h", "stdint.h"]
 no_includes = true
 
 [export]
 include = [
   "IpdosAnnotation",
-  "IpdosConstraintType",
   "IpdosConstraintList",
-  "IpdosModelRef",
+  "IpdosConstraintType",
   "IpdosModel",
   "IpdosModelMethods",
+  "IpdosModelRef",
   "IpdosObjective",
   "IpdosObjectiveList",
   "IpdosOption",
   "IpdosOptionList",
-  "IpdosSolutionRef",
   "IpdosSolution",
+  "IpdosSolutionMethods",
+  "IpdosSolutionRef",
   "IpdosSolver",
+  "IpdosStatistic",
+  "IpdosStatisticList",
   "IpdosStatus",
   "IpdosType",
   "IpdosTypeBase",
   "IpdosTypeList",
   "IpdosValue",
-  "IpdosValueContent",
   "IpdosValueKind",
+  "IpdosValueMethods",
+  "IpdosValueRef",
 ]

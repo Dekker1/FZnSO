@@ -1,8 +1,8 @@
 #ifndef ipdos_types_h
 #define ipdos_types_h
 
-#include <stdbool>
-#include <stdint>
+#include <stdbool.h>
+#include <stdint.h>
 
 // The status returned by `ipdos_solver_run`, indicating whether the solver
 // completed its search.
@@ -33,21 +33,31 @@ typedef enum IpdosTypeBase {
 } IpdosTypeBase;
 
 // Enumerated type used to mark the kind of [`IpdosValue`]. This is used to
-// determine which field in the [`IpdosValueContent`] union to access.
+// determine which "get" method in [`IpdosValueMethods`] is safe to call.
 typedef enum IpdosValueKind {
-  // No value is stored.
+  // No value is available.
   IpdosValueAbsent,
-  // The value is stored in `decision_index`.
+  // The value is available using [`IpdosValueMethods::get_decision`].
   IpdosValueDecision,
-  // The value is stored in `boolean_value`.
-  IpdosValueBoolean,
-  // The value is stored in `integer_value`.
-  IpdosValueInteger,
-  // The value is stored in `float_value`.
+  // The value is available using [`IpdosValueMethods::get_bool`].
+  IpdosValueBool,
+  // The value is available using [`IpdosValueMethods::get_int`].
+  IpdosValueInt,
+  // The value is available using [`IpdosValueMethods::get_float`].
   IpdosValueFloat,
-  // The value is stored in `string_value`.
+  // The value is available using [`IpdosValueMethods::get_string`].
   IpdosValueString,
-  // The value is stored in `list_value`.
+  // Sets of integers are represented using a range list. The number of
+  // ranges is available using [`IpdosValueMethods::len`], and the ranges can
+  // be accessed using [`IpdosValueMethods::get_range_int`].
+  IpdosValueSetInt,
+  // Sets of floats are represented using a range list. The number of
+  // ranges is available using [`IpdosValueMethods::len`], and the ranges can
+  // be accessed using [`IpdosValueMethods::get_range_float`].
+  IpdosValueSetFloat,
+  // The length of the list can be accessed using
+  // [`IpdosValueMethods::len`], and elements in the list can be
+  // accessed using [`IpdosValueMethods::get_element`]
   IpdosValueList,
 } IpdosValueKind;
 
@@ -108,67 +118,118 @@ typedef struct IpdosConstraintList {
 // cast the pointer back to the original type, e.g. `(MyModel*) ipdos_model`.
 typedef void IpdosModel;
 
-// The storage of the value content of a [`IpdosValue`].
-typedef union IpdosValueContent {
-  // Decision index storage
-  uint64_t decision_index;
-  // Boolean value storage
-  bool bool_value;
-  // Integer value storage
-  int64_t integer_value;
-  // Float value storage
-  double float_value;
-  // Set of integers value storage
-  //
-  // The set of integers is represented using a range list. The array of
-  // `i64` values should be interpreted as a list of inclusive ranges,
-  // where each range is represented by two values.
-  //
-  // Note that the number of `i64` values is stored in the `len` field. Since
-  // each range is represented by two values, it can be assumed that `len mod
-  // 2 == 0`.
-  const int64_t *set_of_int_value;
-  // Set of floating point value storage
-  //
-  // The set of floating point values is represented using a range list. The
-  // array of `f64` values should be interpreted as a list of inclusive
-  // ranges, where each range is represented by two values.
-  //
-  // Note that the number of `f64` values is stored in the `len` field. Since
-  // each range is represented by two values, it can be assumed that `len mod
-  // 2 == 0`.
-  const int64_t *set_of_float_value;
-  // String value storage
-  //
-  // Note that the `string_value` field is intended to be interpreted as a
-  // C-string. It should be \0 terminated, use UTF-8 encoding, and be valid
-  // for the lifetime of the value.
-  const char *string_value;
-  // List value storage
-  //
-  // Note that the the number of elements in the list is stored in the `len`
-  // field.
-  const struct IpdosValue *list_value;
-} IpdosValueContent;
+// The type of a value used as an argument or solution assignment.
+//
+// This type is opaque to the user. Only pointers of this type are ever used.
+//
+// In implementation of the IPDOS interface, a pointer is generally cast to
+// this type, e.g. `(IpdosValue*) my_value`. A similar cast can be used to cast
+// the pointer back to the original type, e.g. `(MyValue*) ipdos_value`.
+typedef void IpdosValue;
 
-// The value representation used for values assigned to decision variables in
-// solution, as constraint/annotation arguments, and option parameters.
-typedef struct IpdosValue {
-  // The kind of the value
+// A struct containing the function pointers to interact with a
+// [`IpdosValue`]
+typedef struct IpdosValueMethods {
+  // Function callback that returns the kind of the value.
+  enum IpdosValueKind (*kind)(const IpdosValue*);
+  // Function callback that returns the length of the value.
   //
-  // This field is used to determine what field in the `value` union is
-  // allowed to be accessed.
-  enum IpdosValueKind kind;
-  // A field containing the size of the value.
+  // In case [`IpdosValueMethods::kind`] returns
+  // [`IpdosValueKind::IpdosValueList`], the length is the number of elements
+  // in the list, accessible using [`IpdosValueMethods::get_element`].
   //
-  // This field is used when the value is a list, set of float/int, and
-  // string, to determine the number of elements in the C array type.
-  uint32_t len;
-  // The storage of the actual data of the value.
-  union IpdosValueContent content;
-} IpdosValue;
+  // In case [`IpdosValueMethods::kind`] returns
+  // [`IpdosValueKind::IpdosValueSetInt`] or
+  // [`IpdosValueKind::IpdosValueSetFloat`], the length is the number of
+  // ranges in the set, accessible using
+  // [`IpdosValueMethods::get_range_int`] or
+  // [`IpdosValueMethods::get_range_float`].
+  //
+  // # Panics
+  //
+  // This function callback may panic if [`IpdosValueMethods::kind`] does not
+  // return [`IpdosValueKind::IpdosValueList`],
+  // [`IpdosValueKind::IpdosValueSetInt`], or
+  // [`IpdosValueKind::IpdosValueSetFloat`].
+  uint64_t (*len)(const IpdosValue*);
+  // Function callback that returns the decision variable index contained in
+  // the value.
+  //
+  // # Panics
+  //
+  // This function callback may panic if [`IpdosValueMethods::kind`] does not
+  // return [`IpdosValueKind::IpdosValueDecision`].
+  uint64_t (*get_decision)(const IpdosValue*);
+  // Function callback that returns the integer value contained in the value.
+  //
+  // # Panics
+  //
+  // This function callback may panic if [`IpdosValueMethods::kind`] does not
+  // return [`IpdosValueKind::IpdosValueInt`].
+  int64_t (*get_int)(const IpdosValue*);
+  // Function callback that returns the floating point value contained in the
+  // value.
+  //
+  // # Panics
+  //
+  // This function callback may panic if [`IpdosValueMethods::kind`] does not
+  // return [`IpdosValueKind::IpdosValueFloat`].
+  double (*get_float)(const IpdosValue*);
+  // Function callback that returns the string pointer value contained in the
+  // value.
+  //
+  // # Panics
+  //
+  // This function callback may panic if [`IpdosValueMethods::kind`] does not
+  // return [`IpdosValueKind::IpdosValueString`].
+  const char *(*get_string)(const IpdosValue*);
+  // Function callback that returns the Boolean value contained in the value.
+  //
+  // # Panics
+  //
+  // This function callback may panic if [`IpdosValueMethods::kind`] does not
+  // return [`IpdosValueKind::IpdosValueBool`].
+  bool (*get_bool)(const IpdosValue*);
+  // Function callback that returns a range from a range list representing
+  // the integer set contained in the value.
+  //
+  // # Panics
+  //
+  // This function callback may panic if [`IpdosValueMethods::kind`] does not
+  // return [`IpdosValueKind::IpdosValueSetInt`].
+  int64_t ((*get_range_int)(const IpdosValue*, uint64_t index))[2];
+  // Function callback that returns a range from a range list representing
+  // the floating point set contained in the value.
+  //
+  // # Panics
+  //
+  // This function callback may panic if [`IpdosValueMethods::kind`] does not
+  // return [`IpdosValueKind::IpdosValueSetFloat`].
+  double ((*get_range_float)(const IpdosValue*, uint64_t index))[2];
+  // Function callback that returns an element from the list contained in the
+  // value.
+  //
+  // # Panics
+  //
+  // This function callback may panic if [`IpdosValueMethods::kind`] does not
+  // return [`IpdosValueKind::IpdosValueList`].
+  struct IpdosValueRef (*get_element)(const IpdosValue*, uint64_t index);
+} IpdosValueMethods;
 
-// A struct containing the function pointers to interact with theIpdosModel`
+// Handle for a value
+//
+// The caller can use the `get_value` function to retrieve the value of the
+// used decision variables.
+typedef struct IpdosValueRef {
+  // The data pointer to be the first argument of `get_value`.
+  const IpdosValue *data;
+  // Reference to the structure containing the function callbacks used to
+  // interact with the value.
+  const struct IpdosValueMethods *methods;
+} IpdosValueRef;
+
+// A struct containing the function pointers to interact with the
+// [`IpdosModel`]
 typedef struct IpdosModelMethods {
   // Returns the current number of model layers currently contained in the
   // model.
@@ -216,7 +277,7 @@ typedef struct IpdosModelMethods {
   //
   // Note that the the value might have [`IpdosValueKind::IpdosValueAbsent`]
   // if the decision variable does not have an explicit domain.
-  struct IpdosValue (*decision_domain)(const IpdosModel *model, uint64_t decision);
+  struct IpdosValueRef (*decision_domain)(const IpdosModel *model, uint64_t decision);
   // Retrieve the name of a decision variable, if it exists.
   //
   // Note that names are only available for debugging purposes. Decisions are
@@ -252,16 +313,16 @@ typedef struct IpdosModelMethods {
   //
   // The `index` argument must be less than the value returned by
   // `constraint_argument_len` for the given constraint.
-  struct IpdosValue (*constraint_argument)(const IpdosModel *model,
-                                           uint64_t constraint,
-                                           uint64_t index);
+  struct IpdosValueRef (*constraint_argument)(const IpdosModel *model,
+                                              uint64_t constraint,
+                                              uint64_t index);
   // Check whether the decision variable is functionally defined by a
   // constraint.
   //
   // This function returns a [`IpdosValue`] that is either
   // [`IpdosValueKind::IpdosValueDecision`] if it defined a decision variable
   // or [`IpdosValueKind::IpdosValueAbsent`] otherwise.
-  struct IpdosValue (*constraint_defines)(const IpdosModel *model, uint64_t decision);
+  struct IpdosValueRef (*constraint_defines)(const IpdosModel *model, uint64_t decision);
   // Retrieve the number of annotations on a constraint.
   uint64_t (*constraint_annotation_len)(const IpdosModel *model, uint64_t constraint);
   // Retrieve the annotation on a constraint at the given index.
@@ -278,7 +339,7 @@ typedef struct IpdosModelMethods {
   // have an objective strategy.
   const char *(*objective_ident)(const IpdosModel *model);
   // Retrieve the argument of the objective strategy.
-  struct IpdosValue (*objective_arg)(const IpdosModel *model);
+  struct IpdosValueRef (*objective_arg)(const IpdosModel *model);
   // Retrieve the number of annotations on an objective
   uint64_t (*objective_annotation_len)(const IpdosModel *model);
   // Retrieve the annotation on the objective at the given index.
@@ -297,7 +358,7 @@ typedef struct IpdosModelMethods {
   //
   // The `index` argument must be less than the value returned by
   // `annotation_argument_len` for the given annotation.
-  struct IpdosValue (*annotation_argument)(const IpdosAnnotation *ann, uint64_t index);
+  struct IpdosValueRef (*annotation_argument)(const IpdosAnnotation *ann, uint64_t index);
 } IpdosModelMethods;
 
 // An interface to a model instance used to communicate with the solver.
@@ -337,7 +398,7 @@ typedef struct IpdosOption {
   // option.
   const char *ident;
   // The type of value that is expected for this option.
-  struct IpdosValue arg_ty;
+  struct IpdosValueRef arg_ty;
   // The default value for this option.
   struct IpdosType arg_def;
 } IpdosOption;
@@ -362,16 +423,24 @@ typedef struct IpdosOptionList {
 // ipdos_solution`.
 typedef void IpdosSolution;
 
-// Structure used to represent a solution emitted by the solver.
-//
-// The caller can use the `get_value` function to retrieve the value of the
-// used decision variables.
+// A struct containing the function pointers to interact with a
+// [`IpdosSolution`]
+typedef struct IpdosSolutionMethods {
+  // Function callback to retrieve the value assigned to a decision variable
+  // in the solution.
+  struct IpdosValueRef (*get_value)(const IpdosSolution *data, uint64_t decision_index);
+  // Function callback to retrieve the statistical information made available
+  // by the solver about the search process so far.
+  struct IpdosValueRef (*get_statistic)(const IpdosSolution *data, const char *ident);
+} IpdosSolutionMethods;
+
+// Handle for a solution emitted by the solver.
 typedef struct IpdosSolutionRef {
   // The data pointer to be the first argument of `get_value`.
   const IpdosSolution *data;
-  // Function callback to retrieve the value assigned to a decision variable
-  // in the solution.
-  struct IpdosValue (*get_value)(const IpdosSolution *data, uint64_t decision_index);
+  // Reference to the structure containing the function callbacks used to
+  // interact with the solution.
+  const struct IpdosSolutionMethods *methods;
 } IpdosSolutionRef;
 
 // The handle to a solver instance.
@@ -383,6 +452,31 @@ typedef struct IpdosSolutionRef {
 // cast the pointer back to the original type, e.g. `(MySolverType*)
 // ipdos_solver`.
 typedef void IpdosSolver;
+
+// The definition of statistical information that is made available by the
+// solver.
+typedef struct IpdosStatistic {
+  // The identifier used to retrieve the statistical information from the
+  // solver or a solution.
+  const char *ident;
+  // The type of value that is expected for this option.
+  struct IpdosValueRef ty;
+  // Whether the statistical information is available as part of solutions.
+  bool solution;
+  // Whether the statistical information is generally available from the
+  // solver instance.
+  bool solver;
+} IpdosStatistic;
+
+// A list of [`IpdosStatistic`]s.
+//
+// This type is, for example, used to return from [`ipdos_statistic_list`].
+typedef struct IpdosStatisticList {
+  // The number of elements in the `stats` array.
+  uint64_t len;
+  // An array of statistical information definitions.
+  const struct IpdosStatistic *stats;
+} IpdosStatisticList;
 
 // A list of [`IpdosType`]s.
 //

@@ -26,13 +26,13 @@ void ipdos_solver_free(IpdosSolver *solver);
 //
 // Note that this is only valid to be called with options named by
 // `ipdos_option_list`.
-IpdosValue ipdos_solver_option_get(const IpdosSolver *solver, const char *ident);
+IpdosValueRef ipdos_solver_option_get(const IpdosSolver *solver, const char *ident);
 
 // Set the current value of an option for the solver.
 //
 // Note that this is only valid to be called with options named by
 // `ipdos_option_list`, and the value must be of the correct type.
-bool ipdos_solver_option_set(IpdosSolver *solver, const char *ident, IpdosValue value);
+bool ipdos_solver_option_set(IpdosSolver *solver, const char *ident, IpdosValueRef value);
 
 // Read an error message from the solver.
 //
@@ -42,3 +42,13 @@ bool ipdos_solver_option_set(IpdosSolver *solver, const char *ident, IpdosValue 
 void ipdos_solver_read_error(IpdosSolver *solver,
                              void *context,
                              void (*read_error)(void *context, const char *error));
+
+// Run the solver with the given model
+IpdosStatus ipdos_solver_run(IpdosSolver *solver,
+                             IpdosModelRef model,
+                             void *context,
+                             void (*on_solution)(void *context, IpdosSolutionRef solution));
+
+// Returns the list of available statistical information that can be requested
+// from the solver and its solutions.
+IpdosStatisticList ipdos_statistic_list(void);

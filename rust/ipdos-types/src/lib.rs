@@ -6,7 +6,8 @@
 //! unified way, and to allow the dynamic loading of solver libraries (as DLLs).
 
 #![no_std]
-use core::{ffi, fmt, marker::PhantomData, ptr::slice_from_raw_parts};
+
+use core::{ffi, marker::PhantomData};
 
 #[repr(transparent)]
 #[derive(Debug)]
@@ -19,6 +20,20 @@ use core::{ffi, fmt, marker::PhantomData, ptr::slice_from_raw_parts};
 /// used to cast the pointer back to the original type, e.g. `(MySolution*)
 /// ipdos_solution`.
 pub struct IpdosAnnotation(ffi::c_void);
+
+#[repr(C)]
+#[derive(Clone, Debug)]
+/// A list of [`IpdosConstraintType`]s.
+///
+/// This type is for example used to return from [`ipdos_constraint_list`].
+pub struct IpdosConstraintList<'a> {
+	/// The number of elements in the `constraints` array.
+	pub len: u64,
+	/// An array of constraint types.
+	pub constraints: *const IpdosConstraintType<'a>,
+	/// The lifetime for which the `constraints` attribute is allocated.
+	pub lifetime: PhantomData<&'a ()>,
+}
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -36,34 +51,6 @@ pub struct IpdosConstraintType<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(C)]
-#[derive(Clone, Debug)]
-/// A list of [`IpdosConstraintType`]s.
-///
-/// This type is for example used to return from [`ipdos_constraint_list`].
-pub struct IpdosConstraintList<'a> {
-	/// The number of elements in the `constraints` array.
-	pub len: u64,
-	/// An array of constraint types.
-	pub constraints: *const IpdosConstraintType<'a>,
-	/// The lifetime for which the `constraints` attribute is allocated.
-	pub lifetime: PhantomData<&'a ()>,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-/// An interface to a model instance used to communicate with the solver.
-///
-/// The solver can use the included function callbacks to interact with the
-/// model.
-pub struct IpdosModelRef<'a> {
-	/// The handle to the data of the model instance.
-	data: &'a IpdosModel,
-	/// Reference to the structure containing the function callbacks used to
-	/// interact with the model.
-	methods: &'static IpdosModelMethods,
-}
-
 #[repr(transparent)]
 #[derive(Debug)]
 /// The handle of a model instance.
@@ -77,7 +64,8 @@ pub struct IpdosModel(ffi::c_void);
 
 #[repr(C)]
 #[derive(Debug)]
-/// A struct containing the function pointers to interact with theIpdosModel`
+/// A struct containing the function pointers to interact with the
+/// [`IpdosModel`]
 pub struct IpdosModelMethods {
 	/// Returns the current number of model layers currently contained in the
 	/// model.
@@ -126,7 +114,7 @@ pub struct IpdosModelMethods {
 	///
 	/// Note that the the value might have [`IpdosValueKind::IpdosValueAbsent`]
 	/// if the decision variable does not have an explicit domain.
-	decision_domain: extern "C" fn(model: &IpdosModel, decision: u64) -> IpdosValue<'_>,
+	decision_domain: extern "C" fn(model: &IpdosModel, decision: u64) -> IpdosValueRef<'_>,
 	/// Retrieve the name of a decision variable, if it exists.
 	///
 	/// Note that names are only available for debugging purposes. Decisions are
@@ -163,14 +151,14 @@ pub struct IpdosModelMethods {
 	/// The `index` argument must be less than the value returned by
 	/// `constraint_argument_len` for the given constraint.
 	constraint_argument:
-		extern "C" fn(model: &IpdosModel, constraint: u64, index: u64) -> IpdosValue<'_>,
+		extern "C" fn(model: &IpdosModel, constraint: u64, index: u64) -> IpdosValueRef<'_>,
 	/// Check whether the decision variable is functionally defined by a
 	/// constraint.
 	///
 	/// This function returns a [`IpdosValue`] that is either
 	/// [`IpdosValueKind::IpdosValueDecision`] if it defined a decision variable
 	/// or [`IpdosValueKind::IpdosValueAbsent`] otherwise.
-	constraint_defines: extern "C" fn(model: &IpdosModel, decision: u64) -> IpdosValue<'_>,
+	constraint_defines: extern "C" fn(model: &IpdosModel, decision: u64) -> IpdosValueRef<'_>,
 	/// Retrieve the number of annotations on a constraint.
 	constraint_annotation_len: extern "C" fn(model: &IpdosModel, constraint: u64) -> u64,
 	/// Retrieve the annotation on a constraint at the given index.
@@ -187,7 +175,7 @@ pub struct IpdosModelMethods {
 	/// have an objective strategy.
 	objective_ident: extern "C" fn(model: &IpdosModel) -> *const ffi::c_char,
 	/// Retrieve the argument of the objective strategy.
-	objective_arg: extern "C" fn(model: &IpdosModel) -> IpdosValue<'_>,
+	objective_arg: extern "C" fn(model: &IpdosModel) -> IpdosValueRef<'_>,
 	/// Retrieve the number of annotations on an objective
 	objective_annotation_len: extern "C" fn(model: &IpdosModel) -> u64,
 	/// Retrieve the annotation on the objective at the given index.
@@ -207,7 +195,21 @@ pub struct IpdosModelMethods {
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `annotation_argument_len` for the given annotation.
-	annotation_argument: extern "C" fn(ann: &IpdosAnnotation, index: u64) -> IpdosValue<'_>,
+	annotation_argument: extern "C" fn(ann: &IpdosAnnotation, index: u64) -> IpdosValueRef<'_>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+/// An interface to a model instance used to communicate with the solver.
+///
+/// The solver can use the included function callbacks to interact with the
+/// model.
+pub struct IpdosModelRef<'a> {
+	/// The handle to the data of the model instance.
+	data: &'a IpdosModel,
+	/// Reference to the structure containing the function callbacks used to
+	/// interact with the model.
+	methods: &'static IpdosModelMethods,
 }
 
 #[repr(C)]
@@ -245,7 +247,7 @@ pub struct IpdosOption<'a> {
 	/// option.
 	pub ident: *const ffi::c_char,
 	/// The type of value that is expected for this option.
-	pub arg_ty: IpdosValue<'a>,
+	pub arg_ty: IpdosValueRef<'a>,
 	/// The default value for this option.
 	pub arg_def: IpdosType,
 	/// The lifetime of the `ident` attribute.
@@ -266,20 +268,6 @@ pub struct IpdosOptionList<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(C)]
-#[derive(Clone, Debug)]
-/// Structure used to represent a solution emitted by the solver.
-///
-/// The caller can use the `get_value` function to retrieve the value of the
-/// used decision variables.
-pub struct IpdosSolutionRef<'a> {
-	/// The data pointer to be the first argument of `get_value`.
-	data: &'a IpdosSolution,
-	/// Function callback to retrieve the value assigned to a decision variable
-	/// in the solution.
-	get_value: extern "C" fn(data: &IpdosSolution, decision_index: u64) -> IpdosValue<'_>,
-}
-
 #[repr(transparent)]
 #[derive(Debug)]
 /// The handle to a the data of a solution instance.
@@ -292,6 +280,31 @@ pub struct IpdosSolutionRef<'a> {
 /// ipdos_solution`.
 pub struct IpdosSolution(ffi::c_void);
 
+#[repr(C)]
+#[derive(Clone, Debug)]
+/// A struct containing the function pointers to interact with a
+/// [`IpdosSolution`]
+pub struct IpdosSolutionMethods {
+	/// Function callback to retrieve the value assigned to a decision variable
+	/// in the solution.
+	get_value: extern "C" fn(data: &IpdosSolution, decision_index: u64) -> IpdosValueRef<'_>,
+	/// Function callback to retrieve the statistical information made available
+	/// by the solver about the search process so far.
+	get_statistic:
+		extern "C" fn(data: &IpdosSolution, ident: *const ffi::c_char) -> IpdosValueRef<'_>,
+}
+
+#[repr(C)]
+#[derive(Clone, Debug)]
+/// Handle for a solution emitted by the solver.
+pub struct IpdosSolutionRef<'a> {
+	/// The data pointer to be the first argument of `get_value`.
+	data: &'a IpdosSolution,
+	/// Reference to the structure containing the function callbacks used to
+	/// interact with the solution.
+	methods: &'static IpdosSolutionMethods,
+}
+
 #[repr(transparent)]
 #[derive(Debug)]
 /// The handle to a solver instance.
@@ -303,6 +316,39 @@ pub struct IpdosSolution(ffi::c_void);
 /// cast the pointer back to the original type, e.g. `(MySolverType*)
 /// ipdos_solver`.
 pub struct IpdosSolver(ffi::c_void);
+
+#[repr(C)]
+#[derive(Clone, Debug)]
+/// The definition of statistical information that is made available by the
+/// solver.
+pub struct IpdosStatistic<'a> {
+	/// The identifier used to retrieve the statistical information from the
+	/// solver or a solution.
+	pub ident: *const ffi::c_char,
+	/// The type of value that is expected for this option.
+	pub ty: IpdosValueRef<'a>,
+	/// Whether the statistical information is available as part of solutions.
+	pub solution: bool,
+	/// Whether the statistical information is generally available from the
+	/// solver instance.
+	pub solver: bool,
+	/// The lifetime of the `ident` attribute.
+	pub lifetime: PhantomData<&'a ()>,
+}
+
+#[repr(C)]
+#[derive(Clone, Debug)]
+/// A list of [`IpdosStatistic`]s.
+///
+/// This type is, for example, used to return from [`ipdos_statistic_list`].
+pub struct IpdosStatisticList<'a> {
+	/// The number of elements in the `stats` array.
+	pub len: u64,
+	/// An array of statistical information definitions.
+	pub stats: *const IpdosStatistic<'a>,
+	/// The lifetime of the `stats` attribute.
+	pub lifetime: PhantomData<&'a ()>,
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -369,181 +415,162 @@ pub struct IpdosTypeList<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-/// The value representation used for values assigned to decision variables in
-/// solution, as constraint/annotation arguments, and option parameters.
-pub struct IpdosValue<'a> {
-	/// The kind of the value
-	///
-	/// This field is used to determine what field in the `value` union is
-	/// allowed to be accessed.
-	pub kind: IpdosValueKind,
-	/// A field containing the size of the value.
-	///
-	/// This field is used when the value is a list, set of float/int, and
-	/// string, to determine the number of elements in the C array type.
-	pub len: u32,
-	/// The storage of the actual data of the value.
-	pub content: IpdosValueContent<'a>,
-	/// Lifetime of the value (only relevant in Rust).
-	pub lifetime: PhantomData<&'a ()>,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-/// The storage of the value content of a [`IpdosValue`].
-pub union IpdosValueContent<'a> {
-	/// Decision index storage
-	pub decision_index: u64,
-	/// Boolean value storage
-	pub bool_value: bool,
-	/// Integer value storage
-	pub integer_value: i64,
-	/// Float value storage
-	pub float_value: f64,
-	/// Set of integers value storage
-	///
-	/// The set of integers is represented using a range list. The array of
-	/// `i64` values should be interpreted as a list of inclusive ranges,
-	/// where each range is represented by two values.
-	///
-	/// Note that the number of `i64` values is stored in the `len` field. Since
-	/// each range is represented by two values, it can be assumed that `len mod
-	/// 2 == 0`.
-	pub set_of_int_value: *const i64,
-	/// Set of floating point value storage
-	///
-	/// The set of floating point values is represented using a range list. The
-	/// array of `f64` values should be interpreted as a list of inclusive
-	/// ranges, where each range is represented by two values.
-	///
-	/// Note that the number of `f64` values is stored in the `len` field. Since
-	/// each range is represented by two values, it can be assumed that `len mod
-	/// 2 == 0`.
-	pub set_of_float_value: *const i64,
-	/// String value storage
-	///
-	/// Note that the `string_value` field is intended to be interpreted as a
-	/// C-string. It should be \0 terminated, use UTF-8 encoding, and be valid
-	/// for the lifetime of the value.
-	pub string_value: *const ffi::c_char,
-	/// List value storage
-	///
-	/// Note that the the number of elements in the list is stored in the `len`
-	/// field.
-	pub list_value: *const IpdosValue<'a>,
-}
+#[repr(transparent)]
+#[derive(Debug)]
+/// The type of a value used as an argument or solution assignment.
+///
+/// This type is opaque to the user. Only pointers of this type are ever used.
+///
+/// In implementation of the IPDOS interface, a pointer is generally cast to
+/// this type, e.g. `(IpdosValue*) my_value`. A similar cast can be used to cast
+/// the pointer back to the original type, e.g. `(MyValue*) ipdos_value`.
+pub struct IpdosValue(ffi::c_void);
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// Enumerated type used to mark the kind of [`IpdosValue`]. This is used to
-/// determine which field in the [`IpdosValueContent`] union to access.
+/// determine which "get" method in [`IpdosValueMethods`] is safe to call.
 pub enum IpdosValueKind {
-	/// No value is stored.
+	/// No value is available.
 	IpdosValueAbsent,
-	/// The value is stored in `decision_index`.
+	/// The value is available using [`IpdosValueMethods::get_decision`].
 	IpdosValueDecision,
-	/// The value is stored in `boolean_value`.
-	IpdosValueBoolean,
-	/// The value is stored in `integer_value`.
-	IpdosValueInteger,
-	/// The value is stored in `float_value`.
+	/// The value is available using [`IpdosValueMethods::get_bool`].
+	IpdosValueBool,
+	/// The value is available using [`IpdosValueMethods::get_int`].
+	IpdosValueInt,
+	/// The value is available using [`IpdosValueMethods::get_float`].
 	IpdosValueFloat,
-	/// The value is stored in `string_value`.
+	/// The value is available using [`IpdosValueMethods::get_string`].
 	IpdosValueString,
-	/// The value is stored in `list_value`.
+	/// Sets of integers are represented using a range list. The number of
+	/// ranges is available using [`IpdosValueMethods::len`], and the ranges can
+	/// be accessed using [`IpdosValueMethods::get_range_int`].
+	IpdosValueSetInt,
+	/// Sets of floats are represented using a range list. The number of
+	/// ranges is available using [`IpdosValueMethods::len`], and the ranges can
+	/// be accessed using [`IpdosValueMethods::get_range_float`].
+	IpdosValueSetFloat,
+	/// The length of the list can be accessed using
+	/// [`IpdosValueMethods::len`], and elements in the list can be
+	/// accessed using [`IpdosValueMethods::get_element`]
 	IpdosValueList,
 }
 
-impl fmt::Debug for IpdosValue<'_> {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_struct("IpdosValue")
-			.field("kind", &self.kind)
-			.field("len", &self.len)
-			// Safety: Access `self.content` according to the type information
-			// provided explicitly by `self.kind`.
-			.field("content", unsafe {
-				match self.kind {
-					IpdosValueKind::IpdosValueAbsent => &(),
-					IpdosValueKind::IpdosValueDecision => &self.content.decision_index,
-					IpdosValueKind::IpdosValueBoolean => &self.content.bool_value,
-					IpdosValueKind::IpdosValueInteger => &self.content.integer_value,
-					IpdosValueKind::IpdosValueFloat => &self.content.float_value,
-					IpdosValueKind::IpdosValueString => &self.content.string_value,
-					IpdosValueKind::IpdosValueList => &self.content.list_value,
-				}
-			})
-			.field("lifetime", &self.lifetime)
-			.finish()
-	}
+#[repr(C)]
+#[derive(Clone, Debug)]
+/// A struct containing the function pointers to interact with a
+/// [`IpdosValue`]
+pub struct IpdosValueMethods {
+	/// Function callback that returns the kind of the value.
+	kind: fn(&IpdosValue) -> IpdosValueKind,
+	/// Function callback that returns the length of the value.
+	///
+	/// In case [`IpdosValueMethods::kind`] returns
+	/// [`IpdosValueKind::IpdosValueList`], the length is the number of elements
+	/// in the list, accessible using [`IpdosValueMethods::get_element`].
+	///
+	/// In case [`IpdosValueMethods::kind`] returns
+	/// [`IpdosValueKind::IpdosValueSetInt`] or
+	/// [`IpdosValueKind::IpdosValueSetFloat`], the length is the number of
+	/// ranges in the set, accessible using
+	/// [`IpdosValueMethods::get_range_int`] or
+	/// [`IpdosValueMethods::get_range_float`].
+	///
+	/// # Panics
+	///
+	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
+	/// return [`IpdosValueKind::IpdosValueList`],
+	/// [`IpdosValueKind::IpdosValueSetInt`], or
+	/// [`IpdosValueKind::IpdosValueSetFloat`].
+	len: fn(&IpdosValue) -> u64,
+	/// Function callback that returns the decision variable index contained in
+	/// the value.
+	///
+	/// # Panics
+	///
+	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
+	/// return [`IpdosValueKind::IpdosValueDecision`].
+	get_decision: unsafe extern "C" fn(&IpdosValue) -> u64,
+	/// Function callback that returns the integer value contained in the value.
+	///
+	/// # Panics
+	///
+	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
+	/// return [`IpdosValueKind::IpdosValueInt`].
+	get_int: unsafe extern "C" fn(&IpdosValue) -> i64,
+	/// Function callback that returns the floating point value contained in the
+	/// value.
+	///
+	/// # Panics
+	///
+	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
+	/// return [`IpdosValueKind::IpdosValueFloat`].
+	get_float: unsafe extern "C" fn(&IpdosValue) -> f64,
+	/// Function callback that returns the string pointer value contained in the
+	/// value.
+	///
+	/// # Panics
+	///
+	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
+	/// return [`IpdosValueKind::IpdosValueString`].
+	get_string: unsafe extern "C" fn(&IpdosValue) -> *const ffi::c_char,
+	/// Function callback that returns the Boolean value contained in the value.
+	///
+	/// # Panics
+	///
+	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
+	/// return [`IpdosValueKind::IpdosValueBool`].
+	get_bool: unsafe extern "C" fn(&IpdosValue) -> bool,
+	/// Function callback that returns a range from a range list representing
+	/// the integer set contained in the value.
+	///
+	/// # Panics
+	///
+	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
+	/// return [`IpdosValueKind::IpdosValueSetInt`].
+	get_range_int: unsafe extern "C" fn(&IpdosValue, index: u64) -> [i64; 2],
+	/// Function callback that returns a range from a range list representing
+	/// the floating point set contained in the value.
+	///
+	/// # Panics
+	///
+	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
+	/// return [`IpdosValueKind::IpdosValueSetFloat`].
+	get_range_float: unsafe extern "C" fn(&IpdosValue, index: u64) -> [f64; 2],
+	/// Function callback that returns an element from the list contained in the
+	/// value.
+	///
+	/// # Panics
+	///
+	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
+	/// return [`IpdosValueKind::IpdosValueList`].
+	get_element: unsafe extern "C" fn(&IpdosValue, index: u64) -> IpdosValueRef<'_>,
 }
 
-impl PartialEq for IpdosValue<'_> {
-	fn eq(&self, other: &Self) -> bool {
-		self.kind == other.kind
-		// Safety: Access `self.content` and `other.content` according to the type
-		// information provided explicitly by `self.kind` and `other.kind`.
-			&& unsafe {
-				match self.kind {
-					IpdosValueKind::IpdosValueAbsent => true,
-					IpdosValueKind::IpdosValueDecision => {
-						self.content.decision_index == other.content.decision_index
-					}
-					IpdosValueKind::IpdosValueBoolean => {
-						self.content.bool_value == other.content.bool_value
-					}
-					IpdosValueKind::IpdosValueInteger => {
-						self.content.integer_value == other.content.integer_value
-					}
-					IpdosValueKind::IpdosValueFloat => {
-						self.content.float_value == other.content.float_value
-					}
-					IpdosValueKind::IpdosValueString => {
-						if self.len != other.len {
-							return false;
-						}
-						if self.len == 0 {
-							return true;
-						}
-						let self_str =
-							&*slice_from_raw_parts(self.content.string_value, self.len as usize);
-						let other_str =
-							&*slice_from_raw_parts(other.content.string_value, other.len as usize);
-						self_str == other_str
-					}
-					IpdosValueKind::IpdosValueList => {
-						if self.len != other.len {
-							return false;
-						}
-						let self_li =
-							&*slice_from_raw_parts(self.content.list_value, self.len as usize);
-						let other_li =
-							&*slice_from_raw_parts(other.content.list_value, other.len as usize);
-						self_li == other_li
-					}
-				}
-			}
-	}
-}
-
-impl fmt::Debug for IpdosValueContent<'_> {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		// Safety: interprets the storage as raw 64 bits, no type information
-		// necessary.
-		write!(f, "{:#X}", unsafe { self.decision_index })
-	}
+#[repr(C)]
+#[derive(Clone, Debug)]
+/// Handle for a value
+///
+/// The caller can use the `get_value` function to retrieve the value of the
+/// used decision variables.
+pub struct IpdosValueRef<'a> {
+	/// The data pointer to be the first argument of `get_value`.
+	data: &'a IpdosValue,
+	/// Reference to the structure containing the function callbacks used to
+	/// interact with the value.
+	methods: &'static IpdosValueMethods,
 }
 
 #[cfg(test)]
 mod tests {
-	use crate::{IpdosModelRef, IpdosSolutionRef, IpdosType, IpdosValue};
+	use crate::{IpdosModelRef, IpdosSolutionRef, IpdosType, IpdosValueRef};
 
 	#[test]
 	fn memory() {
 		assert_eq!(size_of::<IpdosModelRef>(), size_of::<u128>());
 		assert_eq!(size_of::<IpdosSolutionRef>(), size_of::<u128>());
 		assert_eq!(size_of::<IpdosType>(), size_of::<u64>());
-		assert_eq!(size_of::<IpdosValue>(), size_of::<u128>());
+		assert_eq!(size_of::<IpdosValueRef>(), size_of::<u128>());
 	}
 }
