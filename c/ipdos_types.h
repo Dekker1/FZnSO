@@ -39,6 +39,8 @@ typedef enum IpdosValueKind {
   IpdosValueAbsent,
   // The value is available using [`IpdosValueMethods::get_decision`].
   IpdosValueDecision,
+  // The value is available using [`IpdosValueMethods::get_constraint`].
+  IpdosValueConstraint,
   // The value is available using [`IpdosValueMethods::get_bool`].
   IpdosValueBool,
   // The value is available using [`IpdosValueMethods::get_int`].
@@ -94,7 +96,7 @@ typedef struct IpdosConstraintType {
   // The identifier of the constraint type.
   const char *ident;
   // The number of expected arguments for the constraint type.
-  uint64_t arg_len;
+  size_t arg_len;
   // The types of the expected arguments for the constraint type.
   const struct IpdosType *arg_types;
 } IpdosConstraintType;
@@ -104,7 +106,7 @@ typedef struct IpdosConstraintType {
 // This type is for example used to return from [`ipdos_constraint_list`].
 typedef struct IpdosConstraintList {
   // The number of elements in the `constraints` array.
-  uint64_t len;
+  size_t len;
   // An array of constraint types.
   const struct IpdosConstraintType *constraints;
 } IpdosConstraintList;
@@ -126,6 +128,12 @@ typedef void IpdosModel;
 // this type, e.g. `(IpdosValue*) my_value`. A similar cast can be used to cast
 // the pointer back to the original type, e.g. `(MyValue*) ipdos_value`.
 typedef void IpdosValue;
+
+// Wrapper type for the indexes that represent decision variables in the model.
+typedef size_t IpdosDecisionIdx;
+
+// Wrapper type for the indexes that represent constraints in the model.
+typedef size_t IpdosConstraintIdx;
 
 // A struct containing the function pointers to interact with a
 // [`IpdosValue`]
@@ -151,7 +159,7 @@ typedef struct IpdosValueMethods {
   // return [`IpdosValueKind::IpdosValueList`],
   // [`IpdosValueKind::IpdosValueSetInt`], or
   // [`IpdosValueKind::IpdosValueSetFloat`].
-  uint64_t (*len)(const IpdosValue*);
+  size_t (*len)(const IpdosValue*);
   // Function callback that returns the decision variable index contained in
   // the value.
   //
@@ -159,7 +167,15 @@ typedef struct IpdosValueMethods {
   //
   // This function callback may panic if [`IpdosValueMethods::kind`] does not
   // return [`IpdosValueKind::IpdosValueDecision`].
-  uint64_t (*get_decision)(const IpdosValue*);
+  IpdosDecisionIdx (*get_decision)(const IpdosValue*);
+  // Function callback that returns the constraint index contained in the
+  // value.
+  //
+  // # Panics
+  //
+  // This function callback may panic if [`IpdosValueMethods::kind`] does not
+  // return [`IpdosValueKind::IpdosValueConstraint`].
+  IpdosConstraintIdx (*get_constraint)(const IpdosValue*);
   // Function callback that returns the integer value contained in the value.
   //
   // # Panics
@@ -197,7 +213,7 @@ typedef struct IpdosValueMethods {
   //
   // This function callback may panic if [`IpdosValueMethods::kind`] does not
   // return [`IpdosValueKind::IpdosValueSetInt`].
-  int64_t ((*get_range_int)(const IpdosValue*, uint64_t index))[2];
+  int64_t ((*get_range_int)(const IpdosValue*, size_t index))[2];
   // Function callback that returns a range from a range list representing
   // the floating point set contained in the value.
   //
@@ -205,7 +221,7 @@ typedef struct IpdosValueMethods {
   //
   // This function callback may panic if [`IpdosValueMethods::kind`] does not
   // return [`IpdosValueKind::IpdosValueSetFloat`].
-  double ((*get_range_float)(const IpdosValue*, uint64_t index))[2];
+  double ((*get_range_float)(const IpdosValue*, size_t index))[2];
   // Function callback that returns an element from the list contained in the
   // value.
   //
@@ -213,7 +229,7 @@ typedef struct IpdosValueMethods {
   //
   // This function callback may panic if [`IpdosValueMethods::kind`] does not
   // return [`IpdosValueKind::IpdosValueList`].
-  struct IpdosValueRef (*get_element)(const IpdosValue*, uint64_t index);
+  struct IpdosValueRef (*get_element)(const IpdosValue*, size_t index);
 } IpdosValueMethods;
 
 // Handle for a value
@@ -235,12 +251,12 @@ typedef struct IpdosModelMethods {
   // model.
   //
   // Layers provides a way for the modelling user to add and retract
-  uint64_t (*layer_len)(const IpdosModel *model);
+  size_t (*layer_len)(const IpdosModel *model);
   // Returns the number of layers that have been unchanged since the last
   // call to [`ipdos_solver_run`].
   //
   // Unchanged layers must be consecutive starting from layer 0.
-  uint64_t (*layer_unchanged)(const IpdosModel *model);
+  size_t (*layer_unchanged)(const IpdosModel *model);
   // Returns the number of permanent layers in the model.
   //
   // Permanent layers are laid out must be consecutive starting from layer 0.
@@ -251,7 +267,7 @@ typedef struct IpdosModelMethods {
   // the solver to remove the decision variables and constraints in these
   // layers, if convenient. This is signaled using [`layer_redundant_len`]
   // and [`layer_redundant_index`].
-  uint64_t (*layer_permanent)(const IpdosModel *model);
+  size_t (*layer_permanent)(const IpdosModel *model);
   // Returns the number of permanent layers that have been marked as
   // redundant.
   //
@@ -259,79 +275,79 @@ typedef struct IpdosModelMethods {
   // layers, if convenient. Once a layer is marked as redundant, it can
   // forever be considered redundant. As such, the solver can assume that
   // the number of redundant layers only ever increases.
-  uint64_t (*layer_redundant_len)(const IpdosModel *model);
+  size_t (*layer_redundant_len)(const IpdosModel *model);
   // Returns the index of the n-th permanent layer that has been marked as
   // redundant.
   //
   // The `n` argument must be less than the value returned by
   // [`layer_redundant_len`].
-  uint64_t (*layer_redundant_index)(const IpdosModel *model, uint64_t n);
+  size_t (*layer_redundant_index)(const IpdosModel *model, size_t n);
   // Retrieve the number of decisions currently contained in the model.
-  uint64_t (*decision_len)(const IpdosModel *model);
+  size_t (*decision_len)(const IpdosModel *model);
   // Retrieve the decision index of the last decision variable in the layer.
   //
   // This can be equivalent to `decision_layer_end` of `layer-1` if the layer
   // does not add any new decisions.
-  uint64_t (*decision_layer_end)(const IpdosModel *model, uint64_t layer);
+  size_t (*decision_layer_end)(const IpdosModel *model, size_t layer);
   // Retrieve the domain of the given decision.
   //
   // Note that the the value might have [`IpdosValueKind::IpdosValueAbsent`]
   // if the decision variable does not have an explicit domain.
-  struct IpdosValueRef (*decision_domain)(const IpdosModel *model, uint64_t decision);
+  struct IpdosValueRef (*decision_domain)(const IpdosModel *model, IpdosDecisionIdx decision);
   // Retrieve the name of a decision variable, if it exists.
   //
   // Note that names are only available for debugging purposes. Decisions are
   // identified using their index in the model. If the decision variable does
   // not have a name, this function returns a null pointer.
-  const char *(*decision_name)(const IpdosModel *model, uint64_t decision);
+  const char *(*decision_name)(const IpdosModel *model, IpdosDecisionIdx decision);
   // Check whether the decision variable is defined by a constraint.
-  bool (*decision_defined)(const IpdosModel *model, uint64_t decision);
+  bool (*decision_defined)(const IpdosModel *model, IpdosDecisionIdx decision);
   // Retrieve the number of annotations of a constraint.
-  uint64_t (*decision_annotation_len)(const IpdosModel *model, uint64_t decision);
+  size_t (*decision_annotation_len)(const IpdosModel *model, IpdosDecisionIdx decision);
   // Retrieve the value of the constraint's annotation at the given index.
   //
   // The `index` argument must be less than the value returned by
   // [`decision_annotation_len`] for the given decision variable.
   const IpdosAnnotation *(*decision_annotation)(const IpdosModel *model,
-                                                uint64_t decision,
-                                                uint64_t index);
+                                                IpdosDecisionIdx decision,
+                                                size_t index);
   // Retrieve the number of constraints currently contained in the model.
-  uint64_t (*constraint_len)(const IpdosModel *model);
+  size_t (*constraint_len)(const IpdosModel *model);
   // Retrieve the constraint index of the first new constraint in the layer.
   //
   // This can be equivalent to `constraint_len` if the layer does not add any
   // new constraints.
-  uint64_t (*constraint_layer_end)(const IpdosModel *model);
+  size_t (*constraint_layer_end)(const IpdosModel *model);
   // Retrieve the identifier of a constraint.
   //
   // The returned pointer can be assumed to have the the same lifetime as the
   // model reference and must be valid UTF8.
-  const char *(*constraint_ident)(const IpdosModel *model, uint64_t constraint);
+  const char *(*constraint_ident)(const IpdosModel *model, IpdosConstraintIdx constraint);
   // Retrieve the number of arguments of a constraint.
-  uint64_t (*constraint_argument_len)(const IpdosModel *model, uint64_t constraint);
+  size_t (*constraint_argument_len)(const IpdosModel *model, IpdosConstraintIdx constraint);
   // Retrieve the value of the constraint's argument at the given index.
   //
   // The `index` argument must be less than the value returned by
   // `constraint_argument_len` for the given constraint.
   struct IpdosValueRef (*constraint_argument)(const IpdosModel *model,
-                                              uint64_t constraint,
-                                              uint64_t index);
+                                              IpdosConstraintIdx constraint,
+                                              size_t index);
   // Check whether the decision variable is functionally defined by a
   // constraint.
   //
   // This function returns a [`IpdosValue`] that is either
   // [`IpdosValueKind::IpdosValueDecision`] if it defined a decision variable
   // or [`IpdosValueKind::IpdosValueAbsent`] otherwise.
-  struct IpdosValueRef (*constraint_defines)(const IpdosModel *model, uint64_t decision);
+  struct IpdosValueRef (*constraint_defines)(const IpdosModel *model, IpdosConstraintIdx constraint);
   // Retrieve the number of annotations on a constraint.
-  uint64_t (*constraint_annotation_len)(const IpdosModel *model, uint64_t constraint);
+  size_t (*constraint_annotation_len)(const IpdosModel *model, IpdosConstraintIdx constraint);
   // Retrieve the annotation on a constraint at the given index.
   //
   // The `index` argument must be less than the value returned by
   // `constraint_annotation_len` for the given constraint.
   const IpdosAnnotation *(*constraint_annotation)(const IpdosModel *model,
-                                                  uint64_t constraint,
-                                                  uint64_t index);
+                                                  IpdosConstraintIdx constraint,
+                                                  size_t index);
   // Request the identifier of the type of objective strategy to be used when
   // solving the model.
   //
@@ -341,24 +357,24 @@ typedef struct IpdosModelMethods {
   // Retrieve the argument of the objective strategy.
   struct IpdosValueRef (*objective_arg)(const IpdosModel *model);
   // Retrieve the number of annotations on an objective
-  uint64_t (*objective_annotation_len)(const IpdosModel *model);
+  size_t (*objective_annotation_len)(const IpdosModel *model);
   // Retrieve the annotation on the objective at the given index.
   //
   // The `index` argument must be less than the value returned by
   // `objective_annotation_len`.
-  const IpdosAnnotation *(*objective_annotation)(const IpdosModel *model, uint64_t index);
+  const IpdosAnnotation *(*objective_annotation)(const IpdosModel *model, size_t index);
   // Retrieve the identifier of an annotation.
   //
   // The returned pointer can be assumed to have the the same lifetime as the
   // annotation reference and must be valid UTF8.
   const char *(*annotation_ident)(const IpdosAnnotation *ann);
   // Retrieve the number of arguments of an annotation.
-  uint64_t (*annotation_argument_len)(const IpdosAnnotation *ann);
+  size_t (*annotation_argument_len)(const IpdosAnnotation *ann);
   // Retrieve the value of the annotation's argument at the given index.
   //
   // The `index` argument must be less than the value returned by
   // `annotation_argument_len` for the given annotation.
-  struct IpdosValueRef (*annotation_argument)(const IpdosAnnotation *ann, uint64_t index);
+  struct IpdosValueRef (*annotation_argument)(const IpdosAnnotation *ann, size_t index);
 } IpdosModelMethods;
 
 // An interface to a model instance used to communicate with the solver.
@@ -387,7 +403,7 @@ typedef struct IpdosObjective {
 // This type is, for example, used to return from [`ipdos_objective_list`].
 typedef struct IpdosObjectiveList {
   // The number of elements in the `options` array.
-  uint64_t len;
+  size_t len;
   // An array of option definitions.
   const struct IpdosObjective *options;
 } IpdosObjectiveList;
@@ -408,7 +424,7 @@ typedef struct IpdosOption {
 // This type is, for example, used to return from [`ipdos_option_list`].
 typedef struct IpdosOptionList {
   // The number of elements in the `options` array.
-  uint64_t len;
+  size_t len;
   // An array of option definitions.
   const struct IpdosOption *options;
 } IpdosOptionList;
@@ -428,7 +444,7 @@ typedef void IpdosSolution;
 typedef struct IpdosSolutionMethods {
   // Function callback to retrieve the value assigned to a decision variable
   // in the solution.
-  struct IpdosValueRef (*get_value)(const IpdosSolution *data, uint64_t decision_index);
+  struct IpdosValueRef (*get_value)(const IpdosSolution *data, size_t decision_index);
   // Function callback to retrieve the statistical information made available
   // by the solver about the search process so far.
   struct IpdosValueRef (*get_statistic)(const IpdosSolution *data, const char *ident);
@@ -473,7 +489,7 @@ typedef struct IpdosStatistic {
 // This type is, for example, used to return from [`ipdos_statistic_list`].
 typedef struct IpdosStatisticList {
   // The number of elements in the `stats` array.
-  uint64_t len;
+  size_t len;
   // An array of statistical information definitions.
   const struct IpdosStatistic *stats;
 } IpdosStatisticList;
@@ -483,7 +499,7 @@ typedef struct IpdosStatisticList {
 // This type is for example used to return from [`ipdos_decision_list`].
 typedef struct IpdosTypeList {
   // The number of elements in the `constraints` array.
-  uint64_t len;
+  size_t len;
   // An array of constraint types.
   const struct IpdosType *types;
 } IpdosTypeList;

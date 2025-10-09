@@ -5,6 +5,7 @@ include_guard = "ipdos_types_h"
 documentation_style = "c99"
 sys_includes = ["stdbool.h", "stdint.h"]
 no_includes = true
+usize_is_size_t = true
 
 [export]
 include = [

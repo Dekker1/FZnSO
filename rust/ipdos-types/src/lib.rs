@@ -5,9 +5,9 @@
 //! problems. The goal of the interface is to easily use different solvers in a
 //! unified way, and to allow the dynamic loading of solver libraries (as DLLs).
 
-#![no_std]
+use std::{ffi, marker::PhantomData};
 
-use core::{ffi, marker::PhantomData};
+mod rust_interaction;
 
 #[repr(transparent)]
 #[derive(Debug)]
@@ -21,6 +21,11 @@ use core::{ffi, marker::PhantomData};
 /// ipdos_solution`.
 pub struct IpdosAnnotation(ffi::c_void);
 
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// Wrapper type for the indexes that represent constraints in the model.
+pub struct IpdosConstraintIdx(pub usize);
+
 #[repr(C)]
 #[derive(Clone, Debug)]
 /// A list of [`IpdosConstraintType`]s.
@@ -28,7 +33,7 @@ pub struct IpdosAnnotation(ffi::c_void);
 /// This type is for example used to return from [`ipdos_constraint_list`].
 pub struct IpdosConstraintList<'a> {
 	/// The number of elements in the `constraints` array.
-	pub len: u64,
+	pub len: usize,
 	/// An array of constraint types.
 	pub constraints: *const IpdosConstraintType<'a>,
 	/// The lifetime for which the `constraints` attribute is allocated.
@@ -43,13 +48,18 @@ pub struct IpdosConstraintType<'a> {
 	/// The identifier of the constraint type.
 	pub ident: *const ffi::c_char,
 	/// The number of expected arguments for the constraint type.
-	pub arg_len: u64,
+	pub arg_len: usize,
 	/// The types of the expected arguments for the constraint type.
 	pub arg_types: *const IpdosType,
 	/// The lifetime for which the `ident` and `arg_types` attributes are
 	/// allocated.
 	pub lifetime: PhantomData<&'a ()>,
 }
+
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// Wrapper type for the indexes that represent decision variables in the model.
+pub struct IpdosDecisionIdx(pub usize);
 
 #[repr(transparent)]
 #[derive(Debug)]
@@ -71,12 +81,12 @@ pub struct IpdosModelMethods {
 	/// model.
 	///
 	/// Layers provides a way for the modelling user to add and retract
-	layer_len: extern "C" fn(model: &IpdosModel) -> u64,
+	layer_len: extern "C" fn(model: &IpdosModel) -> usize,
 	/// Returns the number of layers that have been unchanged since the last
 	/// call to [`ipdos_solver_run`].
 	///
 	/// Unchanged layers must be consecutive starting from layer 0.
-	layer_unchanged: extern "C" fn(model: &IpdosModel) -> u64,
+	layer_unchanged: extern "C" fn(model: &IpdosModel) -> usize,
 	/// Returns the number of permanent layers in the model.
 	///
 	/// Permanent layers are laid out must be consecutive starting from layer 0.
@@ -87,7 +97,7 @@ pub struct IpdosModelMethods {
 	/// the solver to remove the decision variables and constraints in these
 	/// layers, if convenient. This is signaled using [`layer_redundant_len`]
 	/// and [`layer_redundant_index`].
-	layer_permanent: extern "C" fn(model: &IpdosModel) -> u64,
+	layer_permanent: extern "C" fn(model: &IpdosModel) -> usize,
 	/// Returns the number of permanent layers that have been marked as
 	/// redundant.
 	///
@@ -95,78 +105,93 @@ pub struct IpdosModelMethods {
 	/// layers, if convenient. Once a layer is marked as redundant, it can
 	/// forever be considered redundant. As such, the solver can assume that
 	/// the number of redundant layers only ever increases.
-	layer_redundant_len: extern "C" fn(model: &IpdosModel) -> u64,
+	layer_redundant_len: extern "C" fn(model: &IpdosModel) -> usize,
 	/// Returns the index of the n-th permanent layer that has been marked as
 	/// redundant.
 	///
 	/// The `n` argument must be less than the value returned by
 	/// [`layer_redundant_len`].
-	layer_redundant_index: extern "C" fn(model: &IpdosModel, n: u64) -> u64,
+	layer_redundant_index: extern "C" fn(model: &IpdosModel, n: usize) -> usize,
 
 	/// Retrieve the number of decisions currently contained in the model.
-	decision_len: extern "C" fn(model: &IpdosModel) -> u64,
+	decision_len: extern "C" fn(model: &IpdosModel) -> usize,
 	/// Retrieve the decision index of the last decision variable in the layer.
 	///
 	/// This can be equivalent to `decision_layer_end` of `layer-1` if the layer
 	/// does not add any new decisions.
-	decision_layer_end: extern "C" fn(model: &IpdosModel, layer: u64) -> u64,
+	decision_layer_end: extern "C" fn(model: &IpdosModel, layer: usize) -> usize,
 	/// Retrieve the domain of the given decision.
 	///
 	/// Note that the the value might have [`IpdosValueKind::IpdosValueAbsent`]
 	/// if the decision variable does not have an explicit domain.
-	decision_domain: extern "C" fn(model: &IpdosModel, decision: u64) -> IpdosValueRef<'_>,
+	decision_domain:
+		extern "C" fn(model: &IpdosModel, decision: IpdosDecisionIdx) -> IpdosValueRef<'_>,
 	/// Retrieve the name of a decision variable, if it exists.
 	///
 	/// Note that names are only available for debugging purposes. Decisions are
 	/// identified using their index in the model. If the decision variable does
 	/// not have a name, this function returns a null pointer.
-	decision_name: extern "C" fn(model: &IpdosModel, decision: u64) -> *const ffi::c_char,
+	decision_name:
+		extern "C" fn(model: &IpdosModel, decision: IpdosDecisionIdx) -> *const ffi::c_char,
 	/// Check whether the decision variable is defined by a constraint.
-	decision_defined: extern "C" fn(model: &IpdosModel, decision: u64) -> bool,
+	decision_defined: extern "C" fn(model: &IpdosModel, decision: IpdosDecisionIdx) -> bool,
 	/// Retrieve the number of annotations of a constraint.
-	decision_annotation_len: extern "C" fn(model: &IpdosModel, decision: u64) -> u64,
+	decision_annotation_len: extern "C" fn(model: &IpdosModel, decision: IpdosDecisionIdx) -> usize,
 	/// Retrieve the value of the constraint's annotation at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// [`decision_annotation_len`] for the given decision variable.
-	decision_annotation:
-		extern "C" fn(model: &IpdosModel, decision: u64, index: u64) -> &IpdosAnnotation,
+	decision_annotation: extern "C" fn(
+		model: &IpdosModel,
+		decision: IpdosDecisionIdx,
+		index: usize,
+	) -> &IpdosAnnotation,
 
 	/// Retrieve the number of constraints currently contained in the model.
-	constraint_len: extern "C" fn(model: &IpdosModel) -> u64,
+	constraint_len: extern "C" fn(model: &IpdosModel) -> usize,
 	/// Retrieve the constraint index of the first new constraint in the layer.
 	///
 	/// This can be equivalent to `constraint_len` if the layer does not add any
 	/// new constraints.
-	constraint_layer_end: extern "C" fn(model: &IpdosModel) -> u64,
+	constraint_layer_end: extern "C" fn(model: &IpdosModel) -> usize,
 	/// Retrieve the identifier of a constraint.
 	///
 	/// The returned pointer can be assumed to have the the same lifetime as the
 	/// model reference and must be valid UTF8.
-	constraint_ident: extern "C" fn(model: &IpdosModel, constraint: u64) -> *const ffi::c_char,
+	constraint_ident:
+		extern "C" fn(model: &IpdosModel, constraint: IpdosConstraintIdx) -> *const ffi::c_char,
 	/// Retrieve the number of arguments of a constraint.
-	constraint_argument_len: extern "C" fn(model: &IpdosModel, constraint: u64) -> u64,
+	constraint_argument_len:
+		extern "C" fn(model: &IpdosModel, constraint: IpdosConstraintIdx) -> usize,
 	/// Retrieve the value of the constraint's argument at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `constraint_argument_len` for the given constraint.
-	constraint_argument:
-		extern "C" fn(model: &IpdosModel, constraint: u64, index: u64) -> IpdosValueRef<'_>,
+	constraint_argument: extern "C" fn(
+		model: &IpdosModel,
+		constraint: IpdosConstraintIdx,
+		index: usize,
+	) -> IpdosValueRef<'_>,
 	/// Check whether the decision variable is functionally defined by a
 	/// constraint.
 	///
 	/// This function returns a [`IpdosValue`] that is either
 	/// [`IpdosValueKind::IpdosValueDecision`] if it defined a decision variable
 	/// or [`IpdosValueKind::IpdosValueAbsent`] otherwise.
-	constraint_defines: extern "C" fn(model: &IpdosModel, decision: u64) -> IpdosValueRef<'_>,
+	constraint_defines:
+		extern "C" fn(model: &IpdosModel, constraint: IpdosConstraintIdx) -> IpdosValueRef<'_>,
 	/// Retrieve the number of annotations on a constraint.
-	constraint_annotation_len: extern "C" fn(model: &IpdosModel, constraint: u64) -> u64,
+	constraint_annotation_len:
+		extern "C" fn(model: &IpdosModel, constraint: IpdosConstraintIdx) -> usize,
 	/// Retrieve the annotation on a constraint at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `constraint_annotation_len` for the given constraint.
-	constraint_annotation:
-		extern "C" fn(model: &IpdosModel, constraint: u64, index: u64) -> &IpdosAnnotation,
+	constraint_annotation: extern "C" fn(
+		model: &IpdosModel,
+		constraint: IpdosConstraintIdx,
+		index: usize,
+	) -> &IpdosAnnotation,
 
 	/// Request the identifier of the type of objective strategy to be used when
 	/// solving the model.
@@ -177,12 +202,12 @@ pub struct IpdosModelMethods {
 	/// Retrieve the argument of the objective strategy.
 	objective_arg: extern "C" fn(model: &IpdosModel) -> IpdosValueRef<'_>,
 	/// Retrieve the number of annotations on an objective
-	objective_annotation_len: extern "C" fn(model: &IpdosModel) -> u64,
+	objective_annotation_len: extern "C" fn(model: &IpdosModel) -> usize,
 	/// Retrieve the annotation on the objective at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `objective_annotation_len`.
-	objective_annotation: extern "C" fn(model: &IpdosModel, index: u64) -> &IpdosAnnotation,
+	objective_annotation: extern "C" fn(model: &IpdosModel, index: usize) -> &IpdosAnnotation,
 
 	/// Retrieve the identifier of an annotation.
 	///
@@ -190,12 +215,12 @@ pub struct IpdosModelMethods {
 	/// annotation reference and must be valid UTF8.
 	annotation_ident: extern "C" fn(ann: &IpdosAnnotation) -> *const ffi::c_char,
 	/// Retrieve the number of arguments of an annotation.
-	annotation_argument_len: extern "C" fn(ann: &IpdosAnnotation) -> u64,
+	annotation_argument_len: extern "C" fn(ann: &IpdosAnnotation) -> usize,
 	/// Retrieve the value of the annotation's argument at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `annotation_argument_len` for the given annotation.
-	annotation_argument: extern "C" fn(ann: &IpdosAnnotation, index: u64) -> IpdosValueRef<'_>,
+	annotation_argument: extern "C" fn(ann: &IpdosAnnotation, index: usize) -> IpdosValueRef<'_>,
 }
 
 #[repr(C)]
@@ -232,7 +257,7 @@ pub struct IpdosObjective<'a> {
 /// This type is, for example, used to return from [`ipdos_objective_list`].
 pub struct IpdosObjectiveList<'a> {
 	/// The number of elements in the `options` array.
-	pub len: u64,
+	pub len: usize,
 	/// An array of option definitions.
 	pub options: *const IpdosObjective<'a>,
 	/// The lifetime of the `options` attribute.
@@ -261,7 +286,7 @@ pub struct IpdosOption<'a> {
 /// This type is, for example, used to return from [`ipdos_option_list`].
 pub struct IpdosOptionList<'a> {
 	/// The number of elements in the `options` array.
-	pub len: u64,
+	pub len: usize,
 	/// An array of option definitions.
 	pub options: *const IpdosOption<'a>,
 	/// The lifetime of the `options` attribute.
@@ -287,7 +312,7 @@ pub struct IpdosSolution(ffi::c_void);
 pub struct IpdosSolutionMethods {
 	/// Function callback to retrieve the value assigned to a decision variable
 	/// in the solution.
-	get_value: extern "C" fn(data: &IpdosSolution, decision_index: u64) -> IpdosValueRef<'_>,
+	get_value: extern "C" fn(data: &IpdosSolution, decision_index: usize) -> IpdosValueRef<'_>,
 	/// Function callback to retrieve the statistical information made available
 	/// by the solver about the search process so far.
 	get_statistic:
@@ -343,7 +368,7 @@ pub struct IpdosStatistic<'a> {
 /// This type is, for example, used to return from [`ipdos_statistic_list`].
 pub struct IpdosStatisticList<'a> {
 	/// The number of elements in the `stats` array.
-	pub len: u64,
+	pub len: usize,
 	/// An array of statistical information definitions.
 	pub stats: *const IpdosStatistic<'a>,
 	/// The lifetime of the `stats` attribute.
@@ -408,7 +433,7 @@ pub enum IpdosTypeBase {
 /// This type is for example used to return from [`ipdos_decision_list`].
 pub struct IpdosTypeList<'a> {
 	/// The number of elements in the `constraints` array.
-	pub len: u64,
+	pub len: usize,
 	/// An array of constraint types.
 	pub types: *const IpdosType,
 	/// The lifetime for which the `types` attribute is allocated.
@@ -435,6 +460,8 @@ pub enum IpdosValueKind {
 	IpdosValueAbsent,
 	/// The value is available using [`IpdosValueMethods::get_decision`].
 	IpdosValueDecision,
+	/// The value is available using [`IpdosValueMethods::get_constraint`].
+	IpdosValueConstraint,
 	/// The value is available using [`IpdosValueMethods::get_bool`].
 	IpdosValueBool,
 	/// The value is available using [`IpdosValueMethods::get_int`].
@@ -463,7 +490,7 @@ pub enum IpdosValueKind {
 /// [`IpdosValue`]
 pub struct IpdosValueMethods {
 	/// Function callback that returns the kind of the value.
-	kind: fn(&IpdosValue) -> IpdosValueKind,
+	kind: extern "C" fn(&IpdosValue) -> IpdosValueKind,
 	/// Function callback that returns the length of the value.
 	///
 	/// In case [`IpdosValueMethods::kind`] returns
@@ -483,7 +510,7 @@ pub struct IpdosValueMethods {
 	/// return [`IpdosValueKind::IpdosValueList`],
 	/// [`IpdosValueKind::IpdosValueSetInt`], or
 	/// [`IpdosValueKind::IpdosValueSetFloat`].
-	len: fn(&IpdosValue) -> u64,
+	len: extern "C" fn(&IpdosValue) -> usize,
 	/// Function callback that returns the decision variable index contained in
 	/// the value.
 	///
@@ -491,14 +518,22 @@ pub struct IpdosValueMethods {
 	///
 	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
 	/// return [`IpdosValueKind::IpdosValueDecision`].
-	get_decision: unsafe extern "C" fn(&IpdosValue) -> u64,
+	get_decision: extern "C" fn(&IpdosValue) -> IpdosDecisionIdx,
+	/// Function callback that returns the constraint index contained in the
+	/// value.
+	///
+	/// # Panics
+	///
+	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
+	/// return [`IpdosValueKind::IpdosValueConstraint`].
+	get_constraint: extern "C" fn(&IpdosValue) -> IpdosConstraintIdx,
 	/// Function callback that returns the integer value contained in the value.
 	///
 	/// # Panics
 	///
 	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
 	/// return [`IpdosValueKind::IpdosValueInt`].
-	get_int: unsafe extern "C" fn(&IpdosValue) -> i64,
+	get_int: extern "C" fn(&IpdosValue) -> i64,
 	/// Function callback that returns the floating point value contained in the
 	/// value.
 	///
@@ -506,7 +541,7 @@ pub struct IpdosValueMethods {
 	///
 	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
 	/// return [`IpdosValueKind::IpdosValueFloat`].
-	get_float: unsafe extern "C" fn(&IpdosValue) -> f64,
+	get_float: extern "C" fn(&IpdosValue) -> f64,
 	/// Function callback that returns the string pointer value contained in the
 	/// value.
 	///
@@ -514,14 +549,14 @@ pub struct IpdosValueMethods {
 	///
 	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
 	/// return [`IpdosValueKind::IpdosValueString`].
-	get_string: unsafe extern "C" fn(&IpdosValue) -> *const ffi::c_char,
+	get_string: extern "C" fn(&IpdosValue) -> *const ffi::c_char,
 	/// Function callback that returns the Boolean value contained in the value.
 	///
 	/// # Panics
 	///
 	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
 	/// return [`IpdosValueKind::IpdosValueBool`].
-	get_bool: unsafe extern "C" fn(&IpdosValue) -> bool,
+	get_bool: extern "C" fn(&IpdosValue) -> bool,
 	/// Function callback that returns a range from a range list representing
 	/// the integer set contained in the value.
 	///
@@ -529,7 +564,7 @@ pub struct IpdosValueMethods {
 	///
 	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
 	/// return [`IpdosValueKind::IpdosValueSetInt`].
-	get_range_int: unsafe extern "C" fn(&IpdosValue, index: u64) -> [i64; 2],
+	get_range_int: extern "C" fn(&IpdosValue, index: usize) -> [i64; 2],
 	/// Function callback that returns a range from a range list representing
 	/// the floating point set contained in the value.
 	///
@@ -537,7 +572,7 @@ pub struct IpdosValueMethods {
 	///
 	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
 	/// return [`IpdosValueKind::IpdosValueSetFloat`].
-	get_range_float: unsafe extern "C" fn(&IpdosValue, index: u64) -> [f64; 2],
+	get_range_float: extern "C" fn(&IpdosValue, index: usize) -> [f64; 2],
 	/// Function callback that returns an element from the list contained in the
 	/// value.
 	///
@@ -545,7 +580,7 @@ pub struct IpdosValueMethods {
 	///
 	/// This function callback may panic if [`IpdosValueMethods::kind`] does not
 	/// return [`IpdosValueKind::IpdosValueList`].
-	get_element: unsafe extern "C" fn(&IpdosValue, index: u64) -> IpdosValueRef<'_>,
+	get_element: extern "C" fn(&IpdosValue, index: usize) -> IpdosValueRef<'_>,
 }
 
 #[repr(C)]

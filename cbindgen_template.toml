@@ -5,6 +5,7 @@ documentation_style = "c99"
 no_includes = true
 includes = ["ipdos_types.h"]
 cpp_compat = false
+usize_is_size_t = true
 
 [parse]
 parse_deps = true
