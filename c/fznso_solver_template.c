@@ -1,54 +1,54 @@
-#include "ipdos_types.h"
+#include "fznso_types.h"
 
 // Returns the list of available constraint that can be added to the solver.
-IpdosConstraintList ipdos_constraint_list(void);
+FznsoConstraintList fznso_constraint_list(void);
 
 // Returns the list of types for which decision variable can be created by the
 // solver.
-IpdosTypeList ipdos_decision_list(void);
+FznsoTypeList fznso_decision_list(void);
 
 // Returns the list of available objective that can be achieved by the solver.
-IpdosObjectiveList ipdos_objective_list(void);
+FznsoObjectiveList fznso_objective_list(void);
 
 // Returns the list of available options that can be set of the solver.
-IpdosOptionList ipdos_option_list(void);
+FznsoOptionList fznso_option_list(void);
 
 // Create a new solver instance
-IpdosSolver *ipdos_solver_create(void);
+FznsoSolver *fznso_solver_create(void);
 
 // Free a solver instance, releasing all resources associated with it.
 //
 // The pointer to the solver instance will be invalid after this function has
 // been called.
-void ipdos_solver_free(IpdosSolver *solver);
+void fznso_solver_free(FznsoSolver *solver);
 
 // Get the current value of an option for the solver.
 //
 // Note that this is only valid to be called with options named by
-// `ipdos_option_list`.
-IpdosValueRef ipdos_solver_option_get(const IpdosSolver *solver, const char *ident);
+// `fznso_option_list`.
+FznsoValueRef fznso_solver_option_get(const FznsoSolver *solver, const char *ident);
 
 // Set the current value of an option for the solver.
 //
 // Note that this is only valid to be called with options named by
-// `ipdos_option_list`, and the value must be of the correct type.
-bool ipdos_solver_option_set(IpdosSolver *solver, const char *ident, IpdosValueRef value);
+// `fznso_option_list`, and the value must be of the correct type.
+bool fznso_solver_option_set(FznsoSolver *solver, const char *ident, FznsoValueRef value);
 
 // Read an error message from the solver.
 //
 // This function is expected to be called after solver interactions signal an
-// error has occurred. For example, if [`ipdos_solver_run`] returns
-// [`IpdosError`] or [`ipdos_solver_push`] returns `false`.
-void ipdos_solver_read_error(IpdosSolver *solver,
+// error has occurred. For example, if [`fznso_solver_run`] returns
+// [`FznsoError`] or [`fznso_solver_push`] returns `false`.
+void fznso_solver_read_error(FznsoSolver *solver,
                              void *context,
                              void (*read_error)(void *context, const char *error));
 
 // Run the solver with the given model
-IpdosStatus ipdos_solver_run(IpdosSolver *solver,
-                             IpdosModelRef model,
+FznsoStatus fznso_solver_run(FznsoSolver *solver,
+                             FznsoModelRef model,
                              void *context,
-                             void (*on_solution)(void *context, IpdosSolutionRef solution));
+                             void (*on_solution)(void *context, FznsoSolutionRef solution));
 
 // Returns the list of available statistical information that can be requested
 // from the solver and its solutions.
-IpdosStatisticList ipdos_statistic_list(void);
+FznsoStatisticList fznso_statistic_list(void);

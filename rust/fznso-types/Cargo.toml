@@ -1,5 +1,5 @@
 [package]
-name = "ipdos-types"
+name = "fznso-types"
 repository.workspace = true
 version.workspace = true
 authors.workspace = true

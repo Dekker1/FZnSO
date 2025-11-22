@@ -1,6 +1,6 @@
-//! IPDOS Protocol Solver Template
+//! FZnSO Protocol Solver Template
 //!
-//! This crate defines the solver functionality to be implemented IPDOS
+//! This crate defines the solver functionality to be implemented FZnSO
 //! protocol, which allows the incremental usage of solvers that can solve
 //! decision and optimization problems. The goal of the interface is to easily
 //! use different solvers in a unified way, and to allow the dynamic loading of
@@ -8,39 +8,39 @@
 
 use core::ffi;
 
-use ipdos_types::{
-	IpdosConstraintList, IpdosModelRef, IpdosObjectiveList, IpdosOptionList, IpdosSolutionRef,
-	IpdosSolver, IpdosStatisticList, IpdosStatus, IpdosTypeList, IpdosValueRef,
+use fznso_types::{
+	FznsoConstraintList, FznsoModelRef, FznsoObjectiveList, FznsoOptionList, FznsoSolutionRef,
+	FznsoSolver, FznsoStatisticList, FznsoStatus, FznsoTypeList, FznsoValueRef,
 };
 
 #[unsafe(no_mangle)]
 /// Returns the list of available constraint that can be added to the solver.
-pub extern "C" fn ipdos_constraint_list() -> IpdosConstraintList<'static> {
+pub extern "C" fn fznso_constraint_list() -> FznsoConstraintList<'static> {
 	unimplemented!()
 }
 
 #[unsafe(no_mangle)]
 /// Returns the list of types for which decision variable can be created by the
 /// solver.
-pub extern "C" fn ipdos_decision_list() -> IpdosTypeList<'static> {
+pub extern "C" fn fznso_decision_list() -> FznsoTypeList<'static> {
 	unimplemented!()
 }
 
 #[unsafe(no_mangle)]
 /// Returns the list of available objective that can be achieved by the solver.
-pub extern "C" fn ipdos_objective_list() -> IpdosObjectiveList<'static> {
+pub extern "C" fn fznso_objective_list() -> FznsoObjectiveList<'static> {
 	unimplemented!()
 }
 
 #[unsafe(no_mangle)]
 /// Returns the list of available options that can be set of the solver.
-pub extern "C" fn ipdos_option_list() -> IpdosOptionList<'static> {
+pub extern "C" fn fznso_option_list() -> FznsoOptionList<'static> {
 	unimplemented!()
 }
 
 #[unsafe(no_mangle)]
 /// Create a new solver instance
-pub extern "C" fn ipdos_solver_create() -> *mut IpdosSolver {
+pub extern "C" fn fznso_solver_create() -> *mut FznsoSolver {
 	unimplemented!()
 }
 
@@ -49,7 +49,7 @@ pub extern "C" fn ipdos_solver_create() -> *mut IpdosSolver {
 /// The pointer to the solver instance will be invalid after this function has
 /// been called.
 #[unsafe(no_mangle)]
-pub extern "C" fn ipdos_solver_free(solver: *mut IpdosSolver) {
+pub extern "C" fn fznso_solver_free(solver: *mut FznsoSolver) {
 	let _ = solver;
 	unimplemented!()
 }
@@ -58,11 +58,11 @@ pub extern "C" fn ipdos_solver_free(solver: *mut IpdosSolver) {
 /// Get the current value of an option for the solver.
 ///
 /// Note that this is only valid to be called with options named by
-/// `ipdos_option_list`.
-pub extern "C" fn ipdos_solver_option_get(
-	solver: &IpdosSolver,
+/// `fznso_option_list`.
+pub extern "C" fn fznso_solver_option_get(
+	solver: &FznsoSolver,
 	ident: *const ffi::c_char,
-) -> IpdosValueRef<'_> {
+) -> FznsoValueRef<'_> {
 	let _ = solver;
 	let _ = ident;
 	unimplemented!()
@@ -72,11 +72,11 @@ pub extern "C" fn ipdos_solver_option_get(
 /// Set the current value of an option for the solver.
 ///
 /// Note that this is only valid to be called with options named by
-/// `ipdos_option_list`, and the value must be of the correct type.
-pub extern "C" fn ipdos_solver_option_set(
-	solver: &mut IpdosSolver,
+/// `fznso_option_list`, and the value must be of the correct type.
+pub extern "C" fn fznso_solver_option_set(
+	solver: &mut FznsoSolver,
 	ident: *const ffi::c_char,
-	value: IpdosValueRef<'_>,
+	value: FznsoValueRef<'_>,
 ) -> bool {
 	let _ = solver;
 	let _ = ident;
@@ -88,10 +88,10 @@ pub extern "C" fn ipdos_solver_option_set(
 /// Read an error message from the solver.
 ///
 /// This function is expected to be called after solver interactions signal an
-/// error has occurred. For example, if [`ipdos_solver_run`] returns
-/// [`IpdosError`] or [`ipdos_solver_push`] returns `false`.
-pub extern "C" fn ipdos_solver_read_error(
-	solver: &mut IpdosSolver,
+/// error has occurred. For example, if [`fznso_solver_run`] returns
+/// [`FznsoError`] or [`fznso_solver_push`] returns `false`.
+pub extern "C" fn fznso_solver_read_error(
+	solver: &mut FznsoSolver,
 	context: &mut ffi::c_void,
 	read_error: extern "C" fn(context: &mut ffi::c_void, error: *const ffi::c_char),
 ) {
@@ -103,12 +103,12 @@ pub extern "C" fn ipdos_solver_read_error(
 
 #[unsafe(no_mangle)]
 /// Run the solver with the given model
-pub extern "C" fn ipdos_solver_run(
-	solver: &mut IpdosSolver,
-	model: IpdosModelRef,
+pub extern "C" fn fznso_solver_run(
+	solver: &mut FznsoSolver,
+	model: FznsoModelRef,
 	context: &mut ffi::c_void,
-	on_solution: extern "C" fn(context: &mut ffi::c_void, solution: IpdosSolutionRef),
-) -> IpdosStatus {
+	on_solution: extern "C" fn(context: &mut ffi::c_void, solution: FznsoSolutionRef),
+) -> FznsoStatus {
 	let _ = solver;
 	let _ = model;
 	let _ = context;
@@ -119,6 +119,6 @@ pub extern "C" fn ipdos_solver_run(
 #[unsafe(no_mangle)]
 /// Returns the list of available statistical information that can be requested
 /// from the solver and its solutions.
-pub extern "C" fn ipdos_statistic_list() -> IpdosStatisticList<'static> {
+pub extern "C" fn fznso_statistic_list() -> FznsoStatisticList<'static> {
 	unimplemented!()
 }

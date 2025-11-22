@@ -1,18 +1,14 @@
 [package]
-name = "ipdos-solver-template"
+name = "fznso"
 repository.workspace = true
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
 
-publish = false
-
-[lib]
-crate-type = ["cdylib"]
-
 [dependencies]
-ipdos-types = { path = "../ipdos-types" }
+fznso-types = { path = "../fznso-types" }
+libloading = "0.8.9"
 
 [lints]
 workspace = true

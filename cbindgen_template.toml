@@ -3,7 +3,7 @@ language = "C"
 # Wrapping header contents
 documentation_style = "c99"
 no_includes = true
-includes = ["ipdos_types.h"]
+includes = ["fznso_types.h"]
 cpp_compat = false
 usize_is_size_t = true
 
@@ -12,28 +12,28 @@ parse_deps = true
 
 [export]
 exclude = [
-  "IpdosAnnotation",
-  "IpdosConstraintList",
-  "IpdosConstraintType",
-  "IpdosModel",
-  "IpdosModelMethods",
-  "IpdosModelRef",
-  "IpdosObjective",
-  "IpdosObjectiveList",
-  "IpdosOption",
-  "IpdosOptionList",
-  "IpdosSolution",
-  "IpdosSolutionMethods",
-  "IpdosSolutionRef",
-  "IpdosSolver",
-  "IpdosStatistic",
-  "IpdosStatisticList",
-  "IpdosStatus",
-  "IpdosType",
-  "IpdosTypeBase",
-  "IpdosTypeList",
-  "IpdosValue",
-  "IpdosValueKind",
-  "IpdosValueMethods",
-  "IpdosValueRef",
+  "FznsoAnnotation",
+  "FznsoConstraintList",
+  "FznsoConstraintType",
+  "FznsoModel",
+  "FznsoModelMethods",
+  "FznsoModelRef",
+  "FznsoObjective",
+  "FznsoObjectiveList",
+  "FznsoOption",
+  "FznsoOptionList",
+  "FznsoSolution",
+  "FznsoSolutionMethods",
+  "FznsoSolutionRef",
+  "FznsoSolver",
+  "FznsoStatistic",
+  "FznsoStatisticList",
+  "FznsoStatus",
+  "FznsoType",
+  "FznsoTypeBase",
+  "FznsoTypeList",
+  "FznsoValue",
+  "FznsoValueKind",
+  "FznsoValueMethods",
+  "FznsoValueRef",
 ]

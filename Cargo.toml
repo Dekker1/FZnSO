@@ -1,11 +1,11 @@
 [workspace]
 
-members = ["rust/ipdos-solver-template","rust/ipdos-types"]
+members = ["rust/fznso","rust/fznso-solver-template","rust/fznso-types"]
 
 resolver = "2"
 
 [workspace.package]
-repository = "https://tangled.sh/@dekker.one/ipdos"
+repository = "https://tangled.org/dekker.one/FZnSO"
 version = "0.1.0"
 authors = ["Jip J. Dekker <jip@dekker.one>"]
 edition = "2024"
