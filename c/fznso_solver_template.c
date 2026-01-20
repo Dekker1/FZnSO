@@ -31,14 +31,16 @@ FznsoValueRef fznso_solver_option_get(const FznsoSolver *solver, const char *ide
 // Set the current value of an option for the solver.
 //
 // Note that this is only valid to be called with options named by
-// `fznso_option_list`, and the value must be of the correct type.
+// `fznso_option_list`, and the value must be of the correct type. This
+// function returns `true` if the option was successfully set, and `false`
+// otherwise.
 bool fznso_solver_option_set(FznsoSolver *solver, const char *ident, FznsoValueRef value);
 
 // Read an error message from the solver.
 //
 // This function is expected to be called after solver interactions signal an
 // error has occurred. For example, if [`fznso_solver_run`] returns
-// [`FznsoError`] or [`fznso_solver_push`] returns `false`.
+// [`FznsoError`] or [`fznso_solver_option_set`] returns `false`.
 void fznso_solver_read_error(FznsoSolver *solver,
                              void *context,
                              void (*read_error)(void *context, const char *error));

@@ -72,7 +72,9 @@ pub extern "C" fn fznso_solver_option_get(
 /// Set the current value of an option for the solver.
 ///
 /// Note that this is only valid to be called with options named by
-/// `fznso_option_list`, and the value must be of the correct type.
+/// `fznso_option_list`, and the value must be of the correct type. This
+/// function returns `true` if the option was successfully set, and `false`
+/// otherwise.
 pub extern "C" fn fznso_solver_option_set(
 	solver: &mut FznsoSolver,
 	ident: *const ffi::c_char,
@@ -89,11 +91,11 @@ pub extern "C" fn fznso_solver_option_set(
 ///
 /// This function is expected to be called after solver interactions signal an
 /// error has occurred. For example, if [`fznso_solver_run`] returns
-/// [`FznsoError`] or [`fznso_solver_push`] returns `false`.
+/// [`FznsoError`] or [`fznso_solver_option_set`] returns `false`.
 pub extern "C" fn fznso_solver_read_error(
 	solver: &mut FznsoSolver,
-	context: &mut ffi::c_void,
-	read_error: extern "C" fn(context: &mut ffi::c_void, error: *const ffi::c_char),
+	context: *mut ffi::c_void,
+	read_error: extern "C" fn(context: *mut ffi::c_void, error: *const ffi::c_char),
 ) {
 	let _ = solver;
 	let _ = context;
@@ -106,8 +108,8 @@ pub extern "C" fn fznso_solver_read_error(
 pub extern "C" fn fznso_solver_run(
 	solver: &mut FznsoSolver,
 	model: FznsoModelRef,
-	context: &mut ffi::c_void,
-	on_solution: extern "C" fn(context: &mut ffi::c_void, solution: FznsoSolutionRef),
+	context: *mut ffi::c_void,
+	on_solution: extern "C" fn(context: *mut ffi::c_void, solution: FznsoSolutionRef),
 ) -> FznsoStatus {
 	let _ = solver;
 	let _ = model;

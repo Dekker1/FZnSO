@@ -19,7 +19,40 @@ mod rust_interaction;
 /// this type, i.e. `(FznsoSolutionData*) my_solution`. A similar cast can be
 /// used to cast the pointer back to the original type, e.g. `(MySolution*)
 /// fznso_solution`.
-pub struct FznsoAnnotation(ffi::c_void);
+pub struct FznsoAnnotation(pub ffi::c_void);
+
+#[repr(C)]
+#[derive(Debug)]
+/// A struct containing the function pointers to interact with the
+/// [`FznsoModel`]
+pub struct FznsoAnnotationMethods {
+	/// Retrieve the identifier of an annotation.
+	///
+	/// The returned pointer can be assumed to have the the same lifetime as the
+	/// annotation reference and must be valid UTF8.
+	pub ident: extern "C" fn(ann: &FznsoAnnotation) -> *const ffi::c_char,
+	/// Retrieve the number of arguments of an annotation.
+	pub argument_len: extern "C" fn(ann: &FznsoAnnotation) -> usize,
+	/// Retrieve the value of the annotation's argument at the given index.
+	///
+	/// The `index` argument must be less than the value returned by
+	/// `annotation_argument_len` for the given annotation.
+	pub argument: extern "C" fn(ann: &FznsoAnnotation, index: usize) -> FznsoValueRef<'_>,
+}
+
+#[repr(C)]
+#[derive(Clone, Debug)]
+/// Handle for an annotation.
+///
+/// The caller can use the `methods` virtual table to interact with the
+/// annotation.
+pub struct FznsoAnnotationRef<'a> {
+	/// The data pointer of the annotation.
+	pub data: &'a FznsoAnnotation,
+	/// Reference to the structure containing the function callbacks used to
+	/// interact with the annotation.
+	pub methods: &'static FznsoAnnotationMethods,
+}
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -70,7 +103,7 @@ pub struct FznsoDecisionIdx(pub usize);
 /// In implementation of the FZnSO interface, a pointer is generally cast to
 /// this type, i.e. `(FznsoModelData*) my_model`. A similar cast can be used to
 /// cast the pointer back to the original type, e.g. `(MyModel*) fznso_model`.
-pub struct FznsoModel(ffi::c_void);
+pub struct FznsoModel(pub ffi::c_void);
 
 #[repr(C)]
 #[derive(Debug)]
@@ -81,12 +114,12 @@ pub struct FznsoModelMethods {
 	/// model.
 	///
 	/// Layers provides a way for the modelling user to add and retract
-	layer_len: extern "C" fn(model: &FznsoModel) -> usize,
+	pub layer_len: extern "C" fn(model: &FznsoModel) -> usize,
 	/// Returns the number of layers that have been unchanged since the last
 	/// call to [`fznso_solver_run`].
 	///
 	/// Unchanged layers must be consecutive starting from layer 0.
-	layer_unchanged: extern "C" fn(model: &FznsoModel) -> usize,
+	pub layer_unchanged: extern "C" fn(model: &FznsoModel) -> usize,
 	/// Returns the number of permanent layers in the model.
 	///
 	/// Permanent layers are laid out must be consecutive starting from layer 0.
@@ -97,7 +130,7 @@ pub struct FznsoModelMethods {
 	/// the solver to remove the decision variables and constraints in these
 	/// layers, if convenient. This is signaled using [`layer_redundant_len`]
 	/// and [`layer_redundant_index`].
-	layer_permanent: extern "C" fn(model: &FznsoModel) -> usize,
+	pub layer_permanent: extern "C" fn(model: &FznsoModel) -> usize,
 	/// Returns the number of permanent layers that have been marked as
 	/// redundant.
 	///
@@ -105,69 +138,70 @@ pub struct FznsoModelMethods {
 	/// layers, if convenient. Once a layer is marked as redundant, it can
 	/// forever be considered redundant. As such, the solver can assume that
 	/// the number of redundant layers only ever increases.
-	layer_redundant_len: extern "C" fn(model: &FznsoModel) -> usize,
+	pub layer_redundant_len: extern "C" fn(model: &FznsoModel) -> usize,
 	/// Returns the index of the n-th permanent layer that has been marked as
 	/// redundant.
 	///
 	/// The `n` argument must be less than the value returned by
 	/// [`layer_redundant_len`].
-	layer_redundant_index: extern "C" fn(model: &FznsoModel, n: usize) -> usize,
+	pub layer_redundant_index: extern "C" fn(model: &FznsoModel, n: usize) -> usize,
 
 	/// Retrieve the number of decisions currently contained in the model.
-	decision_len: extern "C" fn(model: &FznsoModel) -> usize,
+	pub decision_len: extern "C" fn(model: &FznsoModel) -> usize,
 	/// Retrieve the decision index of the last decision variable in the layer.
 	///
 	/// This can be equivalent to `decision_layer_end` of `layer-1` if the layer
 	/// does not add any new decisions.
-	decision_layer_end: extern "C" fn(model: &FznsoModel, layer: usize) -> usize,
+	pub decision_layer_end: extern "C" fn(model: &FznsoModel, layer: usize) -> usize,
 	/// Retrieve the domain of the given decision.
 	///
 	/// Note that the the value might have [`FznsoValueKind::FznsoValueAbsent`]
 	/// if the decision variable does not have an explicit domain.
-	decision_domain:
+	pub decision_domain:
 		extern "C" fn(model: &FznsoModel, decision: FznsoDecisionIdx) -> FznsoValueRef<'_>,
 	/// Retrieve the name of a decision variable, if it exists.
 	///
 	/// Note that names are only available for debugging purposes. Decisions are
 	/// identified using their index in the model. If the decision variable does
 	/// not have a name, this function returns a null pointer.
-	decision_name:
+	pub decision_name:
 		extern "C" fn(model: &FznsoModel, decision: FznsoDecisionIdx) -> *const ffi::c_char,
 	/// Check whether the decision variable is defined by a constraint.
-	decision_defined: extern "C" fn(model: &FznsoModel, decision: FznsoDecisionIdx) -> bool,
+	pub decision_defined: extern "C" fn(model: &FznsoModel, decision: FznsoDecisionIdx) -> bool,
 	/// Retrieve the number of annotations of a constraint.
-	decision_annotation_len: extern "C" fn(model: &FznsoModel, decision: FznsoDecisionIdx) -> usize,
+	pub decision_annotation_len:
+		extern "C" fn(model: &FznsoModel, decision: FznsoDecisionIdx) -> usize,
 	/// Retrieve the value of the constraint's annotation at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// [`decision_annotation_len`] for the given decision variable.
-	decision_annotation: extern "C" fn(
+	pub decision_annotation: extern "C" fn(
 		model: &FznsoModel,
 		decision: FznsoDecisionIdx,
 		index: usize,
-	) -> &FznsoAnnotation,
+	) -> FznsoAnnotationRef<'_>,
 
 	/// Retrieve the number of constraints currently contained in the model.
-	constraint_len: extern "C" fn(model: &FznsoModel) -> usize,
+	pub constraint_len: extern "C" fn(model: &FznsoModel) -> usize,
 	/// Retrieve the constraint index of the first new constraint in the layer.
 	///
 	/// This can be equivalent to `constraint_len` if the layer does not add any
 	/// new constraints.
-	constraint_layer_end: extern "C" fn(model: &FznsoModel) -> usize,
+	pub constraint_layer_end: extern "C" fn(model: &FznsoModel, layer: usize) -> usize,
 	/// Retrieve the identifier of a constraint.
 	///
 	/// The returned pointer can be assumed to have the the same lifetime as the
 	/// model reference and must be valid UTF8.
-	constraint_ident:
+	pub constraint_ident:
 		extern "C" fn(model: &FznsoModel, constraint: FznsoConstraintIdx) -> *const ffi::c_char,
 	/// Retrieve the number of arguments of a constraint.
-	constraint_argument_len:
+	pub constraint_argument_len:
 		extern "C" fn(model: &FznsoModel, constraint: FznsoConstraintIdx) -> usize,
 	/// Retrieve the value of the constraint's argument at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `constraint_argument_len` for the given constraint.
-	constraint_argument: extern "C" fn(
+	pub constraint_argument: extern "C" fn(
 		model: &FznsoModel,
 		constraint: FznsoConstraintIdx,
 		index: usize,
@@ -178,49 +212,37 @@ pub struct FznsoModelMethods {
 	/// This function returns a [`FznsoValue`] that is either
 	/// [`FznsoValueKind::FznsoValueDecision`] if it defined a decision variable
 	/// or [`FznsoValueKind::FznsoValueAbsent`] otherwise.
-	constraint_defines:
+	pub constraint_defines:
 		extern "C" fn(model: &FznsoModel, constraint: FznsoConstraintIdx) -> FznsoValueRef<'_>,
 	/// Retrieve the number of annotations on a constraint.
-	constraint_annotation_len:
+	pub constraint_annotation_len:
 		extern "C" fn(model: &FznsoModel, constraint: FznsoConstraintIdx) -> usize,
 	/// Retrieve the annotation on a constraint at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `constraint_annotation_len` for the given constraint.
-	constraint_annotation: extern "C" fn(
+	pub constraint_annotation: extern "C" fn(
 		model: &FznsoModel,
 		constraint: FznsoConstraintIdx,
 		index: usize,
-	) -> &FznsoAnnotation,
+	) -> FznsoAnnotationRef<'_>,
 
 	/// Request the identifier of the type of objective strategy to be used when
 	/// solving the model.
 	///
 	/// Note that the function can return a null pointer if the model does not
 	/// have an objective strategy.
-	objective_ident: extern "C" fn(model: &FznsoModel) -> *const ffi::c_char,
+	pub objective_ident: extern "C" fn(model: &FznsoModel) -> *const ffi::c_char,
 	/// Retrieve the argument of the objective strategy.
-	objective_arg: extern "C" fn(model: &FznsoModel) -> FznsoValueRef<'_>,
+	pub objective_arg: extern "C" fn(model: &FznsoModel) -> FznsoValueRef<'_>,
 	/// Retrieve the number of annotations on an objective
-	objective_annotation_len: extern "C" fn(model: &FznsoModel) -> usize,
+	pub objective_annotation_len: extern "C" fn(model: &FznsoModel) -> usize,
 	/// Retrieve the annotation on the objective at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `objective_annotation_len`.
-	objective_annotation: extern "C" fn(model: &FznsoModel, index: usize) -> &FznsoAnnotation,
-
-	/// Retrieve the identifier of an annotation.
-	///
-	/// The returned pointer can be assumed to have the the same lifetime as the
-	/// annotation reference and must be valid UTF8.
-	annotation_ident: extern "C" fn(ann: &FznsoAnnotation) -> *const ffi::c_char,
-	/// Retrieve the number of arguments of an annotation.
-	annotation_argument_len: extern "C" fn(ann: &FznsoAnnotation) -> usize,
-	/// Retrieve the value of the annotation's argument at the given index.
-	///
-	/// The `index` argument must be less than the value returned by
-	/// `annotation_argument_len` for the given annotation.
-	annotation_argument: extern "C" fn(ann: &FznsoAnnotation, index: usize) -> FznsoValueRef<'_>,
+	pub objective_annotation:
+		extern "C" fn(model: &FznsoModel, index: usize) -> FznsoAnnotationRef<'_>,
 }
 
 #[repr(C)]
@@ -231,10 +253,10 @@ pub struct FznsoModelMethods {
 /// model.
 pub struct FznsoModelRef<'a> {
 	/// The handle to the data of the model instance.
-	data: &'a FznsoModel,
+	pub data: &'a FznsoModel,
 	/// Reference to the structure containing the function callbacks used to
 	/// interact with the model.
-	methods: &'static FznsoModelMethods,
+	pub methods: &'static FznsoModelMethods,
 }
 
 #[repr(C)]
@@ -303,7 +325,7 @@ pub struct FznsoOptionList<'a> {
 /// this type, i.e. `(FznsoSolutionData*) my_solution`. A similar cast can be
 /// used to cast the pointer back to the original type, e.g. `(MySolution*)
 /// fznso_solution`.
-pub struct FznsoSolution(ffi::c_void);
+pub struct FznsoSolution(pub ffi::c_void);
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -312,10 +334,10 @@ pub struct FznsoSolution(ffi::c_void);
 pub struct FznsoSolutionMethods {
 	/// Function callback to retrieve the value assigned to a decision variable
 	/// in the solution.
-	get_value: extern "C" fn(data: &FznsoSolution, decision_index: usize) -> FznsoValueRef<'_>,
+	pub value: extern "C" fn(data: &FznsoSolution, decision_index: usize) -> FznsoValueRef<'_>,
 	/// Function callback to retrieve the statistical information made available
 	/// by the solver about the search process so far.
-	get_statistic:
+	pub statistic:
 		extern "C" fn(data: &FznsoSolution, ident: *const ffi::c_char) -> FznsoValueRef<'_>,
 }
 
@@ -323,11 +345,12 @@ pub struct FznsoSolutionMethods {
 #[derive(Clone, Debug)]
 /// Handle for a solution emitted by the solver.
 pub struct FznsoSolutionRef<'a> {
-	/// The data pointer to be the first argument of `get_value`.
-	data: &'a FznsoSolution,
+	/// The data pointer to be used as the first argument in the function
+	/// callbacks provided by the `methods` field.
+	pub data: &'a FznsoSolution,
 	/// Reference to the structure containing the function callbacks used to
 	/// interact with the solution.
-	methods: &'static FznsoSolutionMethods,
+	pub methods: &'static FznsoSolutionMethods,
 }
 
 #[repr(transparent)]
@@ -340,7 +363,7 @@ pub struct FznsoSolutionRef<'a> {
 /// this type, i.e. `(FznsoSolver*) my_solver`. A similar cast can be used to
 /// cast the pointer back to the original type, e.g. `(MySolverType*)
 /// fznso_solver`.
-pub struct FznsoSolver(ffi::c_void);
+pub struct FznsoSolver(pub ffi::c_void);
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -490,7 +513,7 @@ pub enum FznsoValueKind {
 /// [`FznsoValue`]
 pub struct FznsoValueMethods {
 	/// Function callback that returns the kind of the value.
-	kind: extern "C" fn(&FznsoValue) -> FznsoValueKind,
+	pub kind: extern "C" fn(&FznsoValue) -> FznsoValueKind,
 	/// Function callback that returns the length of the value.
 	///
 	/// In case [`FznsoValueMethods::kind`] returns
@@ -510,7 +533,7 @@ pub struct FznsoValueMethods {
 	/// return [`FznsoValueKind::FznsoValueList`],
 	/// [`FznsoValueKind::FznsoValueSetInt`], or
 	/// [`FznsoValueKind::FznsoValueSetFloat`].
-	len: extern "C" fn(&FznsoValue) -> usize,
+	pub len: extern "C" fn(&FznsoValue) -> usize,
 	/// Function callback that returns the decision variable index contained in
 	/// the value.
 	///
@@ -518,7 +541,7 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueDecision`].
-	get_decision: extern "C" fn(&FznsoValue) -> FznsoDecisionIdx,
+	pub as_decision: extern "C" fn(&FznsoValue) -> FznsoDecisionIdx,
 	/// Function callback that returns the constraint index contained in the
 	/// value.
 	///
@@ -526,14 +549,14 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueConstraint`].
-	get_constraint: extern "C" fn(&FznsoValue) -> FznsoConstraintIdx,
+	pub as_constraint: extern "C" fn(&FznsoValue) -> FznsoConstraintIdx,
 	/// Function callback that returns the integer value contained in the value.
 	///
 	/// # Panics
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueInt`].
-	get_int: extern "C" fn(&FznsoValue) -> i64,
+	pub as_int: extern "C" fn(&FznsoValue) -> i64,
 	/// Function callback that returns the floating point value contained in the
 	/// value.
 	///
@@ -541,7 +564,7 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueFloat`].
-	get_float: extern "C" fn(&FznsoValue) -> f64,
+	pub as_float: extern "C" fn(&FznsoValue) -> f64,
 	/// Function callback that returns the string pointer value contained in the
 	/// value.
 	///
@@ -549,14 +572,14 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueString`].
-	get_string: extern "C" fn(&FznsoValue) -> *const ffi::c_char,
+	pub as_string: extern "C" fn(&FznsoValue) -> *const ffi::c_char,
 	/// Function callback that returns the Boolean value contained in the value.
 	///
 	/// # Panics
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueBool`].
-	get_bool: extern "C" fn(&FznsoValue) -> bool,
+	pub as_bool: extern "C" fn(&FznsoValue) -> bool,
 	/// Function callback that returns a range from a range list representing
 	/// the integer set contained in the value.
 	///
@@ -564,7 +587,7 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueSetInt`].
-	get_range_int: extern "C" fn(&FznsoValue, index: usize) -> [i64; 2],
+	pub get_range_int: extern "C" fn(&FznsoValue, index: usize) -> [i64; 2],
 	/// Function callback that returns a range from a range list representing
 	/// the floating point set contained in the value.
 	///
@@ -572,7 +595,7 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueSetFloat`].
-	get_range_float: extern "C" fn(&FznsoValue, index: usize) -> [f64; 2],
+	pub get_range_float: extern "C" fn(&FznsoValue, index: usize) -> [f64; 2],
 	/// Function callback that returns an element from the list contained in the
 	/// value.
 	///
@@ -580,7 +603,7 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueList`].
-	get_element: extern "C" fn(&FznsoValue, index: usize) -> FznsoValueRef<'_>,
+	pub get_element: extern "C" fn(&FznsoValue, index: usize) -> FznsoValueRef<'_>,
 }
 
 #[repr(C)]
@@ -591,10 +614,10 @@ pub struct FznsoValueMethods {
 /// used decision variables.
 pub struct FznsoValueRef<'a> {
 	/// The data pointer to be the first argument of `get_value`.
-	data: &'a FznsoValue,
+	pub data: &'a FznsoValue,
 	/// Reference to the structure containing the function callbacks used to
 	/// interact with the value.
-	methods: &'static FznsoValueMethods,
+	pub methods: &'static FznsoValueMethods,
 }
 
 #[cfg(test)]

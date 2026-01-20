@@ -94,15 +94,15 @@ macro_rules! fznso_value_impls {
 impl FznsoValueRef<'_> {
 	/// Default [`FznsoValueMethods`] implementation, which can be used for
 	/// absent values or as a base for other value types.
-	const FZNSO_DEFAULT_VALUE_METHODS: &'static FznsoValueMethods = &FznsoValueMethods {
+	pub const FZNSO_DEFAULT_VALUE_METHODS: &'static FznsoValueMethods = &FznsoValueMethods {
 		kind: Self::absent_kind,
 		len: Self::no_call,
-		get_decision: Self::no_call,
-		get_constraint: Self::no_call,
-		get_int: Self::no_call,
-		get_float: Self::no_call,
-		get_string: Self::no_call,
-		get_bool: Self::no_call,
+		as_decision: Self::no_call,
+		as_constraint: Self::no_call,
+		as_int: Self::no_call,
+		as_float: Self::no_call,
+		as_string: Self::no_call,
+		as_bool: Self::no_call,
 		get_range_int: Self::no_call_idx,
 		get_range_float: Self::no_call_idx,
 		get_element: Self::no_call_idx,
@@ -144,31 +144,31 @@ impl FznsoValueRef<'_> {
 	/// Rust call to [`FznsoValueMethods::get_decision`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_decision(&self) -> FznsoDecisionIdx {
-		(self.methods.get_decision)(self.data)
+		(self.methods.as_decision)(self.data)
 	}
 
 	/// Rust call to [`FznsoValueMethods::get_constraint`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_constraint(&self) -> FznsoConstraintIdx {
-		(self.methods.get_constraint)(self.data)
+		(self.methods.as_constraint)(self.data)
 	}
 
 	/// Rust call to [`FznsoValueMethods::get_int`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_int(&self) -> i64 {
-		(self.methods.get_int)(self.data)
+		(self.methods.as_int)(self.data)
 	}
 
 	/// Rust call to [`FznsoValueMethods::get_float`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_float(&self) -> f64 {
-		(self.methods.get_float)(self.data)
+		(self.methods.as_float)(self.data)
 	}
 
 	/// Rust call to [`FznsoValueMethods::get_string`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_string(&self) -> &'_ ffi::CStr {
-		let s = (self.methods.get_string)(self.data);
+		let s = (self.methods.as_string)(self.data);
 		// SAFETY: The string is valid UTF-8 and null-terminated.
 		unsafe { ffi::CStr::from_ptr(s) }
 	}
@@ -176,7 +176,7 @@ impl FznsoValueRef<'_> {
 	/// Rust call to [`FznsoValueMethods::get_bool`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_bool(&self) -> bool {
-		(self.methods.get_bool)(self.data)
+		(self.methods.as_bool)(self.data)
 	}
 
 	/// Rust call to [`FznsoValueMethods::get_range_int`] with the
@@ -197,6 +197,30 @@ impl FznsoValueRef<'_> {
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_element(&self, idx: usize) -> FznsoValueRef<'_> {
 		(self.methods.get_element)(self.data, idx)
+	}
+}
+
+impl From<usize> for FznsoConstraintIdx {
+	fn from(value: usize) -> Self {
+		Self(value)
+	}
+}
+
+impl Into<usize> for FznsoConstraintIdx {
+	fn into(self) -> usize {
+		self.0
+	}
+}
+
+impl From<usize> for FznsoDecisionIdx {
+	fn from(value: usize) -> Self {
+		Self(value)
+	}
+}
+
+impl Into<usize> for FznsoDecisionIdx {
+	fn into(self) -> usize {
+		self.0
 	}
 }
 
@@ -225,7 +249,7 @@ impl From<&bool> for FznsoValueRef<'_> {
 		}
 		const FZNSO_BOOL_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
 			kind,
-			get_bool,
+			as_bool: get_bool,
 			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
 		};
 
@@ -252,7 +276,7 @@ impl From<&f64> for FznsoValueRef<'_> {
 		}
 		const FZNSO_F64_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
 			kind,
-			get_float,
+			as_float: get_float,
 			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
 		};
 
@@ -279,7 +303,7 @@ impl From<&i64> for FznsoValueRef<'_> {
 		}
 		const FZNSO_I64_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
 			kind,
-			get_int,
+			as_int: get_int,
 			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
 		};
 
@@ -304,7 +328,7 @@ impl From<&ffi::CStr> for FznsoValueRef<'_> {
 		}
 		const FZNSO_STR_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
 			kind,
-			get_string,
+			as_string: get_string,
 			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
 		};
 
@@ -337,7 +361,7 @@ impl From<&FznsoConstraintIdx> for FznsoValueRef<'_> {
 		}
 		const FZNSO_CONSTRAINT_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
 			kind,
-			get_constraint,
+			as_constraint: get_constraint,
 			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
 		};
 
@@ -364,7 +388,7 @@ impl From<&FznsoDecisionIdx> for FznsoValueRef<'_> {
 		}
 		const FZNSO_DECISION_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
 			kind,
-			get_decision,
+			as_decision: get_decision,
 			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
 		};
 
@@ -383,7 +407,7 @@ impl TryFrom<&FznsoValueRef<'_>> for bool {
 
 	fn try_from(value: &FznsoValueRef<'_>) -> Result<Self, Self::Error> {
 		if (value.methods.kind)(value.data) == FznsoValueKind::FznsoValueBool {
-			Ok((value.methods.get_bool)(value.data))
+			Ok((value.methods.as_bool)(value.data))
 		} else {
 			Err(())
 		}
