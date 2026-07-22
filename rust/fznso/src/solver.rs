@@ -45,10 +45,18 @@ pub trait Solver {
 
 	/// Run the solver against the given model, invoking `on_solution` for each
 	/// solution found.  Returns the completion [`Status`].
-	fn run<M, F>(&mut self, model: &M, on_solution: &mut F) -> Status
+	///
+	/// `on_message` receives non-fatal diagnostics the solver wants to report:
+	/// warnings, progress, search information. `scope` names the kind of
+	/// message and is dot-separated so that consumers can filter on a prefix
+	/// (`warn`, `warn.domain`, `progress.objective`); see the README for the
+	/// scopes solvers are encouraged to use. Failures are *not* reported here —
+	/// those surface as [`Status::Error`].
+	fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
 	where
 		M: Model,
-		F: for<'s> FnMut(&'s Self::Solution<'s>);
+		F: for<'s> FnMut(&'s Self::Solution<'s>),
+		G: FnMut(&str, Value<'_>);
 }
 
 /// What a solver implementation declares about itself, independently of any
@@ -131,11 +139,13 @@ impl Solver for DynSolver {
 		self.lib.solver_option_set(self.solver, name, value)
 	}
 
-	fn run<M, F>(&mut self, model: &M, on_solution: &mut F) -> Status
+	fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
 	where
 		M: Model,
 		F: for<'s> FnMut(&'s Self::Solution<'s>),
+		G: FnMut(&str, Value<'_>),
 	{
-		self.lib.solver_run(self.solver, model, on_solution)
+		self.lib
+			.solver_run(self.solver, model, on_solution, on_message)
 	}
 }

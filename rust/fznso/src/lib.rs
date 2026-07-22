@@ -26,10 +26,11 @@
 ///     type Solution<'s> = MySolution where MySolver: 's;
 ///     fn option_get(&self, _: &str) -> Value<'_> { todo!() }
 ///     fn option_set(&mut self, _: &str, _: Value<'_>) -> Result<(), String> { todo!() }
-///     fn run<M, F>(&mut self, _: &M, _: &mut F) -> Status
+///     fn run<M, F, G>(&mut self, _: &M, _: &mut F, _: &mut G) -> Status
 ///     where
 ///         M: Model,
 ///         F: for<'s> FnMut(&'s MySolution),
+///         G: FnMut(&str, Value<'_>),
 ///     { todo!() }
 /// }
 ///
@@ -130,13 +131,21 @@ macro_rules! fznso_export {
 				*mut ::core::ffi::c_void,
 				$crate::fznso_types::FznsoSolutionRef<'_>,
 			),
+			on_message: extern "C" fn(
+				*mut ::core::ffi::c_void,
+				$crate::fznso_types::FznsoStr<'_>,
+				$crate::Value<'_>,
+			),
 		) -> $crate::fznso_types::FznsoStatus {
 			// SAFETY: the handle was produced by fznso_solver_create from a Box<$T>.
 			let solver: &mut $T = unsafe { &mut *solver.cast::<$T>() };
 			let adapter = $crate::ModelRefAdapter::new(model);
-			let status = <$T as $crate::Solver>::run(solver, &adapter, &mut |sol| {
-				on_solution(context, $crate::solution_ref(sol));
-			});
+			let status = <$T as $crate::Solver>::run(
+				solver,
+				&adapter,
+				&mut |sol| on_solution(context, $crate::solution_ref(sol)),
+				&mut |scope: &str, value| on_message(context, scope.into(), value),
+			);
 			$crate::fznso_types::FznsoStatus::from(status)
 		}
 	};
@@ -308,11 +317,13 @@ mod tests {
 			}
 		}
 
-		fn run<M, F>(&mut self, model: &M, on_solution: &mut F) -> Status
+		fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
 		where
 			M: Model,
 			F: for<'s> FnMut(&'s Self::Solution<'s>),
+			G: FnMut(&str, Value<'_>),
 		{
+			on_message("warn", (&String::from("ignoring all constraints")).into());
 			// Read back through the model vtable, so the model handle is exercised.
 			assert_eq!(model.constraint_len(), 1);
 			assert_eq!(model.constraint_ident(FznsoConstraintIdx(0)), "int_le");
@@ -337,16 +348,40 @@ mod tests {
 
 	crate::fznso_export!(TestSolver);
 
+	/// What the two callbacks record. Both share the single `context` pointer
+	/// the ABI provides, so they must agree on its type.
+	#[derive(Default)]
+	struct Collected {
+		/// `(value, statistic)` per solution.
+		solutions: Vec<(i64, i64)>,
+		/// `(scope, payload)` per message.
+		messages: Vec<(String, String)>,
+	}
+
+	/// Collects the scopes and payloads passed to the `on_message` callback.
+	extern "C" fn collect_messages(
+		ctx: *mut ffi::c_void,
+		scope: fznso_types::FznsoStr<'_>,
+		value: Value<'_>,
+	) {
+		// SAFETY: `ctx` is the `&mut Collected` handed to `fznso_solver_run`.
+		let out = unsafe { &mut *(ctx as *mut Collected) };
+		// SAFETY: the scope is valid UTF-8 for the duration of this call.
+		let scope = unsafe { scope.as_str() }.unwrap_or_default();
+		out.messages
+			.push((scope.to_owned(), value.get_string().to_owned()));
+	}
+
 	/// Collects the values passed to the `on_solution` callback.
 	extern "C" fn collect(ctx: *mut ffi::c_void, sol: FznsoSolutionRef<'_>) {
-		// SAFETY: `ctx` is the `&mut Vec` handed to `fznso_solver_run` below.
-		let out = unsafe { &mut *(ctx as *mut Vec<(i64, i64)>) };
+		// SAFETY: `ctx` is the `&mut Collected` handed to `fznso_solver_run`.
+		let out = unsafe { &mut *(ctx as *mut Collected) };
 		let value = (sol.methods.value)(sol.data, 0).get_int();
 		let stat = {
 			let name = ffi::CString::new("nodes").unwrap();
 			(sol.methods.statistic)(sol.data, name.as_ptr()).get_int()
 		};
-		out.push((value, stat));
+		out.solutions.push((value, stat));
 	}
 
 	/// A one-decision, one-constraint model with an objective.
@@ -389,7 +424,7 @@ mod tests {
 		assert!(!unsafe { fznso_solver_option_set(solver, bogus.as_ptr(), (&1_i64).into()) });
 
 		let m = model();
-		let mut out: Vec<(i64, i64)> = Vec::new();
+		let mut out = Collected::default();
 		// SAFETY: `solver` came from `fznso_solver_create`, and `out` outlives the
 		// call.
 		let status = unsafe {
@@ -398,11 +433,16 @@ mod tests {
 				model_ref(&m),
 				(&raw mut out) as *mut ffi::c_void,
 				collect,
+				collect_messages,
 			)
 		};
 
 		assert_eq!(status, FznsoStatus::FznsoComplete);
-		assert_eq!(out, vec![(7, 42), (8, 43)]);
+		assert_eq!(out.solutions, vec![(7, 42), (8, 43)]);
+		assert_eq!(
+			out.messages,
+			vec![("warn".to_owned(), "ignoring all constraints".to_owned())]
+		);
 
 		// SAFETY: `solver` came from `fznso_solver_create` and is not used after.
 		unsafe { fznso_solver_free(solver) };

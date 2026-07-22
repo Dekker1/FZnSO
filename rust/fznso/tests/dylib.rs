@@ -116,18 +116,30 @@ fn load_and_run_a_dynamic_solver() {
 
 	let m = model();
 	let mut solutions: Vec<(i64, i64, i64)> = Vec::new();
-	let status = solver.run(&m, &mut |sol: &fznso::DynSolution<'_>| {
-		solutions.push((
-			sol.value(0).get_int(),
-			sol.value(1).get_int(),
-			sol.statistic("solutions").get_int(),
-		));
-	});
+	let mut messages: Vec<(String, String)> = Vec::new();
+	let status = solver.run(
+		&m,
+		&mut |sol: &fznso::DynSolution<'_>| {
+			solutions.push((
+				sol.value(0).get_int(),
+				sol.value(1).get_int(),
+				sol.statistic("solutions").get_int(),
+			));
+		},
+		&mut |scope: &str, value: fznso::Value<'_>| {
+			messages.push((scope.to_owned(), value.get_string().to_owned()));
+		},
+	);
 
 	assert!(matches!(status, Status::Complete), "got {status:?}");
 	// The fixture assigns each domain's lower bound, shifting the first variable
 	// by the solution index.
 	assert_eq!(solutions, vec![(3, 10, 0), (4, 10, 1), (5, 10, 2)]);
+	// The fixture warns that it ignores the model's single constraint.
+	assert_eq!(
+		messages,
+		vec![("warn".to_owned(), "ignoring 1 constraint(s)".to_owned())]
+	);
 }
 
 #[test]

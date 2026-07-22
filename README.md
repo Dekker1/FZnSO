@@ -21,13 +21,30 @@ We recommend that solvers eagerly implement the following options:
 - `time_limit` (`int`, default: `-1`): If set to a positive integer, the solver will abandon the search after the specified number of milliseconds.
 - `random_seed` (`opt int`, default: `<>`): If set to a positive integer, the solver will use the given value as the seed for its random number generator.
   Solvers are encouraged to use a variable seed for the default value.
-- `verbose` (`bool`, default: `false`): If set to `true`, the solver will print additional information about its process to `stderr`.
+- `verbose` (`bool`, default: `false`): If set to `true`, the solver will output additional information about its process using the `on_message` `"log"` scope.
 
 ### Common Constraints
 
 A solver will expose the constraints that can be used in a `FznsoModel` through `fznso_constraint_list`.
 We encourage solvers to support the constraints using the names and definitions from the [FlatZinc Builtins](https://docs.minizinc.dev/en/stable/lib-flatzinc.html).
 Other MiniZinc (global) constraints are also encouraged to be implemented, using the `fzn_` prefix.
+
+### Common Message Scopes
+
+While solving, a solver can report non-fatal diagnostics through the `on_message` callback given to `fznso_solver_run`.
+Each message carries a *scope* naming its kind and a value carrying its payload.
+Unlike options, constraints and statistics, scopes are deliberately **not** declared up front: messages are pushed to the caller rather than retrieved by name, so a consumer never needs to know a scope in advance to receive one, and can always fall back to reporting an unrecognised scope verbatim.
+
+Scopes are dot-separated from least to most specific, so that a consumer can filter on a prefix without knowing the full set.
+We recommend the following:
+
+- `log` (`string`): freeform diagnostic text, generally enabled by the `verbose` option.
+- `warn` (`string`): something about the model the user should know, but which did not prevent solving (for example an annotation the solver ignored).
+- `progress.bound` (`int` | `float`): a new dual bound on the objective.
+- `core.assumptions` (`list of var bool`): a subset of the Boolean decision variables the caller assumed, which cannot all hold at once.
+
+Note that this channel is *not* for failures.
+A solver that cannot continue returns `FznsoError` from `fznso_solver_run` and reports the reason through `fznso_solver_read_error`.
 
 ### Common Objective Strategies
 

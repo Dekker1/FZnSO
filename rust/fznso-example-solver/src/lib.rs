@@ -66,11 +66,16 @@ impl Solver for ExampleSolver {
 		}
 	}
 
-	fn run<M, F>(&mut self, model: &M, on_solution: &mut F) -> Status
+	fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
 	where
 		M: Model,
 		F: for<'s> FnMut(&'s Self::Solution<'s>),
+		G: FnMut(&str, Value<'_>),
 	{
+		// This fixture ignores the constraints, which is worth saying out loud.
+		let warning = format!("ignoring {} constraint(s)", model.constraint_len());
+		on_message("warn", (&warning).into());
+
 		// Lower bound of each decision's domain, or 0 when it has none.
 		let base: Vec<i64> = model
 			.decisions()

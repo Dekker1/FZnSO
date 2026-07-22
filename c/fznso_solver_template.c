@@ -67,6 +67,12 @@ void fznso_solver_read_error(FznsoSolver *solver,
 
 // Run the solver with the given model
 //
+// `on_message` reports non-fatal diagnostics: warnings, progress and search
+// information. `scope` names the kind of message and is dot-separated so that
+// callers can filter on a prefix. Failures are not reported here; they are
+// signalled by returning [`FznsoError`] and retrieved with
+// [`fznso_solver_read_error`].
+//
 // # Safety
 //
 // `solver` must be a pointer returned by [`fznso_solver_create`] that has not
@@ -74,7 +80,8 @@ void fznso_solver_read_error(FznsoSolver *solver,
 FznsoStatus fznso_solver_run(FznsoSolver *solver,
                              FznsoModelRef model,
                              void *context,
-                             void (*on_solution)(void *context, FznsoSolutionRef solution));
+                             void (*on_solution)(void *context, FznsoSolutionRef solution),
+                             void (*on_message)(void *context, FznsoStr scope, FznsoValueRef value));
 
 // Returns the list of available statistical information that can be requested
 // from the solver and its solutions.

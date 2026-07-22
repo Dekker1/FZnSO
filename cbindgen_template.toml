@@ -31,6 +31,7 @@ exclude = [
   "FznsoStatistic",
   "FznsoStatisticList",
   "FznsoStatus",
+  "FznsoStr",
   "FznsoType",
   "FznsoTypeBase",
   "FznsoTypeList",

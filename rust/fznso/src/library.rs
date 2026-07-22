@@ -8,7 +8,8 @@ use std::{
 
 use fznso_types::{
 	FznsoConstraintList, FznsoModelRef, FznsoObjectiveList, FznsoOptionList, FznsoPtr,
-	FznsoSolutionRef, FznsoSolver, FznsoStatisticList, FznsoStatus, FznsoTypeList, FznsoValueRef,
+	FznsoSolutionRef, FznsoSolver, FznsoStatisticList, FznsoStatus, FznsoStr, FznsoTypeList,
+	FznsoValueRef,
 };
 use libloading::Symbol;
 
@@ -63,6 +64,7 @@ pub struct Library {
 			FznsoModelRef,
 			*mut ffi::c_void,
 			extern "C" fn(*mut ffi::c_void, FznsoSolutionRef),
+			extern "C" fn(*mut ffi::c_void, FznsoStr<'_>, FznsoValueRef<'_>),
 		) -> FznsoStatus,
 	>,
 	/// Symbol for `fznso_statistic_list`.
@@ -71,16 +73,47 @@ pub struct Library {
 
 /// ABI callback passed to `fznso_solver_run`; wraps a [`FznsoSolutionRef`] in
 /// a [`DynSolution`] and forwards it to the Rust closure stored behind `ctx`.
-extern "C" fn wrap_on_solution_cb<F: for<'s> FnMut(&'s DynSolution<'s>)>(
+/// The two Rust callbacks `fznso_solver_run` needs, behind the single `context`
+/// pointer the ABI provides.
+struct RunCallbacks<'c, F, G> {
+	/// Invoked for each solution the solver reports.
+	on_solution: &'c mut F,
+	/// Invoked for each diagnostic the solver reports.
+	on_message: &'c mut G,
+}
+
+/// ABI callback passed to `fznso_solver_run`; forwards a diagnostic to the Rust
+/// closure stored behind `ctx`.
+extern "C" fn wrap_on_message_cb<F, G>(
 	ctx: *mut ffi::c_void,
-	sol: FznsoSolutionRef<'_>,
-) {
-	let ctx = ctx as *mut F;
-	// SAFETY: ctx was created from &mut F in solver_run; the callback is only
-	// invoked during that call, so F is still live.
-	let on_sol = unsafe { &mut *ctx };
+	scope: FznsoStr<'_>,
+	value: FznsoValueRef<'_>,
+) where
+	F: for<'s> FnMut(&'s DynSolution<'s>),
+	G: FnMut(&str, FznsoValueRef<'_>),
+{
+	let ctx = ctx as *mut RunCallbacks<'_, F, G>;
+	// SAFETY: ctx was created from &mut RunCallbacks in solver_run; the callback
+	// is only invoked during that call, so it is still live.
+	let cbs = unsafe { &mut *ctx };
+	// SAFETY: the solver guarantees `scope` is valid UTF-8 for this call.
+	let scope = unsafe { scope.as_str() }.unwrap_or_default();
+	(cbs.on_message)(scope, value);
+}
+
+/// ABI callback passed to `fznso_solver_run`; wraps a [`FznsoSolutionRef`] in
+/// a [`DynSolution`] and forwards it to the Rust closure stored behind `ctx`.
+extern "C" fn wrap_on_solution_cb<F, G>(ctx: *mut ffi::c_void, sol: FznsoSolutionRef<'_>)
+where
+	F: for<'s> FnMut(&'s DynSolution<'s>),
+	G: FnMut(&str, FznsoValueRef<'_>),
+{
+	let ctx = ctx as *mut RunCallbacks<'_, F, G>;
+	// SAFETY: ctx was created from &mut RunCallbacks in solver_run; the callback
+	// is only invoked during that call, so it is still live.
+	let cbs = unsafe { &mut *ctx };
 	let sol = DynSolution { inner: sol };
-	on_sol(&sol);
+	(cbs.on_solution)(&sol);
 }
 
 /// ABI callback passed to `fznso_solver_read_error`; receives a C string and
@@ -256,27 +289,34 @@ impl Library {
 	///
 	/// On [`FznsoStatus::FznsoError`] the error string is read via
 	/// `fznso_solver_read_error` and stored in [`Status::Error`].
-	pub(crate) fn solver_run<M, F>(
+	pub(crate) fn solver_run<M, F, G>(
 		&self,
 		solver: *mut FznsoSolver,
 		model: &M,
-		mut on_sol: F,
+		on_solution: &mut F,
+		on_message: &mut G,
 	) -> Status
 	where
 		M: Model,
 		F: for<'s> FnMut(&'s DynSolution<'s>),
+		G: FnMut(&str, FznsoValueRef<'_>),
 	{
 		let model = crate::model::model_ref(model);
-		let ctx: *mut F = &mut on_sol;
-		// SAFETY: ctx points to a live F on the stack; wrap_on_solution_cb casts
-		// it back to &mut F in the callback, which is only called during this
-		// function.  model is a valid FznsoModelRef for the duration of the call.
+		let mut callbacks = RunCallbacks {
+			on_solution,
+			on_message,
+		};
+		let ctx: *mut RunCallbacks<'_, F, G> = &mut callbacks;
+		// SAFETY: ctx points to live callbacks on the stack; the trampolines cast
+		// it back in the callbacks, which are only called during this function.
+		// model is a valid FznsoModelRef for the duration of the call.
 		let status = unsafe {
 			(*self.solver_run)(
 				solver,
 				model,
 				ctx as *mut ffi::c_void,
-				wrap_on_solution_cb::<F>,
+				wrap_on_solution_cb::<F, G>,
+				wrap_on_message_cb::<F, G>,
 			)
 		};
 

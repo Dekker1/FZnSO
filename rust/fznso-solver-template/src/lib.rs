@@ -10,7 +10,8 @@ use core::ffi;
 
 use fznso_types::{
 	FznsoConstraintList, FznsoModelRef, FznsoObjectiveList, FznsoOptionList, FznsoPtr,
-	FznsoSolutionRef, FznsoSolver, FznsoStatisticList, FznsoStatus, FznsoTypeList, FznsoValueRef,
+	FznsoSolutionRef, FznsoSolver, FznsoStatisticList, FznsoStatus, FznsoStr, FznsoTypeList,
+	FznsoValueRef,
 };
 
 #[unsafe(no_mangle)]
@@ -126,6 +127,12 @@ pub unsafe extern "C" fn fznso_solver_read_error(
 #[unsafe(no_mangle)]
 /// Run the solver with the given model
 ///
+/// `on_message` reports non-fatal diagnostics: warnings, progress and search
+/// information. `scope` names the kind of message and is dot-separated so that
+/// callers can filter on a prefix. Failures are not reported here; they are
+/// signalled by returning [`FznsoError`] and retrieved with
+/// [`fznso_solver_read_error`].
+///
 /// # Safety
 ///
 /// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
@@ -135,11 +142,13 @@ pub unsafe extern "C" fn fznso_solver_run(
 	model: FznsoModelRef,
 	context: *mut ffi::c_void,
 	on_solution: extern "C" fn(context: *mut ffi::c_void, solution: FznsoSolutionRef),
+	on_message: extern "C" fn(context: *mut ffi::c_void, scope: FznsoStr, value: FznsoValueRef),
 ) -> FznsoStatus {
 	let _ = solver;
 	let _ = model;
 	let _ = context;
 	let _ = on_solution;
+	let _ = on_message;
 	unimplemented!()
 }
 
