@@ -5,9 +5,9 @@
 //! problems. The goal of the interface is to easily use different solvers in a
 //! unified way, and to allow the dynamic loading of solver libraries (as DLLs).
 
-use std::{ffi, marker::PhantomData};
-
 mod rust_interaction;
+
+use std::{ffi, marker::PhantomData};
 
 #[repr(transparent)]
 #[derive(Debug)]
@@ -28,27 +28,28 @@ pub struct FznsoAnnotation(pub ffi::c_void);
 pub struct FznsoAnnotationMethods {
 	/// Retrieve the identifier of an annotation.
 	///
-	/// The returned pointer can be assumed to have the the same lifetime as the
+	/// The returned string can be assumed to have the the same lifetime as the
 	/// annotation reference and must be valid UTF8.
-	pub ident: extern "C" fn(ann: &FznsoAnnotation) -> *const ffi::c_char,
+	pub ident: extern "C" fn(ann: FznsoPtr<'_, FznsoAnnotation>) -> FznsoStr<'_>,
 	/// Retrieve the number of arguments of an annotation.
-	pub argument_len: extern "C" fn(ann: &FznsoAnnotation) -> usize,
+	pub argument_len: extern "C" fn(ann: FznsoPtr<'_, FznsoAnnotation>) -> usize,
 	/// Retrieve the value of the annotation's argument at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `annotation_argument_len` for the given annotation.
-	pub argument: extern "C" fn(ann: &FznsoAnnotation, index: usize) -> FznsoValueRef<'_>,
+	pub argument:
+		extern "C" fn(ann: FznsoPtr<'_, FznsoAnnotation>, index: usize) -> FznsoValueRef<'_>,
 }
 
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 /// Handle for an annotation.
 ///
 /// The caller can use the `methods` virtual table to interact with the
 /// annotation.
 pub struct FznsoAnnotationRef<'a> {
 	/// The data pointer of the annotation.
-	pub data: &'a FznsoAnnotation,
+	pub data: FznsoPtr<'a, FznsoAnnotation>,
 	/// Reference to the structure containing the function callbacks used to
 	/// interact with the annotation.
 	pub methods: &'static FznsoAnnotationMethods,
@@ -94,6 +95,58 @@ pub struct FznsoConstraintType<'a> {
 /// Wrapper type for the indexes that represent decision variables in the model.
 pub struct FznsoDecisionIdx(pub usize);
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+/// An inclusive `[min, max]` float range, returned by
+/// [`FznsoValueMethods::get_range_float`].
+pub struct FznsoFloatRange {
+	/// The inclusive lower bound.
+	pub min: f64,
+	/// The inclusive upper bound.
+	pub max: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+/// An inclusive `[min, max]` integer range, returned by
+/// [`FznsoValueMethods::get_range_int`].
+pub struct FznsoIntRange {
+	/// The inclusive lower bound.
+	pub min: i64,
+	/// The inclusive upper bound.
+	pub max: i64,
+}
+
+#[repr(transparent)]
+/// A pointer to an FZnSO handle, tagged with the lifetime for which the handle
+/// stays valid.
+///
+/// This is deliberately a raw pointer rather than a Rust reference, because the
+/// interface relies on two things a reference cannot do:
+///
+/// - **Casting back to the implementation's own type.** A handle is produced by
+///   casting e.g. `*const MyModel` to `*const FznsoModel`, and the callbacks
+///   cast it back before use. A `&FznsoModel` would only carry permission to
+///   access the opaque handle type itself, so reading the larger original type
+///   through it is undefined behaviour.
+/// - **Encoding a value directly in the pointer word.** Small values such as a
+///   [`FznsoDecisionIdx`] are stored *in* the pointer rather than behind it, so
+///   that handing one across the interface never requires an allocation. See
+///   [`FznsoPtr::from_addr`].
+///
+/// The `'a` lifetime costs nothing at runtime. It exists so that callback
+/// signatures state how long the handle — and anything derived from it —
+/// remains valid, which is what lets the return types of
+/// [`FznsoModelMethods`] and friends borrow from their argument.
+///
+/// cbindgen:no-export
+pub struct FznsoPtr<'a, T> {
+	/// The pointer to the handle, or a value encoded in the pointer word.
+	pub ptr: *const T,
+	/// The lifetime for which `ptr` stays valid.
+	pub lifetime: PhantomData<&'a T>,
+}
+
 #[repr(transparent)]
 #[derive(Debug)]
 /// The handle of a model instance.
@@ -114,12 +167,12 @@ pub struct FznsoModelMethods {
 	/// model.
 	///
 	/// Layers provides a way for the modelling user to add and retract
-	pub layer_len: extern "C" fn(model: &FznsoModel) -> usize,
+	pub layer_len: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Returns the number of layers that have been unchanged since the last
 	/// call to [`fznso_solver_run`].
 	///
 	/// Unchanged layers must be consecutive starting from layer 0.
-	pub layer_unchanged: extern "C" fn(model: &FznsoModel) -> usize,
+	pub layer_unchanged: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Returns the number of permanent layers in the model.
 	///
 	/// Permanent layers are laid out must be consecutive starting from layer 0.
@@ -130,7 +183,7 @@ pub struct FznsoModelMethods {
 	/// the solver to remove the decision variables and constraints in these
 	/// layers, if convenient. This is signaled using [`layer_redundant_len`]
 	/// and [`layer_redundant_index`].
-	pub layer_permanent: extern "C" fn(model: &FznsoModel) -> usize,
+	pub layer_permanent: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Returns the number of permanent layers that have been marked as
 	/// redundant.
 	///
@@ -138,71 +191,76 @@ pub struct FznsoModelMethods {
 	/// layers, if convenient. Once a layer is marked as redundant, it can
 	/// forever be considered redundant. As such, the solver can assume that
 	/// the number of redundant layers only ever increases.
-	pub layer_redundant_len: extern "C" fn(model: &FznsoModel) -> usize,
+	pub layer_redundant_len: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Returns the index of the n-th permanent layer that has been marked as
 	/// redundant.
 	///
 	/// The `n` argument must be less than the value returned by
 	/// [`layer_redundant_len`].
-	pub layer_redundant_index: extern "C" fn(model: &FznsoModel, n: usize) -> usize,
+	pub layer_redundant_index: extern "C" fn(model: FznsoPtr<'_, FznsoModel>, n: usize) -> usize,
 
 	/// Retrieve the number of decisions currently contained in the model.
-	pub decision_len: extern "C" fn(model: &FznsoModel) -> usize,
+	pub decision_len: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Retrieve the decision index of the last decision variable in the layer.
 	///
 	/// This can be equivalent to `decision_layer_end` of `layer-1` if the layer
 	/// does not add any new decisions.
-	pub decision_layer_end: extern "C" fn(model: &FznsoModel, layer: usize) -> usize,
+	pub decision_layer_end: extern "C" fn(model: FznsoPtr<'_, FznsoModel>, layer: usize) -> usize,
 	/// Retrieve the domain of the given decision.
 	///
 	/// Note that the the value might have [`FznsoValueKind::FznsoValueAbsent`]
 	/// if the decision variable does not have an explicit domain.
-	pub decision_domain:
-		extern "C" fn(model: &FznsoModel, decision: FznsoDecisionIdx) -> FznsoValueRef<'_>,
+	pub decision_domain: extern "C" fn(
+		model: FznsoPtr<'_, FznsoModel>,
+		decision: FznsoDecisionIdx,
+	) -> FznsoValueRef<'_>,
 	/// Retrieve the name of a decision variable, if it exists.
 	///
 	/// Note that names are only available for debugging purposes. Decisions are
 	/// identified using their index in the model. If the decision variable does
-	/// not have a name, this function returns a null pointer.
+	/// not have a name, the returned string has a null `ptr`.
 	pub decision_name:
-		extern "C" fn(model: &FznsoModel, decision: FznsoDecisionIdx) -> *const ffi::c_char,
+		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, decision: FznsoDecisionIdx) -> FznsoStr<'_>,
 	/// Check whether the decision variable is defined by a constraint.
-	pub decision_defined: extern "C" fn(model: &FznsoModel, decision: FznsoDecisionIdx) -> bool,
+	pub decision_defined:
+		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, decision: FznsoDecisionIdx) -> bool,
 	/// Retrieve the number of annotations of a constraint.
 	pub decision_annotation_len:
-		extern "C" fn(model: &FznsoModel, decision: FznsoDecisionIdx) -> usize,
+		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, decision: FznsoDecisionIdx) -> usize,
 	/// Retrieve the value of the constraint's annotation at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// [`decision_annotation_len`] for the given decision variable.
 	pub decision_annotation: extern "C" fn(
-		model: &FznsoModel,
+		model: FznsoPtr<'_, FznsoModel>,
 		decision: FznsoDecisionIdx,
 		index: usize,
 	) -> FznsoAnnotationRef<'_>,
 
 	/// Retrieve the number of constraints currently contained in the model.
-	pub constraint_len: extern "C" fn(model: &FznsoModel) -> usize,
+	pub constraint_len: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Retrieve the constraint index of the first new constraint in the layer.
 	///
 	/// This can be equivalent to `constraint_len` if the layer does not add any
 	/// new constraints.
-	pub constraint_layer_end: extern "C" fn(model: &FznsoModel, layer: usize) -> usize,
+	pub constraint_layer_end: extern "C" fn(model: FznsoPtr<'_, FznsoModel>, layer: usize) -> usize,
 	/// Retrieve the identifier of a constraint.
 	///
-	/// The returned pointer can be assumed to have the the same lifetime as the
+	/// The returned string can be assumed to have the the same lifetime as the
 	/// model reference and must be valid UTF8.
-	pub constraint_ident:
-		extern "C" fn(model: &FznsoModel, constraint: FznsoConstraintIdx) -> *const ffi::c_char,
+	pub constraint_ident: extern "C" fn(
+		model: FznsoPtr<'_, FznsoModel>,
+		constraint: FznsoConstraintIdx,
+	) -> FznsoStr<'_>,
 	/// Retrieve the number of arguments of a constraint.
 	pub constraint_argument_len:
-		extern "C" fn(model: &FznsoModel, constraint: FznsoConstraintIdx) -> usize,
+		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, constraint: FznsoConstraintIdx) -> usize,
 	/// Retrieve the value of the constraint's argument at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `constraint_argument_len` for the given constraint.
 	pub constraint_argument: extern "C" fn(
-		model: &FznsoModel,
+		model: FznsoPtr<'_, FznsoModel>,
 		constraint: FznsoConstraintIdx,
 		index: usize,
 	) -> FznsoValueRef<'_>,
@@ -212,17 +270,19 @@ pub struct FznsoModelMethods {
 	/// This function returns a [`FznsoValue`] that is either
 	/// [`FznsoValueKind::FznsoValueDecision`] if it defined a decision variable
 	/// or [`FznsoValueKind::FznsoValueAbsent`] otherwise.
-	pub constraint_defines:
-		extern "C" fn(model: &FznsoModel, constraint: FznsoConstraintIdx) -> FznsoValueRef<'_>,
+	pub constraint_defines: extern "C" fn(
+		model: FznsoPtr<'_, FznsoModel>,
+		constraint: FznsoConstraintIdx,
+	) -> FznsoValueRef<'_>,
 	/// Retrieve the number of annotations on a constraint.
 	pub constraint_annotation_len:
-		extern "C" fn(model: &FznsoModel, constraint: FznsoConstraintIdx) -> usize,
+		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, constraint: FznsoConstraintIdx) -> usize,
 	/// Retrieve the annotation on a constraint at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `constraint_annotation_len` for the given constraint.
 	pub constraint_annotation: extern "C" fn(
-		model: &FznsoModel,
+		model: FznsoPtr<'_, FznsoModel>,
 		constraint: FznsoConstraintIdx,
 		index: usize,
 	) -> FznsoAnnotationRef<'_>,
@@ -230,19 +290,19 @@ pub struct FznsoModelMethods {
 	/// Request the identifier of the type of objective strategy to be used when
 	/// solving the model.
 	///
-	/// Note that the function can return a null pointer if the model does not
+	/// Note that the returned string has a null `ptr` if the model does not
 	/// have an objective strategy.
-	pub objective_ident: extern "C" fn(model: &FznsoModel) -> *const ffi::c_char,
+	pub objective_ident: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> FznsoStr<'_>,
 	/// Retrieve the argument of the objective strategy.
-	pub objective_arg: extern "C" fn(model: &FznsoModel) -> FznsoValueRef<'_>,
+	pub objective_arg: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> FznsoValueRef<'_>,
 	/// Retrieve the number of annotations on an objective
-	pub objective_annotation_len: extern "C" fn(model: &FznsoModel) -> usize,
+	pub objective_annotation_len: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Retrieve the annotation on the objective at the given index.
 	///
 	/// The `index` argument must be less than the value returned by
 	/// `objective_annotation_len`.
 	pub objective_annotation:
-		extern "C" fn(model: &FznsoModel, index: usize) -> FznsoAnnotationRef<'_>,
+		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, index: usize) -> FznsoAnnotationRef<'_>,
 }
 
 #[repr(C)]
@@ -253,7 +313,7 @@ pub struct FznsoModelMethods {
 /// model.
 pub struct FznsoModelRef<'a> {
 	/// The handle to the data of the model instance.
-	pub data: &'a FznsoModel,
+	pub data: FznsoPtr<'a, FznsoModel>,
 	/// Reference to the structure containing the function callbacks used to
 	/// interact with the model.
 	pub methods: &'static FznsoModelMethods,
@@ -334,11 +394,16 @@ pub struct FznsoSolution(pub ffi::c_void);
 pub struct FznsoSolutionMethods {
 	/// Function callback to retrieve the value assigned to a decision variable
 	/// in the solution.
-	pub value: extern "C" fn(data: &FznsoSolution, decision_index: usize) -> FznsoValueRef<'_>,
+	pub value: extern "C" fn(
+		data: FznsoPtr<'_, FznsoSolution>,
+		decision_index: usize,
+	) -> FznsoValueRef<'_>,
 	/// Function callback to retrieve the statistical information made available
 	/// by the solver about the search process so far.
-	pub statistic:
-		extern "C" fn(data: &FznsoSolution, ident: *const ffi::c_char) -> FznsoValueRef<'_>,
+	pub statistic: extern "C" fn(
+		data: FznsoPtr<'_, FznsoSolution>,
+		ident: *const ffi::c_char,
+	) -> FznsoValueRef<'_>,
 }
 
 #[repr(C)]
@@ -347,7 +412,7 @@ pub struct FznsoSolutionMethods {
 pub struct FznsoSolutionRef<'a> {
 	/// The data pointer to be used as the first argument in the function
 	/// callbacks provided by the `methods` field.
-	pub data: &'a FznsoSolution,
+	pub data: FznsoPtr<'a, FznsoSolution>,
 	/// Reference to the structure containing the function callbacks used to
 	/// interact with the solution.
 	pub methods: &'static FznsoSolutionMethods,
@@ -395,6 +460,32 @@ pub struct FznsoStatisticList<'a> {
 	/// An array of statistical information definitions.
 	pub stats: *const FznsoStatistic<'a>,
 	/// The lifetime of the `stats` attribute.
+	pub lifetime: PhantomData<&'a ()>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+/// A borrowed UTF-8 string, passed across the interface as a pointer/length
+/// pair.
+///
+/// The bytes are **not** required to be null-terminated; consumers must use
+/// `len` to determine the string extent. This matches the convention used by
+/// [`FznsoValueMethods::as_string`], and allows implementations to hand out
+/// slices of strings they already hold without copying them into a
+/// null-terminated buffer.
+///
+/// A null `ptr` signals the absence of a string, which is used where a name or
+/// identifier is optional (e.g. [`FznsoModelMethods::decision_name`]).
+///
+/// The string is valid for at least as long as the handle it was obtained
+/// from.
+pub struct FznsoStr<'a> {
+	/// Pointer to the first UTF-8 byte of the string, or null if absent.
+	pub ptr: *const ffi::c_char,
+	/// The number of bytes in the string, **not** counting any trailing null
+	/// byte.
+	pub len: usize,
+	/// The lifetime for which `ptr` stays valid.
 	pub lifetime: PhantomData<&'a ()>,
 }
 
@@ -513,8 +604,14 @@ pub enum FznsoValueKind {
 /// [`FznsoValue`]
 pub struct FznsoValueMethods {
 	/// Function callback that returns the kind of the value.
-	pub kind: extern "C" fn(&FznsoValue) -> FznsoValueKind,
+	pub kind: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> FznsoValueKind,
 	/// Function callback that returns the length of the value.
+	///
+	/// In case [`FznsoValueMethods::kind`] returns
+	/// [`FznsoValueKind::FznsoValueString`], the length is the number of bytes
+	/// in the string **not** counting any trailing null byte.  The pointer
+	/// returned by [`FznsoValueMethods::as_string`] is not required to be null-
+	/// terminated; callers must use this length to determine the string extent.
 	///
 	/// In case [`FznsoValueMethods::kind`] returns
 	/// [`FznsoValueKind::FznsoValueList`], the length is the number of elements
@@ -530,10 +627,11 @@ pub struct FznsoValueMethods {
 	/// # Panics
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
-	/// return [`FznsoValueKind::FznsoValueList`],
+	/// return [`FznsoValueKind::FznsoValueString`],
+	/// [`FznsoValueKind::FznsoValueList`],
 	/// [`FznsoValueKind::FznsoValueSetInt`], or
 	/// [`FznsoValueKind::FznsoValueSetFloat`].
-	pub len: extern "C" fn(&FznsoValue) -> usize,
+	pub len: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> usize,
 	/// Function callback that returns the decision variable index contained in
 	/// the value.
 	///
@@ -541,7 +639,7 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueDecision`].
-	pub as_decision: extern "C" fn(&FznsoValue) -> FznsoDecisionIdx,
+	pub as_decision: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> FznsoDecisionIdx,
 	/// Function callback that returns the constraint index contained in the
 	/// value.
 	///
@@ -549,14 +647,14 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueConstraint`].
-	pub as_constraint: extern "C" fn(&FznsoValue) -> FznsoConstraintIdx,
+	pub as_constraint: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> FznsoConstraintIdx,
 	/// Function callback that returns the integer value contained in the value.
 	///
 	/// # Panics
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueInt`].
-	pub as_int: extern "C" fn(&FznsoValue) -> i64,
+	pub as_int: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> i64,
 	/// Function callback that returns the floating point value contained in the
 	/// value.
 	///
@@ -564,22 +662,24 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueFloat`].
-	pub as_float: extern "C" fn(&FznsoValue) -> f64,
-	/// Function callback that returns the string pointer value contained in the
-	/// value.
+	pub as_float: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> f64,
+	/// Function callback that returns a pointer to the UTF-8 bytes of a string
+	/// value.  The pointer is valid for [`FznsoValueMethods::len`] bytes and is
+	/// **not** required to be null-terminated (a trailing null byte may or may
+	/// not be present).
 	///
 	/// # Panics
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueString`].
-	pub as_string: extern "C" fn(&FznsoValue) -> *const ffi::c_char,
+	pub as_string: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> *const ffi::c_char,
 	/// Function callback that returns the Boolean value contained in the value.
 	///
 	/// # Panics
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueBool`].
-	pub as_bool: extern "C" fn(&FznsoValue) -> bool,
+	pub as_bool: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> bool,
 	/// Function callback that returns a range from a range list representing
 	/// the integer set contained in the value.
 	///
@@ -587,7 +687,7 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueSetInt`].
-	pub get_range_int: extern "C" fn(&FznsoValue, index: usize) -> [i64; 2],
+	pub get_range_int: extern "C" fn(FznsoPtr<'_, FznsoValue>, index: usize) -> FznsoIntRange,
 	/// Function callback that returns a range from a range list representing
 	/// the floating point set contained in the value.
 	///
@@ -595,7 +695,7 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueSetFloat`].
-	pub get_range_float: extern "C" fn(&FznsoValue, index: usize) -> [f64; 2],
+	pub get_range_float: extern "C" fn(FznsoPtr<'_, FznsoValue>, index: usize) -> FznsoFloatRange,
 	/// Function callback that returns an element from the list contained in the
 	/// value.
 	///
@@ -603,18 +703,18 @@ pub struct FznsoValueMethods {
 	///
 	/// This function callback may panic if [`FznsoValueMethods::kind`] does not
 	/// return [`FznsoValueKind::FznsoValueList`].
-	pub get_element: extern "C" fn(&FznsoValue, index: usize) -> FznsoValueRef<'_>,
+	pub get_element: extern "C" fn(FznsoPtr<'_, FznsoValue>, index: usize) -> FznsoValueRef<'_>,
 }
 
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 /// Handle for a value
 ///
 /// The caller can use the `get_value` function to retrieve the value of the
 /// used decision variables.
 pub struct FznsoValueRef<'a> {
 	/// The data pointer to be the first argument of `get_value`.
-	pub data: &'a FznsoValue,
+	pub data: FznsoPtr<'a, FznsoValue>,
 	/// Reference to the structure containing the function callbacks used to
 	/// interact with the value.
 	pub methods: &'static FznsoValueMethods,
@@ -622,13 +722,61 @@ pub struct FznsoValueRef<'a> {
 
 #[cfg(test)]
 mod tests {
-	use crate::{FznsoModelRef, FznsoSolutionRef, FznsoType, FznsoValueRef};
+	use crate::{
+		FznsoConstraintIdx, FznsoDecisionIdx, FznsoModelRef, FznsoPtr, FznsoSolutionRef, FznsoStr,
+		FznsoType, FznsoValueKind, FznsoValueRef,
+	};
+
+	/// The by-value conversions must not borrow their (stack-local) argument.
+	#[test]
+	fn by_value_conversions() {
+		/// Force the source value out of scope before the reference is read.
+		fn make<T: Into<FznsoValueRef<'static>>>(v: T) -> FznsoValueRef<'static> {
+			v.into()
+		}
+
+		let t = make(true);
+		assert_eq!(t.kind(), FznsoValueKind::FznsoValueBool);
+		assert!(t.get_bool());
+
+		let f = make(false);
+		assert_eq!(f.kind(), FznsoValueKind::FznsoValueBool);
+		assert!(!f.get_bool());
+
+		let d = make(FznsoDecisionIdx(7));
+		assert_eq!(d.kind(), FznsoValueKind::FznsoValueDecision);
+		assert_eq!(d.get_decision(), FznsoDecisionIdx(7));
+
+		let c = make(FznsoConstraintIdx(3));
+		assert_eq!(c.kind(), FznsoValueKind::FznsoValueConstraint);
+		assert_eq!(c.get_constraint(), FznsoConstraintIdx(3));
+	}
 
 	#[test]
 	fn memory() {
-		assert_eq!(size_of::<FznsoModelRef>(), size_of::<u128>());
-		assert_eq!(size_of::<FznsoSolutionRef>(), size_of::<u128>());
+		assert_eq!(size_of::<FznsoPtr<'_, ()>>(), size_of::<u64>());
 		assert_eq!(size_of::<FznsoType>(), size_of::<u64>());
+		assert_eq!(size_of::<FznsoStr>(), size_of::<u128>());
+		assert_eq!(size_of::<FznsoModelRef>(), size_of::<u128>());
 		assert_eq!(size_of::<FznsoValueRef>(), size_of::<u128>());
+		assert_eq!(size_of::<FznsoSolutionRef>(), size_of::<u128>());
+	}
+
+	/// Scalars must report the kind that matches the getter they support.
+	#[test]
+	fn scalar_kinds() {
+		assert_eq!(
+			FznsoValueRef::from(&1.5_f64).kind(),
+			FznsoValueKind::FznsoValueFloat
+		);
+		assert_eq!(FznsoValueRef::from(&1.5_f64).get_float(), 1.5);
+		assert_eq!(
+			FznsoValueRef::from(&1_i64).kind(),
+			FznsoValueKind::FznsoValueInt
+		);
+		assert_eq!(
+			FznsoValueRef::from(&()).kind(),
+			FznsoValueKind::FznsoValueAbsent
+		);
 	}
 }

@@ -9,8 +9,8 @@
 use core::ffi;
 
 use fznso_types::{
-	FznsoConstraintList, FznsoModelRef, FznsoObjectiveList, FznsoOptionList, FznsoSolutionRef,
-	FznsoSolver, FznsoStatisticList, FznsoStatus, FznsoTypeList, FznsoValueRef,
+	FznsoConstraintList, FznsoModelRef, FznsoObjectiveList, FznsoOptionList, FznsoPtr,
+	FznsoSolutionRef, FznsoSolver, FznsoStatisticList, FznsoStatus, FznsoTypeList, FznsoValueRef,
 };
 
 #[unsafe(no_mangle)]
@@ -48,8 +48,13 @@ pub extern "C" fn fznso_solver_create() -> *mut FznsoSolver {
 ///
 /// The pointer to the solver instance will be invalid after this function has
 /// been called.
+///
+/// # Safety
+///
+/// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
+/// yet been passed to this function.
 #[unsafe(no_mangle)]
-pub extern "C" fn fznso_solver_free(solver: *mut FznsoSolver) {
+pub unsafe extern "C" fn fznso_solver_free(solver: *mut FznsoSolver) {
 	let _ = solver;
 	unimplemented!()
 }
@@ -59,8 +64,13 @@ pub extern "C" fn fznso_solver_free(solver: *mut FznsoSolver) {
 ///
 /// Note that this is only valid to be called with options named by
 /// `fznso_option_list`.
-pub extern "C" fn fznso_solver_option_get(
-	solver: &FznsoSolver,
+///
+/// # Safety
+///
+/// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
+/// yet been passed to [`fznso_solver_free`].
+pub unsafe extern "C" fn fznso_solver_option_get(
+	solver: FznsoPtr<'_, FznsoSolver>,
 	ident: *const ffi::c_char,
 ) -> FznsoValueRef<'_> {
 	let _ = solver;
@@ -75,8 +85,13 @@ pub extern "C" fn fznso_solver_option_get(
 /// `fznso_option_list`, and the value must be of the correct type. This
 /// function returns `true` if the option was successfully set, and `false`
 /// otherwise.
-pub extern "C" fn fznso_solver_option_set(
-	solver: &mut FznsoSolver,
+///
+/// # Safety
+///
+/// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
+/// yet been passed to [`fznso_solver_free`].
+pub unsafe extern "C" fn fznso_solver_option_set(
+	solver: *mut FznsoSolver,
 	ident: *const ffi::c_char,
 	value: FznsoValueRef<'_>,
 ) -> bool {
@@ -92,8 +107,13 @@ pub extern "C" fn fznso_solver_option_set(
 /// This function is expected to be called after solver interactions signal an
 /// error has occurred. For example, if [`fznso_solver_run`] returns
 /// [`FznsoError`] or [`fznso_solver_option_set`] returns `false`.
-pub extern "C" fn fznso_solver_read_error(
-	solver: &mut FznsoSolver,
+///
+/// # Safety
+///
+/// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
+/// yet been passed to [`fznso_solver_free`].
+pub unsafe extern "C" fn fznso_solver_read_error(
+	solver: *mut FznsoSolver,
 	context: *mut ffi::c_void,
 	read_error: extern "C" fn(context: *mut ffi::c_void, error: *const ffi::c_char),
 ) {
@@ -105,8 +125,13 @@ pub extern "C" fn fznso_solver_read_error(
 
 #[unsafe(no_mangle)]
 /// Run the solver with the given model
-pub extern "C" fn fznso_solver_run(
-	solver: &mut FznsoSolver,
+///
+/// # Safety
+///
+/// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
+/// yet been passed to [`fznso_solver_free`].
+pub unsafe extern "C" fn fznso_solver_run(
+	solver: *mut FznsoSolver,
 	model: FznsoModelRef,
 	context: *mut ffi::c_void,
 	on_solution: extern "C" fn(context: *mut ffi::c_void, solution: FznsoSolutionRef),

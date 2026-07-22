@@ -3,7 +3,7 @@ language = "C"
 # Wrapping header contents
 include_guard = "fznso_types_h"
 documentation_style = "c99"
-sys_includes = ["stdbool.h", "stdint.h"]
+sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]
 no_includes = true
 usize_is_size_t = true
 
@@ -12,6 +12,8 @@ include = [
   "FznsoAnnotation",
   "FznsoConstraintList",
   "FznsoConstraintType",
+  "FznsoFloatRange",
+  "FznsoIntRange",
   "FznsoModel",
   "FznsoModelMethods",
   "FznsoModelRef",
@@ -34,3 +36,9 @@ include = [
   "FznsoValueMethods",
   "FznsoValueRef",
 ]
+
+[export.rename]
+"FznsoPtr_FznsoAnnotation" = "const FznsoAnnotation *"
+"FznsoPtr_FznsoModel" = "const FznsoModel *"
+"FznsoPtr_FznsoSolution" = "const FznsoSolution *"
+"FznsoPtr_FznsoValue" = "const FznsoValue *"

@@ -6,8 +6,15 @@ authors.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+flatzinc-serde = ["dep:flatzinc-serde", "dep:indexmap"]
+
 [dependencies]
 fznso-types = { path = "../fznso-types" }
+rangelist = { git = "https://github.com/shackle-rs/shackle.git", package = "rangelist" }
+flatzinc-serde = { git = "https://github.com/shackle-rs/shackle.git", package = "flatzinc-serde", optional = true }
+indexmap = { version = "2.12.0", optional = true }
 libloading = "0.8.9"
 
 [lints]

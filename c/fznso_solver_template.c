@@ -20,13 +20,23 @@ FznsoSolver *fznso_solver_create(void);
 //
 // The pointer to the solver instance will be invalid after this function has
 // been called.
+//
+// # Safety
+//
+// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
+// yet been passed to this function.
 void fznso_solver_free(FznsoSolver *solver);
 
 // Get the current value of an option for the solver.
 //
 // Note that this is only valid to be called with options named by
 // `fznso_option_list`.
-FznsoValueRef fznso_solver_option_get(const FznsoSolver *solver, const char *ident);
+//
+// # Safety
+//
+// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
+// yet been passed to [`fznso_solver_free`].
+FznsoValueRef fznso_solver_option_get(const FznsoSolver * solver, const char *ident);
 
 // Set the current value of an option for the solver.
 //
@@ -34,6 +44,11 @@ FznsoValueRef fznso_solver_option_get(const FznsoSolver *solver, const char *ide
 // `fznso_option_list`, and the value must be of the correct type. This
 // function returns `true` if the option was successfully set, and `false`
 // otherwise.
+//
+// # Safety
+//
+// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
+// yet been passed to [`fznso_solver_free`].
 bool fznso_solver_option_set(FznsoSolver *solver, const char *ident, FznsoValueRef value);
 
 // Read an error message from the solver.
@@ -41,11 +56,21 @@ bool fznso_solver_option_set(FznsoSolver *solver, const char *ident, FznsoValueR
 // This function is expected to be called after solver interactions signal an
 // error has occurred. For example, if [`fznso_solver_run`] returns
 // [`FznsoError`] or [`fznso_solver_option_set`] returns `false`.
+//
+// # Safety
+//
+// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
+// yet been passed to [`fznso_solver_free`].
 void fznso_solver_read_error(FznsoSolver *solver,
                              void *context,
                              void (*read_error)(void *context, const char *error));
 
 // Run the solver with the given model
+//
+// # Safety
+//
+// `solver` must be a pointer returned by [`fznso_solver_create`] that has not
+// yet been passed to [`fznso_solver_free`].
 FznsoStatus fznso_solver_run(FznsoSolver *solver,
                              FznsoModelRef model,
                              void *context,
