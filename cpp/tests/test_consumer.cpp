@@ -1,0 +1,129 @@
+// Builds a model in C++, dynamically loads a solver library and runs it.
+//
+// The model, the value vtables and the callbacks are all exercised on the C++
+// side here, so this checks that a model built through these bindings is
+// readable by a solver across the interface.
+
+#include "fznso.hpp"
+
+#include <cassert>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+namespace {
+
+/// Abort with a message unless `condition` holds.
+void check(bool condition, const char* what) {
+	if (!condition) {
+		std::fprintf(stderr, "FAILED: %s\n", what);
+		std::abort();
+	}
+}
+
+/// A model with two integer decisions whose domains start at 3 and 10.
+void build(fznso::LayeredModel& model) {
+	fznso::Decision a = model.add_decision(fznso::OwnedValue::int_range(3, 20), "a");
+	model.add_decision(fznso::OwnedValue::int_range(10, 20), "b");
+	model.add_constraint("int_le", {fznso::OwnedValue{std::int64_t{0}}, fznso::OwnedValue{a}});
+	model.set_objective("minimize", fznso::OwnedValue{a});
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+	check(argc == 2, "usage: test_consumer <path-to-solver-library>");
+	fznso::Library library{argv[1]};
+	fznso::DynSolver solver = library.create_solver();
+
+	// Options round trip across the opaque solver handle.
+	check(solver.option_get("solution_limit").as_int() == 1, "default solution_limit is 1");
+	fznso::OwnedValue three{std::int64_t{3}};
+	check(!solver.option_set("solution_limit", fznso::Value{three}).has_value(),
+	      "setting a known option succeeds");
+	check(solver.option_get("solution_limit").as_int() == 3, "solution_limit round trips");
+
+	// An unknown option is reported rather than silently accepted.
+	check(solver.option_set("no_such_option", fznso::Value{three}).has_value(),
+	      "unknown option is rejected");
+
+	fznso::LayeredModel model;
+	build(model);
+
+	std::vector<std::pair<std::int64_t, std::int64_t>> solutions;
+	std::vector<std::pair<std::string, std::string>> messages;
+	fznso::Status status = solver.run(
+		model,
+		[&](const fznso::Solution& sol) {
+			solutions.emplace_back(sol[fznso::Decision{0}].as_int(), sol[fznso::Decision{1}].as_int());
+		},
+		[&](std::string_view scope, const fznso::Value& value) {
+			messages.emplace_back(std::string{scope}, std::string{value.as_string()});
+		});
+
+	check(status.complete(), "run completes");
+	check(solutions.size() == 3, "three solutions");
+	check(solutions[0] == std::make_pair(std::int64_t{3}, std::int64_t{10}), "first solution");
+	check(solutions[2] == std::make_pair(std::int64_t{5}, std::int64_t{10}), "third solution");
+	check(messages.size() == 1, "one message");
+	check(messages[0].first == "warn", "message scope");
+	check(messages[0].second == "ignoring 1 constraint(s)", "message payload");
+
+	// A model published across the interface and read back must agree with the
+	// original, including the `defines` link that is carried in the handle word.
+	fznso::LayeredModel linked;
+	fznso::Decision y = linked.add_decision(fznso::OwnedValue::int_range(0, 9), "y");
+	fznso::Constraint c =
+		linked.add_constraint("defines_y", {fznso::OwnedValue{y}}, y,
+	                          {fznso::OwnedAnnotation{"defines_var", {fznso::OwnedValue{y}}}});
+	fznso::ModelRefAdapter back{fznso::model_ref(linked)};
+	check(back.constraint_count() == 1, "adapter sees the constraint");
+	check(back.constraint_ident(c) == "defines_y", "adapter reads the ident");
+	check(back.constraint_defines(c) == std::optional<fznso::Decision>{y}, "defines round trips");
+	check(!back.constraint_defines(fznso::Constraint{0}).has_value() == false, "defines is present");
+	check(back.decision_name(y) == std::optional<std::string_view>{"y"}, "name round trips");
+	check(back.constraint_annotation_count(c) == 1, "adapter sees the annotation");
+	check(back.constraint_annotation(c, 0).ident() == "defines_var", "annotation ident");
+	check(back.constraint_annotation(c, 0)[0].as_decision() == y, "annotation argument");
+
+	// A model with no `defines` reports absent rather than a bogus decision.
+	fznso::LayeredModel plain;
+	plain.add_decision(fznso::OwnedValue::int_range(0, 1), "z");
+	fznso::Constraint pc = plain.add_constraint("bool_eq", {});
+	fznso::ModelRefAdapter plain_back{fznso::model_ref(plain)};
+	check(!plain_back.constraint_defines(pc).has_value(), "absent defines round trips");
+
+	// The variant resolves kind and payload together.
+	fznso::LayeredModel domain_model;
+	fznso::Decision d = domain_model.add_decision(fznso::OwnedValue::int_range(-5, 5), "x");
+	FznsoModelRef raw = fznso::model_ref(domain_model);
+	fznso::Value dom = fznso::ModelRefAdapter{raw}.decision_domain(d);
+	fznso::ValueVariant domain = dom.variant();
+	check(std::holds_alternative<fznso::IntRanges>(domain), "domain is an int set");
+	fznso::IntRanges ranges = std::get<fznso::IntRanges>(domain);
+	check(ranges.size() == 1 && ranges[0] == (fznso::Range<std::int64_t>{-5, 5}), "domain range");
+
+	// Indexing a value is list indexing; `[]` on a list argument reads elements.
+	fznso::LayeredModel list_model;
+	list_model.add_constraint("array_int_element",
+	                          {std::vector<fznso::OwnedValue>{std::int64_t{10}, std::int64_t{20},
+	                                                          std::int64_t{30}}});
+	fznso::ModelRefAdapter list_back{fznso::model_ref(list_model)};
+	fznso::Value arg = list_back.constraint_argument(fznso::Constraint{0}, 0);
+	check(std::holds_alternative<fznso::ValueList>(arg.variant()), "argument is a list");
+	check(arg.size() == 3, "list length");
+	check(arg[1].as_int() == 20, "value[] indexes list elements");
+
+	// An optional argument: present takes the value's kind, empty is absent.
+	fznso::LayeredModel opt_model;
+	opt_model.add_constraint("opt_int", {fznso::OwnedValue{std::optional<std::int64_t>{42}},
+	                                     fznso::OwnedValue{std::optional<std::int64_t>{}}});
+	fznso::ModelRefAdapter opt_back{fznso::model_ref(opt_model)};
+	fznso::Value present = opt_back.constraint_argument(fznso::Constraint{0}, 0);
+	fznso::Value empty = opt_back.constraint_argument(fznso::Constraint{0}, 1);
+	check(present.kind() == FznsoValueInt && present.as_int() == 42, "present optional is its value");
+	check(empty.kind() == FznsoValueAbsent, "empty optional is absent");
+
+	std::printf("all C++ consumer checks passed\n");
+	return 0;
+}

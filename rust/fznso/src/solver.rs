@@ -9,7 +9,7 @@ use crate::{
 	StatisticList, Status, TypeList, Value,
 };
 
-/// A solver instance loaded from a shared library via [`Library`].
+/// A solver instance from a dynamically loaded library, via [`Library`].
 ///
 /// Created by [`Library::create_solver`].
 #[derive(Debug)]
@@ -23,8 +23,8 @@ pub struct DynSolver {
 /// The unified solver interface.
 ///
 /// Implement this trait to write a Rust-native solver and then use
-/// [`fznso_export`](crate::fznso_export) to expose it as a shared library
-/// loadable by [`Library`].
+/// [`fznso_export`](crate::fznso_export) to expose it as a dynamically loaded
+/// library loadable by [`Library`].
 ///
 /// See the [`fznso_export`](crate::fznso_export) documentation for a complete
 /// worked example.

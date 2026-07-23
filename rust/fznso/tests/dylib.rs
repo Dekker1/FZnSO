@@ -91,7 +91,7 @@ fn model() -> LayeredModel {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "miri cannot dlopen a shared library")]
+#[cfg_attr(miri, ignore = "miri cannot dynamically load a library")]
 fn load_and_run_a_dynamic_solver() {
 	let path = example_solver_path();
 
@@ -107,12 +107,12 @@ fn load_and_run_a_dynamic_solver() {
 		.expect("set solution_limit");
 	assert_eq!(solver.option_get("solution_limit").get_int(), 3);
 
-	// An unknown option reports an error rather than succeeding silently.
-	assert!(
-		solver
-			.option_set("no_such_option", (&1_i64).into())
-			.is_err()
-	);
+	// An unknown option reports an error, and the message set by the solver's
+	// `option_set` reaches the caller through `read_error`.
+	let error = solver
+		.option_set("no_such_option", (&1_i64).into())
+		.expect_err("unknown option is rejected");
+	assert_eq!(error, "unknown option `no_such_option`");
 
 	let m = model();
 	let mut solutions: Vec<(i64, i64, i64)> = Vec::new();
@@ -143,7 +143,7 @@ fn load_and_run_a_dynamic_solver() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "miri cannot dlopen a shared library")]
+#[cfg_attr(miri, ignore = "miri cannot dynamically load a library")]
 fn loading_a_non_solver_library_fails() {
 	// SAFETY: the path does not name a solver library; `Library::new` is
 	// expected to fail while resolving symbols rather than succeed.

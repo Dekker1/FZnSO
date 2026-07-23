@@ -8,7 +8,7 @@
 /// Generate all required C ABI functions for a [`Solver`] type.
 ///
 /// Invoke this macro once in the root of a `cdylib` crate to expose the solver
-/// as a shared library loadable by [`Library`]:
+/// as a dynamically loaded library loadable by [`Library`]:
 ///
 /// ```rust
 /// use fznso::{Model, Solution, Solver, SolverType, Status, Value};
@@ -45,10 +45,9 @@
 /// fn main() {}
 /// ```
 ///
-/// The generated `fznso_solver_read_error` is a no-op that never reports
-/// errors. Override it manually if the solver implementation needs to surface
-/// error messages (store the error on the solver and read it back from the raw
-/// pointer).
+/// A failing `option_set` or a `Status::Error` from `run` stores its message on
+/// the solver instance, and the generated `fznso_solver_read_error` returns it,
+/// so the caller sees the reason for the failure.
 #[macro_export]
 macro_rules! fznso_export {
 	($T:ty $(,)?) => {
@@ -79,14 +78,22 @@ macro_rules! fznso_export {
 
 		#[unsafe(no_mangle)]
 		pub extern "C" fn fznso_solver_create() -> *mut $crate::fznso_types::FznsoSolver {
+			// The solver is boxed alongside a string that holds the most recent
+			// error, so `fznso_solver_read_error` can return it.
 			let solver = <$T as $crate::SolverType>::new();
-			::std::boxed::Box::into_raw(::std::boxed::Box::new(solver)) as *mut _
+			let state: ::std::boxed::Box<($T, ::std::string::String)> =
+				::std::boxed::Box::new((solver, ::std::string::String::new()));
+			::std::boxed::Box::into_raw(state) as *mut _
 		}
 
 		#[unsafe(no_mangle)]
 		pub unsafe extern "C" fn fznso_solver_free(solver: *mut $crate::fznso_types::FznsoSolver) {
-			// SAFETY: the handle was produced by fznso_solver_create from a Box<$T>.
-			unsafe { ::std::mem::drop(::std::boxed::Box::from_raw(solver as *mut $T)) }
+			// SAFETY: the handle was produced by fznso_solver_create.
+			unsafe {
+				::std::mem::drop(::std::boxed::Box::from_raw(
+					solver as *mut ($T, ::std::string::String),
+				))
+			}
 		}
 
 		#[unsafe(no_mangle)]
@@ -94,11 +101,11 @@ macro_rules! fznso_export {
 			solver: $crate::fznso_types::FznsoPtr<'_, $crate::fznso_types::FznsoSolver>,
 			ident: *const ::core::ffi::c_char,
 		) -> $crate::Value<'_> {
-			// SAFETY: the handle was produced by fznso_solver_create from a Box<$T>.
-			let solver: &$T = unsafe { &*solver.cast::<$T>() };
+			// SAFETY: the handle was produced by fznso_solver_create.
+			let state: &($T, ::std::string::String) = unsafe { &*solver.cast() };
 			// SAFETY: `ident` is a null-terminated C string supplied by the caller.
 			let name = unsafe { ::core::ffi::CStr::from_ptr(ident).to_str().unwrap() };
-			<$T as $crate::Solver>::option_get(solver, name)
+			<$T as $crate::Solver>::option_get(&state.0, name)
 		}
 
 		#[unsafe(no_mangle)]
@@ -107,19 +114,30 @@ macro_rules! fznso_export {
 			ident: *const ::core::ffi::c_char,
 			value: $crate::Value<'_>,
 		) -> bool {
-			// SAFETY: the handle was produced by fznso_solver_create from a Box<$T>.
-			let solver: &mut $T = unsafe { &mut *solver.cast::<$T>() };
+			// SAFETY: the handle was produced by fznso_solver_create.
+			let state: &mut ($T, ::std::string::String) = unsafe { &mut *solver.cast() };
 			// SAFETY: `ident` is a null-terminated C string supplied by the caller.
 			let name = unsafe { ::core::ffi::CStr::from_ptr(ident).to_str().unwrap() };
-			<$T as $crate::Solver>::option_set(solver, name, value).is_ok()
+			match <$T as $crate::Solver>::option_set(&mut state.0, name, value) {
+				::std::result::Result::Ok(()) => true,
+				::std::result::Result::Err(message) => {
+					state.1 = message;
+					false
+				}
+			}
 		}
 
 		#[unsafe(no_mangle)]
 		pub unsafe extern "C" fn fznso_solver_read_error(
-			_solver: *mut $crate::fznso_types::FznsoSolver,
-			_context: *mut ::core::ffi::c_void,
-			_read_error: extern "C" fn(*mut ::core::ffi::c_void, *const ::core::ffi::c_char),
+			solver: *mut $crate::fznso_types::FznsoSolver,
+			context: *mut ::core::ffi::c_void,
+			read_error: extern "C" fn(*mut ::core::ffi::c_void, *const ::core::ffi::c_char),
 		) {
+			// SAFETY: the handle was produced by fznso_solver_create.
+			let state: &($T, ::std::string::String) = unsafe { &*solver.cast() };
+			// Interior null bytes cannot be conveyed as a C string; drop them.
+			let message = ::std::ffi::CString::new(state.1.replace('\0', "")).unwrap_or_default();
+			read_error(context, message.as_ptr());
 		}
 
 		#[unsafe(no_mangle)]
@@ -137,16 +155,23 @@ macro_rules! fznso_export {
 				$crate::Value<'_>,
 			),
 		) -> $crate::fznso_types::FznsoStatus {
-			// SAFETY: the handle was produced by fznso_solver_create from a Box<$T>.
-			let solver: &mut $T = unsafe { &mut *solver.cast::<$T>() };
+			// SAFETY: the handle was produced by fznso_solver_create.
+			let state: &mut ($T, ::std::string::String) = unsafe { &mut *solver.cast() };
 			let adapter = $crate::ModelRefAdapter::new(model);
 			let status = <$T as $crate::Solver>::run(
-				solver,
+				&mut state.0,
 				&adapter,
 				&mut |sol| on_solution(context, $crate::solution_ref(sol)),
 				&mut |scope: &str, value| on_message(context, scope.into(), value),
 			);
-			$crate::fznso_types::FznsoStatus::from(status)
+			match status {
+				$crate::Status::Complete => $crate::fznso_types::FznsoStatus::FznsoComplete,
+				$crate::Status::Incomplete => $crate::fznso_types::FznsoStatus::FznsoIncomplete,
+				$crate::Status::Error(message) => {
+					state.1 = message;
+					$crate::fznso_types::FznsoStatus::FznsoError
+				}
+			}
 		}
 	};
 }

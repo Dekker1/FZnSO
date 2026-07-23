@@ -1,4 +1,4 @@
-//! Dynamic loading of FZnSO solver shared libraries.
+//! Dynamic loading of FZnSO solver libraries.
 
 use std::{
 	ffi::{self, CStr},
@@ -15,7 +15,7 @@ use libloading::Symbol;
 
 use crate::{DynSolution, DynSolver, Model, Status};
 
-/// A loaded FZnSO solver shared library.
+/// A dynamically loaded FZnSO solver library.
 ///
 /// Holds [`libloading`] symbols for every required ABI entry point.  Normally
 /// obtained via [`Library::new`] and held behind an [`Arc`] so that
@@ -171,7 +171,7 @@ impl Library {
 		Ok(sym)
 	}
 
-	/// Load a FZnSO solver shared library from `filename`.
+	/// Dynamically load a FZnSO solver library from `filename`.
 	///
 	/// Resolves all ten required ABI symbols and returns an [`Arc`]-wrapped
 	/// [`Library`] on success.  The loading conventions follow those of
@@ -179,14 +179,14 @@ impl Library {
 	///
 	/// # Safety
 	///
-	/// The shared library at `filename` must export valid implementations of
-	/// all ten FZnSO ABI functions (`fznso_constraint_list`,
-	/// `fznso_decision_list`, `fznso_objective_list`, `fznso_option_list`,
-	/// `fznso_statistic_list`, `fznso_solver_create`, `fznso_solver_free`,
-	/// `fznso_solver_option_get`, `fznso_solver_option_set`,
-	/// `fznso_solver_read_error`, `fznso_solver_run`). Behaviour is undefined
-	/// if the library is missing any of these symbols or if the symbols do not
-	/// conform to the FZnSO ABI.
+	/// The dynamically loaded library at `filename` must export valid
+	/// implementations of all ten FZnSO ABI functions
+	/// (`fznso_constraint_list`, `fznso_decision_list`,
+	/// `fznso_objective_list`, `fznso_option_list`, `fznso_statistic_list`,
+	/// `fznso_solver_create`, `fznso_solver_free`, `fznso_solver_option_get`,
+	/// `fznso_solver_option_set`, `fznso_solver_read_error`,
+	/// `fznso_solver_run`). Behaviour is undefined if the library is missing
+	/// any of these symbols or if the symbols do not conform to the FZnSO ABI.
 	pub unsafe fn new<S: AsRef<ffi::OsStr>>(filename: S) -> Result<Arc<Self>, libloading::Error> {
 		// SAFETY: Caller guarantees the library is a valid FZnSO solver DLL.
 		let lib = unsafe {
