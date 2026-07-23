@@ -7,7 +7,7 @@ build:
     cbindgen --config cbindgen_template.toml --crate fznso-solver-template --output c/fznso_solver_template.c
 
 # Run the test suite.
-test: test-cpp
+test: test-cpp test-python
     cargo test --workspace --all-features
 
 # Exercise the C++ bindings.
@@ -43,6 +43,18 @@ test-cpp:
     else
         echo "skipping Windows cross-build: x86_64-w64-mingw32-g++ not installed (brew install mingw-w64)"
     fi
+
+# Build and test the Python bindings.
+test-python:
+    #!/usr/bin/env sh
+    set -e
+    cargo build -p fznso-example-solver
+    cd python
+    [ -d .venv ] || uv venv --python 3.12
+    . .venv/bin/activate
+    uv pip install -q maturin pytest
+    maturin develop
+    pytest -q
 
 # Check the codebase using all CI linters.
 check: check-headers

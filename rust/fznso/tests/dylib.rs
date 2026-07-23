@@ -20,7 +20,7 @@ use std::{
 	process::Command,
 };
 
-use fznso::{LayeredModel, Library, ModelValue, Solution, Solver, Status};
+use fznso::{LayeredModel, Library, OwnedValue, Solution, Solver, Status};
 // Not every dependency of the crate under test is needed here.
 use fznso_types as _;
 use libloading as _;
@@ -70,20 +70,20 @@ fn example_solver_path() -> PathBuf {
 fn model() -> LayeredModel {
 	let mut m = LayeredModel::default();
 	let a = m.add_decision(
-		ModelValue::IntSet(fznso::RangeList::from(3_i64..=20)),
+		OwnedValue::IntSet(fznso::RangeList::from(3_i64..=20)),
 		Some("a".into()),
 		false,
 		vec![],
 	);
 	let _b = m.add_decision(
-		ModelValue::IntSet(fznso::RangeList::from(10_i64..=20)),
+		OwnedValue::IntSet(fznso::RangeList::from(10_i64..=20)),
 		Some("b".into()),
 		false,
 		vec![],
 	);
 	let _ = m.add_constraint(
 		"int_le",
-		vec![ModelValue::Int(0), ModelValue::Decision(a)],
+		vec![OwnedValue::Int(0), OwnedValue::Decision(a)],
 		None,
 		vec![],
 	);

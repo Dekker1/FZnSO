@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 
 use crate::{
 	AnnotationRef, ConstraintIdx, DecisionIdx, Value,
-	model::{AnnWrapper, Annotation as ModelAnnotation, Model},
+	model::{AnnWrapper, Annotation as OwnedAnnotation, Model},
 };
 
 /// A [`FlatZinc`] model with the concrete container types used by this adapter.
@@ -349,7 +349,7 @@ impl Model for FlatZincModel {
 	}
 }
 
-impl ModelAnnotation for FznAnnotation<String> {
+impl OwnedAnnotation for FznAnnotation<String> {
 	fn argument(&self, index: usize) -> Value<'_> {
 		match self {
 			FznAnnotation::Atom(_) => (&()).into(),

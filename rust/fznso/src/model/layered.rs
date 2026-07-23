@@ -18,24 +18,24 @@ struct ConstraintData {
 	/// The constraint identifier (e.g. `"int_le"`).
 	ident: String,
 	/// The constraint's argument values.
-	arguments: Vec<ModelValue>,
+	arguments: Vec<OwnedValue>,
 	/// Decision variable defined by this constraint, if any.
 	defines: Option<DecisionIdx>,
 	/// Annotations attached to this constraint.
-	annotations: Vec<ModelAnnotation>,
+	annotations: Vec<OwnedAnnotation>,
 }
 
 /// Stores the data for a single decision variable within a layer.
 #[derive(Clone, Debug, Default)]
 struct DecisionData {
 	/// The domain of the decision variable.
-	domain: ModelValue,
+	domain: OwnedValue,
 	/// Optional name of the decision variable.
 	name: Option<String>,
 	/// Whether this variable is defined by some constraint.
 	defined: bool,
 	/// Annotations attached to this decision variable.
-	annotations: Vec<ModelAnnotation>,
+	annotations: Vec<OwnedAnnotation>,
 }
 
 /// Decisions and constraints belonging to one model layer.
@@ -63,18 +63,18 @@ struct LayerData {
 /// # Example
 ///
 /// ```rust
-/// use fznso::{LayeredModel, ModelValue};
+/// use fznso::{LayeredModel, OwnedValue};
 /// use rangelist::RangeList;
 ///
 /// let mut m = LayeredModel::default();
 /// let d = m.add_decision(
-///     ModelValue::IntSet(RangeList::from(-10i64..=10)),
+///     OwnedValue::IntSet(RangeList::from(-10i64..=10)),
 ///     Some("x".into()),
 ///     false,
 ///     vec![],
 /// );
-/// m.add_constraint("int_le", vec![ModelValue::Int(-10), ModelValue::Decision(d)], None, vec![]);
-/// m.set_objective(Some("minimize"), ModelValue::Decision(d), vec![]);
+/// m.add_constraint("int_le", vec![OwnedValue::Int(-10), OwnedValue::Decision(d)], None, vec![]);
+/// m.set_objective(Some("minimize"), OwnedValue::Decision(d), vec![]);
 /// ```
 ///
 /// [`mark_permanent`]: LayeredModel::mark_permanent
@@ -94,18 +94,18 @@ pub struct LayeredModel {
 
 /// An annotation for use with [`SimpleModel`].
 #[derive(Clone, Debug)]
-pub struct ModelAnnotation {
+pub struct OwnedAnnotation {
 	/// The annotation identifier (e.g. `"output_var"`).
 	ident: String,
 	/// The annotation's argument values.
-	arguments: Vec<ModelValue>,
+	arguments: Vec<OwnedValue>,
 }
 
 /// An owned value for use with [`SimpleModel`].
 ///
 /// Mirrors all variants of [`FznsoValueKind`] but owns the contained data.
 #[derive(Clone, Debug, Default)]
-pub enum ModelValue {
+pub enum OwnedValue {
 	/// The absent / null value.
 	#[default]
 	Absent,
@@ -126,7 +126,7 @@ pub enum ModelValue {
 	/// Float set as a list of inclusive `[min, max]` ranges.
 	FloatSet(RangeList<f64>),
 	/// An ordered list of nested values.
-	List(Vec<ModelValue>),
+	List(Vec<OwnedValue>),
 }
 
 /// The model's single global objective.
@@ -135,9 +135,9 @@ struct ObjectiveData {
 	/// Objective identifier (e.g. `"minimize"`), empty for satisfaction.
 	ident: String,
 	/// The objective argument.
-	arg: ModelValue,
+	arg: OwnedValue,
 	/// Annotations on the objective.
-	annotations: Vec<ModelAnnotation>,
+	annotations: Vec<OwnedAnnotation>,
 }
 
 /// Build a [`FznsoValueRef`] for a float range list.
@@ -202,22 +202,22 @@ fn int_range_list_value(rl: &RangeList<i64>) -> FznsoValueRef<'_> {
 	}
 }
 
-/// Build a [`FznsoValueRef`] for a list of [`ModelValue`] items.
-fn list_value(items: &Vec<ModelValue>) -> FznsoValueRef<'_> {
+/// Build a [`FznsoValueRef`] for a list of [`OwnedValue`] items.
+fn list_value(items: &Vec<OwnedValue>) -> FznsoValueRef<'_> {
 	extern "C" fn kind(_: FznsoPtr<'_, FznsoValue>) -> FznsoValueKind {
 		FznsoValueKind::FznsoValueList
 	}
 	extern "C" fn len(val: FznsoPtr<'_, FznsoValue>) -> usize {
-		// SAFETY: val was created from &Vec<ModelValue> via transmute in list_value.
-		let val: &Vec<ModelValue> = unsafe { &*val.cast() };
+		// SAFETY: val was created from &Vec<OwnedValue> via transmute in list_value.
+		let val: &Vec<OwnedValue> = unsafe { &*val.cast() };
 		val.len()
 	}
 	extern "C" fn get_element<'a>(
 		val: FznsoPtr<'_, FznsoValue>,
 		index: usize,
 	) -> FznsoValueRef<'a> {
-		// SAFETY: val was created from &Vec<ModelValue> via transmute in list_value.
-		let val: &Vec<ModelValue> = unsafe { &*val.cast() };
+		// SAFETY: val was created from &Vec<OwnedValue> via transmute in list_value.
+		let val: &Vec<OwnedValue> = unsafe { &*val.cast() };
 		FznsoValueRef::from(&val[index])
 	}
 	const METHODS: &FznsoValueMethods = &FznsoValueMethods {
@@ -232,19 +232,19 @@ fn list_value(items: &Vec<ModelValue>) -> FznsoValueRef<'_> {
 	}
 }
 
-impl<'a> From<&'a ModelValue> for FznsoValueRef<'a> {
-	fn from(val: &'a ModelValue) -> Self {
+impl<'a> From<&'a OwnedValue> for FznsoValueRef<'a> {
+	fn from(val: &'a OwnedValue) -> Self {
 		match val {
-			ModelValue::Absent => (&()).into(),
-			ModelValue::Bool(b) => b.into(),
-			ModelValue::Int(i) => i.into(),
-			ModelValue::Float(f) => f.into(),
-			ModelValue::String(s) => s.into(),
-			ModelValue::Decision(d) => d.into(),
-			ModelValue::Constraint(c) => c.into(),
-			ModelValue::IntSet(ranges) => int_range_list_value(ranges),
-			ModelValue::FloatSet(ranges) => float_range_list_value(ranges),
-			ModelValue::List(items) => list_value(items),
+			OwnedValue::Absent => (&()).into(),
+			OwnedValue::Bool(b) => b.into(),
+			OwnedValue::Int(i) => i.into(),
+			OwnedValue::Float(f) => f.into(),
+			OwnedValue::String(s) => s.into(),
+			OwnedValue::Decision(d) => d.into(),
+			OwnedValue::Constraint(c) => c.into(),
+			OwnedValue::IntSet(ranges) => int_range_list_value(ranges),
+			OwnedValue::FloatSet(ranges) => float_range_list_value(ranges),
+			OwnedValue::List(items) => list_value(items),
 		}
 	}
 }
@@ -258,9 +258,9 @@ impl LayeredModel {
 	pub fn add_constraint(
 		&mut self,
 		ident: impl Into<String>,
-		arguments: Vec<ModelValue>,
+		arguments: Vec<OwnedValue>,
 		defines: Option<DecisionIdx>,
-		annotations: Vec<ModelAnnotation>,
+		annotations: Vec<OwnedAnnotation>,
 	) -> ConstraintIdx {
 		assert!(!self.layers.is_empty(), "no layers in model");
 		let global_idx = self.constraint_len();
@@ -284,10 +284,10 @@ impl LayeredModel {
 	/// Panics if there are no layers.
 	pub fn add_decision(
 		&mut self,
-		domain: ModelValue,
+		domain: OwnedValue,
 		name: Option<String>,
 		defined: bool,
-		annotations: Vec<ModelAnnotation>,
+		annotations: Vec<OwnedAnnotation>,
 	) -> DecisionIdx {
 		assert!(!self.layers.is_empty(), "no layers in model");
 		let global_idx = self.decision_len();
@@ -377,8 +377,8 @@ impl LayeredModel {
 	pub fn set_objective(
 		&mut self,
 		ident: Option<impl Into<String>>,
-		arg: ModelValue,
-		annotations: Vec<ModelAnnotation>,
+		arg: OwnedValue,
+		annotations: Vec<OwnedAnnotation>,
 	) {
 		self.objective = ObjectiveData {
 			ident: ident.map(Into::into).unwrap_or_default(),
@@ -515,10 +515,10 @@ impl Model for LayeredModel {
 	}
 }
 
-impl ModelAnnotation {
+impl OwnedAnnotation {
 	/// Create a new annotation with the given identifier (must be valid UTF-8
 	/// and contain no interior null bytes) and arguments.
-	pub fn new(ident: impl Into<String>, arguments: Vec<ModelValue>) -> Self {
+	pub fn new(ident: impl Into<String>, arguments: Vec<OwnedValue>) -> Self {
 		Self {
 			ident: ident.into(),
 			arguments,
@@ -526,26 +526,26 @@ impl ModelAnnotation {
 	}
 }
 
-impl ModelAnnotation {
+impl OwnedAnnotation {
 	/// Build a [`FznsoAnnotationRef`] that borrows this annotation via a local
 	/// vtable.  Used when returning annotations from the [`Model`] impl below.
 	fn as_fznso_ann_ref(&self) -> FznsoAnnotationRef<'_> {
 		extern "C" fn ident<'a>(ptr: FznsoPtr<'_, FznsoAnnotation>) -> FznsoStr<'a> {
-			// SAFETY: ptr was created from &ModelAnnotation via transmute below.
-			let ann: &ModelAnnotation = unsafe { &*ptr.cast() };
+			// SAFETY: ptr was created from &OwnedAnnotation via transmute below.
+			let ann: &OwnedAnnotation = unsafe { &*ptr.cast() };
 			ann.ident.as_str().into()
 		}
 		extern "C" fn argument_len(ptr: FznsoPtr<'_, FznsoAnnotation>) -> usize {
-			// SAFETY: ptr was created from &ModelAnnotation via transmute below.
-			let ann: &ModelAnnotation = unsafe { &*ptr.cast() };
+			// SAFETY: ptr was created from &OwnedAnnotation via transmute below.
+			let ann: &OwnedAnnotation = unsafe { &*ptr.cast() };
 			ann.arguments.len()
 		}
 		extern "C" fn argument<'a>(
 			ptr: FznsoPtr<'a, FznsoAnnotation>,
 			index: usize,
 		) -> FznsoValueRef<'a> {
-			// SAFETY: ptr was created from &ModelAnnotation via transmute below.
-			let ann: &ModelAnnotation = unsafe { &*ptr.cast() };
+			// SAFETY: ptr was created from &OwnedAnnotation via transmute below.
+			let ann: &OwnedAnnotation = unsafe { &*ptr.cast() };
 			ann.arguments
 				.get(index)
 				.map(FznsoValueRef::from)
@@ -563,7 +563,7 @@ impl ModelAnnotation {
 	}
 }
 
-impl Annotation for ModelAnnotation {
+impl Annotation for OwnedAnnotation {
 	fn argument(&self, index: usize) -> Value<'_> {
 		self.arguments
 			.get(index)

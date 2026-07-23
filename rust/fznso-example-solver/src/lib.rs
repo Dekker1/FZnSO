@@ -76,6 +76,29 @@ impl Solver for ExampleSolver {
 		let warning = format!("ignoring {} constraint(s)", model.constraint_len());
 		on_message("warn", (&warning).into());
 
+		// Report the per-layer decision counts when the model has more than one
+		// layer, so tests can observe that the layer structure came through.
+		if model.layer_len() > 1 {
+			let counts: Vec<String> = model
+				.layers()
+				.map(|layer| layer.decisions().count().to_string())
+				.collect();
+			on_message("layers", (&counts.join(",")).into());
+
+			// Also read back the model's strings and a constraint argument, so
+			// tests can observe those cross the interface too.
+			let name0 = model
+				.decision(fznso::DecisionIdx::from(0))
+				.name()
+				.unwrap_or("");
+			let mut summary = format!("obj={};name0={}", model.objective().ident(), name0);
+			if model.constraint_len() > 0 {
+				let con = model.constraint(fznso::ConstraintIdx::from(0));
+				summary += &format!(";con0={}({})", con.ident(), con.argument(0).get_int());
+			}
+			on_message("model", (&summary).into());
+		}
+
 		// Lower bound of each decision's domain, or 0 when it has none.
 		let base: Vec<i64> = model
 			.decisions()

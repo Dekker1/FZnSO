@@ -9,6 +9,8 @@ members = [
 
 resolver = "2"
 
+exclude = ["python"]
+
 [workspace.package]
 repository = "https://tangled.org/dekker.one/FZnSO"
 version = "0.1.0"

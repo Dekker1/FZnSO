@@ -886,7 +886,7 @@ mod tests {
 	use rangelist::RangeList;
 
 	use crate::{
-		LayeredModel, Model, ModelAnnotation, ModelValue,
+		LayeredModel, Model, OwnedAnnotation, OwnedValue,
 		model::{ModelWrapper, adapter::ModelRefAdapter},
 	};
 
@@ -895,20 +895,20 @@ mod tests {
 	fn sample() -> LayeredModel {
 		let mut m = LayeredModel::default();
 		let x = m.add_decision(
-			ModelValue::IntSet(RangeList::from(-10_i64..=10)),
+			OwnedValue::IntSet(RangeList::from(-10_i64..=10)),
 			Some("x".into()),
 			false,
-			vec![ModelAnnotation::new("output_var", vec![])],
+			vec![OwnedAnnotation::new("output_var", vec![])],
 		);
 		let y = m.add_decision(
-			ModelValue::FloatSet(RangeList::from(0.5_f64..=2.5)),
+			OwnedValue::FloatSet(RangeList::from(0.5_f64..=2.5)),
 			None,
 			true,
 			vec![],
 		);
 		let _ = m.add_constraint(
 			"int_le",
-			vec![ModelValue::Int(-10), ModelValue::Decision(x)],
+			vec![OwnedValue::Int(-10), OwnedValue::Decision(x)],
 			None,
 			vec![],
 		);
@@ -918,20 +918,20 @@ mod tests {
 		let _ = m.add_constraint(
 			"float_mixed",
 			vec![
-				ModelValue::Float(1.5),
-				ModelValue::Bool(true),
-				ModelValue::Bool(false),
-				ModelValue::String("hello".into()),
-				ModelValue::List(vec![ModelValue::Int(1), ModelValue::Decision(y)]),
-				ModelValue::Absent,
+				OwnedValue::Float(1.5),
+				OwnedValue::Bool(true),
+				OwnedValue::Bool(false),
+				OwnedValue::String("hello".into()),
+				OwnedValue::List(vec![OwnedValue::Int(1), OwnedValue::Decision(y)]),
+				OwnedValue::Absent,
 			],
 			Some(y),
-			vec![ModelAnnotation::new(
+			vec![OwnedAnnotation::new(
 				"defines_var",
-				vec![ModelValue::Decision(y)],
+				vec![OwnedValue::Decision(y)],
 			)],
 		);
-		m.set_objective(Some("minimize"), ModelValue::Decision(x), vec![]);
+		m.set_objective(Some("minimize"), OwnedValue::Decision(x), vec![]);
 		m
 	}
 

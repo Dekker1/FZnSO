@@ -196,7 +196,7 @@ pub use crate::{
 	library::Library,
 	model::{
 		Annotation, ConstraintView, DecisionView, LayerView, Model, ObjectiveView, ann_ref,
-		layered::{LayeredModel, ModelAnnotation, ModelValue},
+		layered::{LayeredModel, OwnedAnnotation, OwnedValue},
 	},
 	solution::{DynSolution, Solution},
 	solver::{DynSolver, Solver, SolverType},
@@ -291,7 +291,7 @@ mod tests {
 	};
 
 	use crate::{
-		LayeredModel, Model, ModelValue, Solution, Solver, SolverType, Status, Value,
+		LayeredModel, Model, OwnedValue, Solution, Solver, SolverType, Status, Value,
 		model::model_ref,
 	};
 
@@ -413,18 +413,18 @@ mod tests {
 	fn model() -> LayeredModel {
 		let mut m = LayeredModel::default();
 		let x = m.add_decision(
-			ModelValue::IntSet(crate::RangeList::from(0_i64..=10)),
+			OwnedValue::IntSet(crate::RangeList::from(0_i64..=10)),
 			Some("x".into()),
 			false,
 			vec![],
 		);
 		let _ = m.add_constraint(
 			"int_le",
-			vec![ModelValue::Int(0), ModelValue::Decision(x)],
+			vec![OwnedValue::Int(0), OwnedValue::Decision(x)],
 			None,
 			vec![],
 		);
-		m.set_objective(Some("minimize"), ModelValue::Decision(x), vec![]);
+		m.set_objective(Some("minimize"), OwnedValue::Decision(x), vec![]);
 		m
 	}
 
