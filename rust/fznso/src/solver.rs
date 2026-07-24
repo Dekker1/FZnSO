@@ -66,9 +66,9 @@ pub trait Solver {
 /// describes what the solver *type* supports, which is fixed at compile time.
 /// The C entry points for these (`fznso_constraint_list` and friends) take no
 /// solver instance, which is why they live here rather than on [`Solver`], and
-/// why [`fznso_export`](crate::fznso_export) needs nothing but the type that
-/// implements this trait — `fznso_export!(MySolver)`. See that macro's
-/// documentation for a worked example.
+/// why [`fznso_export`](crate::fznso_export) needs only the type that
+/// implements this trait and the library's name — `fznso_export!(MySolver,
+/// "mysolver")`. See that macro's documentation for a worked example.
 ///
 /// A [`DynSolver`] deliberately does *not* implement this trait: a solver
 /// loaded at runtime cannot answer these statically, so it exposes the same

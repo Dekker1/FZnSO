@@ -25,29 +25,29 @@ pub struct Library {
 	/// The underlying dynamic library handle; kept alive as long as this struct
 	/// lives.
 	_lib: libloading::Library,
-	/// Symbol for `fznso_constraint_list`.
+	/// Symbol for `fznso_<name>_constraint_list`.
 	constraint_list: Symbol<'static, unsafe extern "C" fn() -> FznsoConstraintList<'static>>,
-	/// Symbol for `fznso_decision_list`.
+	/// Symbol for `fznso_<name>_decision_list`.
 	decision_list: Symbol<'static, unsafe extern "C" fn() -> FznsoTypeList<'static>>,
-	/// Symbol for `fznso_objective_list`.
+	/// Symbol for `fznso_<name>_objective_list`.
 	objective_list: Symbol<'static, unsafe extern "C" fn() -> FznsoObjectiveList<'static>>,
-	/// Symbol for `fznso_option_list`.
+	/// Symbol for `fznso_<name>_option_list`.
 	option_list: Symbol<'static, unsafe extern "C" fn() -> FznsoOptionList<'static>>,
-	/// Symbol for `fznso_solver_create`.
+	/// Symbol for `fznso_<name>_solver_create`.
 	solver_create: Symbol<'static, unsafe extern "C" fn() -> *mut FznsoSolver>,
-	/// Symbol for `fznso_solver_free`.
+	/// Symbol for `fznso_<name>_solver_free`.
 	solver_free: Symbol<'static, unsafe extern "C" fn(*mut FznsoSolver)>,
-	/// Symbol for `fznso_solver_option_get`.
+	/// Symbol for `fznso_<name>_solver_option_get`.
 	solver_option_get: Symbol<
 		'static,
 		unsafe extern "C" fn(FznsoPtr<'_, FznsoSolver>, *const ffi::c_char) -> FznsoValueRef<'_>,
 	>,
-	/// Symbol for `fznso_solver_option_set`.
+	/// Symbol for `fznso_<name>_solver_option_set`.
 	solver_option_set: Symbol<
 		'static,
 		unsafe extern "C" fn(*mut FznsoSolver, *const ffi::c_char, FznsoValueRef<'_>) -> bool,
 	>,
-	/// Symbol for `fznso_solver_read_error`.
+	/// Symbol for `fznso_<name>_solver_read_error`.
 	solver_read_error: Symbol<
 		'static,
 		unsafe extern "C" fn(
@@ -56,7 +56,7 @@ pub struct Library {
 			extern "C" fn(*mut ffi::c_void, *const ffi::c_char),
 		),
 	>,
-	/// Symbol for `fznso_solver_run`.
+	/// Symbol for `fznso_<name>_solver_run`.
 	solver_run: Symbol<
 		'static,
 		unsafe extern "C" fn(
@@ -67,7 +67,7 @@ pub struct Library {
 			extern "C" fn(*mut ffi::c_void, FznsoStr<'_>, FznsoValueRef<'_>),
 		) -> FznsoStatus,
 	>,
-	/// Symbol for `fznso_statistic_list`.
+	/// Symbol for `fznso_<name>_statistic_list`.
 	statistic_list: Symbol<'static, unsafe extern "C" fn() -> FznsoStatisticList<'static>>,
 }
 
@@ -128,6 +128,21 @@ extern "C" fn wrap_read_error_cb<F: FnMut(&str)>(ctx: *mut ffi::c_void, msg: *co
 	read_err(msg);
 }
 
+/// Derive a solver's library name from its file name, borrowing from it.
+///
+/// Strips a leading `lib` and everything from the first `.`, so
+/// `libgecode.6.2.1.dylib`, `libgecode.so.6` and `gecode.dll` all yield
+/// `gecode`. A non-UTF-8 file name yields `""` — it cannot name ASCII symbols,
+/// so loading then fails.
+fn name_from_filename(filename: &ffi::OsStr) -> &str {
+	let base = std::path::Path::new(filename)
+		.file_name()
+		.and_then(|n| n.to_str())
+		.unwrap_or("");
+	let name = base.strip_prefix("lib").unwrap_or(base);
+	name.split('.').next().unwrap_or(name)
+}
+
 impl Library {
 	/// Get the list of constraints supported by solvers from this library.
 	pub fn constraint_types(&self) -> FznsoConstraintList<'_> {
@@ -173,35 +188,42 @@ impl Library {
 
 	/// Dynamically load a FZnSO solver library from `filename`.
 	///
-	/// Resolves all ten required ABI symbols and returns an [`Arc`]-wrapped
-	/// [`Library`] on success.  The loading conventions follow those of
-	/// [`libloading::Library::new`].
+	/// The solver's entry points are `fznso_<name>_...`, where `<name>` is
+	/// recovered from the file name: the base name with any leading `lib` and
+	/// everything from the first `.` removed. So `libgecode.so.6`,
+	/// `libgecode.6.2.1.dylib` and `gecode.dll` all load a solver whose entry
+	/// points are prefixed `fznso_gecode_`. This is the only supported naming,
+	/// so the file name and the exported symbols must agree.
 	///
 	/// # Safety
 	///
-	/// The dynamically loaded library at `filename` must export valid
-	/// implementations of all ten FZnSO ABI functions
-	/// (`fznso_constraint_list`, `fznso_decision_list`,
-	/// `fznso_objective_list`, `fznso_option_list`, `fznso_statistic_list`,
-	/// `fznso_solver_create`, `fznso_solver_free`, `fznso_solver_option_get`,
-	/// `fznso_solver_option_set`, `fznso_solver_read_error`,
-	/// `fznso_solver_run`). Behaviour is undefined if the library is missing
-	/// any of these symbols or if the symbols do not conform to the FZnSO ABI.
+	/// The library at `filename` must export valid implementations of all
+	/// eleven FZnSO ABI functions under the `fznso_<name>_` prefix
+	/// (`fznso_<name>_constraint_list`, `fznso_<name>_decision_list`,
+	/// `fznso_<name>_objective_list`, `fznso_<name>_option_list`,
+	/// `fznso_<name>_statistic_list`, `fznso_<name>_solver_create`,
+	/// `fznso_<name>_solver_free`, `fznso_<name>_solver_option_get`,
+	/// `fznso_<name>_solver_option_set`, `fznso_<name>_solver_read_error`,
+	/// `fznso_<name>_solver_run`). Behaviour is undefined if any symbol is
+	/// missing or does not conform to the FZnSO ABI.
 	pub unsafe fn new<S: AsRef<ffi::OsStr>>(filename: S) -> Result<Arc<Self>, libloading::Error> {
+		let filename = filename.as_ref();
+		let name = name_from_filename(filename);
 		// SAFETY: Caller guarantees the library is a valid FZnSO solver DLL.
 		let lib = unsafe {
 			let lib = libloading::Library::new(filename)?;
-			let constraint_list = Self::get_symbol(&lib, b"fznso_constraint_list\0")?;
-			let decision_list = Self::get_symbol(&lib, b"fznso_decision_list\0")?;
-			let objective_list = Self::get_symbol(&lib, b"fznso_objective_list\0")?;
-			let option_list = Self::get_symbol(&lib, b"fznso_option_list\0")?;
-			let solver_create = Self::get_symbol(&lib, b"fznso_solver_create\0")?;
-			let solver_free = Self::get_symbol(&lib, b"fznso_solver_free\0")?;
-			let solver_option_get = Self::get_symbol(&lib, b"fznso_solver_option_get\0")?;
-			let solver_option_set = Self::get_symbol(&lib, b"fznso_solver_option_set\0")?;
-			let solver_read_error = Self::get_symbol(&lib, b"fznso_solver_read_error\0")?;
-			let solver_run = Self::get_symbol(&lib, b"fznso_solver_run\0")?;
-			let statistic_list = Self::get_symbol(&lib, b"fznso_statistic_list\0")?;
+			let sym = |suffix: &str| format!("fznso_{name}{suffix}\0");
+			let constraint_list = Self::get_symbol(&lib, sym("_constraint_list").as_bytes())?;
+			let decision_list = Self::get_symbol(&lib, sym("_decision_list").as_bytes())?;
+			let objective_list = Self::get_symbol(&lib, sym("_objective_list").as_bytes())?;
+			let option_list = Self::get_symbol(&lib, sym("_option_list").as_bytes())?;
+			let solver_create = Self::get_symbol(&lib, sym("_solver_create").as_bytes())?;
+			let solver_free = Self::get_symbol(&lib, sym("_solver_free").as_bytes())?;
+			let solver_option_get = Self::get_symbol(&lib, sym("_solver_option_get").as_bytes())?;
+			let solver_option_set = Self::get_symbol(&lib, sym("_solver_option_set").as_bytes())?;
+			let solver_read_error = Self::get_symbol(&lib, sym("_solver_read_error").as_bytes())?;
+			let solver_run = Self::get_symbol(&lib, sym("_solver_run").as_bytes())?;
+			let statistic_list = Self::get_symbol(&lib, sym("_statistic_list").as_bytes())?;
 			Self {
 				_lib: lib,
 				constraint_list,

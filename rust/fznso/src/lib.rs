@@ -40,43 +40,53 @@
 ///     fn new() -> Self { MySolver }
 /// }
 ///
-/// fznso::fznso_export!(MySolver);
+/// fznso::fznso_export!(MySolver, "mysolver");
 ///
 /// fn main() {}
 /// ```
 ///
+/// The second argument is the library's *name*: every exported symbol is named
+/// `fznso_<name>_...` (for example `fznso_mysolver_solver_run`) rather than a
+/// fixed prefix, so that several solvers can be statically linked into one
+/// binary without their entry points colliding — with each other or with the
+/// library each one wraps. The shared `fznso_` marker keeps them greppable and
+/// out of any wrapped library's namespace. The name must match the base name of
+/// the library file so that [`Library`] can recover it when loading — for a
+/// file `libmysolver.so` / `libmysolver.2.1.dylib` / `mysolver.dll`, the name
+/// is `mysolver`.
+///
 /// A failing `option_set` or a `Status::Error` from `run` stores its message on
-/// the solver instance, and the generated `fznso_solver_read_error` returns it,
-/// so the caller sees the reason for the failure.
+/// the solver instance, and the generated `fznso_<name>_solver_read_error`
+/// returns it, so the caller sees the reason for the failure.
 #[macro_export]
 macro_rules! fznso_export {
-	($T:ty $(,)?) => {
-		#[unsafe(no_mangle)]
+	($T:ty, $name:literal $(,)?) => {
+		#[unsafe(export_name = concat!("fznso_", $name, "_constraint_list"))]
 		pub extern "C" fn fznso_constraint_list() -> $crate::ConstraintList<'static> {
 			<$T as $crate::SolverType>::CONSTRAINT_LIST
 		}
 
-		#[unsafe(no_mangle)]
+		#[unsafe(export_name = concat!("fznso_", $name, "_decision_list"))]
 		pub extern "C" fn fznso_decision_list() -> $crate::TypeList<'static> {
 			<$T as $crate::SolverType>::DECISION_LIST
 		}
 
-		#[unsafe(no_mangle)]
+		#[unsafe(export_name = concat!("fznso_", $name, "_objective_list"))]
 		pub extern "C" fn fznso_objective_list() -> $crate::ObjectiveList<'static> {
 			<$T as $crate::SolverType>::OBJECTIVE_LIST
 		}
 
-		#[unsafe(no_mangle)]
+		#[unsafe(export_name = concat!("fznso_", $name, "_option_list"))]
 		pub extern "C" fn fznso_option_list() -> $crate::OptionList<'static> {
 			<$T as $crate::SolverType>::OPTION_LIST
 		}
 
-		#[unsafe(no_mangle)]
+		#[unsafe(export_name = concat!("fznso_", $name, "_statistic_list"))]
 		pub extern "C" fn fznso_statistic_list() -> $crate::StatisticList<'static> {
 			<$T as $crate::SolverType>::STATISTIC_LIST
 		}
 
-		#[unsafe(no_mangle)]
+		#[unsafe(export_name = concat!("fznso_", $name, "_solver_create"))]
 		pub extern "C" fn fznso_solver_create() -> *mut $crate::fznso_types::FznsoSolver {
 			// The solver is boxed alongside a string that holds the most recent
 			// error, so `fznso_solver_read_error` can return it.
@@ -86,7 +96,7 @@ macro_rules! fznso_export {
 			::std::boxed::Box::into_raw(state) as *mut _
 		}
 
-		#[unsafe(no_mangle)]
+		#[unsafe(export_name = concat!("fznso_", $name, "_solver_free"))]
 		pub unsafe extern "C" fn fznso_solver_free(solver: *mut $crate::fznso_types::FznsoSolver) {
 			// SAFETY: the handle was produced by fznso_solver_create.
 			unsafe {
@@ -96,7 +106,7 @@ macro_rules! fznso_export {
 			}
 		}
 
-		#[unsafe(no_mangle)]
+		#[unsafe(export_name = concat!("fznso_", $name, "_solver_option_get"))]
 		pub unsafe extern "C" fn fznso_solver_option_get(
 			solver: $crate::fznso_types::FznsoPtr<'_, $crate::fznso_types::FznsoSolver>,
 			ident: *const ::core::ffi::c_char,
@@ -108,7 +118,7 @@ macro_rules! fznso_export {
 			<$T as $crate::Solver>::option_get(&state.0, name)
 		}
 
-		#[unsafe(no_mangle)]
+		#[unsafe(export_name = concat!("fznso_", $name, "_solver_option_set"))]
 		pub unsafe extern "C" fn fznso_solver_option_set(
 			solver: *mut $crate::fznso_types::FznsoSolver,
 			ident: *const ::core::ffi::c_char,
@@ -127,7 +137,7 @@ macro_rules! fznso_export {
 			}
 		}
 
-		#[unsafe(no_mangle)]
+		#[unsafe(export_name = concat!("fznso_", $name, "_solver_read_error"))]
 		pub unsafe extern "C" fn fznso_solver_read_error(
 			solver: *mut $crate::fznso_types::FznsoSolver,
 			context: *mut ::core::ffi::c_void,
@@ -140,7 +150,7 @@ macro_rules! fznso_export {
 			read_error(context, message.as_ptr());
 		}
 
-		#[unsafe(no_mangle)]
+		#[unsafe(export_name = concat!("fznso_", $name, "_solver_run"))]
 		pub unsafe extern "C" fn fznso_solver_run(
 			solver: *mut $crate::fznso_types::FznsoSolver,
 			model: $crate::fznso_types::FznsoModelRef<'_>,
@@ -371,7 +381,7 @@ mod tests {
 		}
 	}
 
-	crate::fznso_export!(TestSolver);
+	crate::fznso_export!(TestSolver, "test_solver");
 
 	/// What the two callbacks record. Both share the single `context` pointer
 	/// the ABI provides, so they must agree on its type.

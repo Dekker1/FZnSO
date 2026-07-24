@@ -197,6 +197,24 @@ inline std::string last_error() {
 
 #endif
 
+/// Derive a solver's library name from its path, as a view into `path`: the base
+/// name with any leading `lib` and everything from the first `.` removed, so
+/// `.../libgecode.6.2.1.dylib`, `libgecode.so.6` and `gecode.dll` all yield
+/// `gecode`. The view is valid for as long as `path` is.
+inline std::string_view name_from_path(const char* path) {
+	std::string_view name{path};
+	if (std::size_t slash = name.find_last_of("/\\"); slash != std::string_view::npos) {
+		name.remove_prefix(slash + 1);
+	}
+	if (name.substr(0, 3) == "lib") {
+		name.remove_prefix(3);
+	}
+	if (std::size_t dot = name.find('.'); dot != std::string_view::npos) {
+		name = name.substr(0, dot);
+	}
+	return name;
+}
+
 } // namespace detail
 
 class Value;
@@ -1390,33 +1408,16 @@ private:
 /// outlive them.
 class Library {
 public:
-	/// Dynamically load a solver library, resolving every entry point it must export.
+	/// Dynamically load a solver library, resolving every entry point it must
+	/// export.
+	///
+	/// The entry points are `fznso_<name>_...`, where `<name>` is recovered from
+	/// the file name (see [`detail::name_from_path`]); this is the only supported
+	/// naming, so the file name and the exported symbols must agree.
 	///
 	/// Throws `std::runtime_error` if the library cannot be opened or is missing
 	/// a symbol.
-	explicit Library(const char* path) {
-		handle_ = detail::open_library(path);
-		if (handle_ == nullptr) {
-			throw std::runtime_error{std::string{"could not open "} + path + ": " +
-			                         detail::last_error()};
-		}
-		try {
-			constraint_list_ = symbol<ConstraintListFn>("fznso_constraint_list");
-			decision_list_ = symbol<TypeListFn>("fznso_decision_list");
-			objective_list_ = symbol<ObjectiveListFn>("fznso_objective_list");
-			option_list_ = symbol<OptionListFn>("fznso_option_list");
-			statistic_list_ = symbol<StatisticListFn>("fznso_statistic_list");
-			solver_create_ = symbol<CreateFn>("fznso_solver_create");
-			solver_free_ = symbol<FreeFn>("fznso_solver_free");
-			solver_option_get_ = symbol<OptionGetFn>("fznso_solver_option_get");
-			solver_option_set_ = symbol<OptionSetFn>("fznso_solver_option_set");
-			solver_read_error_ = symbol<ReadErrorFn>("fznso_solver_read_error");
-			solver_run_ = symbol<RunFn>("fznso_solver_run");
-		} catch (...) {
-			detail::close_library(handle_);
-			throw;
-		}
-	}
+	explicit Library(const char* path) { load(path, detail::name_from_path(path)); }
 
 	Library(const Library&) = delete;
 	Library& operator=(const Library&) = delete;
@@ -1451,6 +1452,33 @@ private:
 	using RunFn = FznsoStatus (*)(FznsoSolver*, FznsoModelRef, void*,
 	                              void (*)(void*, FznsoSolutionRef),
 	                              void (*)(void*, FznsoStr, FznsoValueRef));
+
+	/// Open `path` and resolve every entry point, each named `fznso_<name>_...`.
+	void load(const char* path, std::string_view name) {
+		handle_ = detail::open_library(path);
+		if (handle_ == nullptr) {
+			throw std::runtime_error{std::string{"could not open "} + path + ": " +
+			                         detail::last_error()};
+		}
+		try {
+			std::string p{"fznso_"};
+			p += name;
+			constraint_list_ = symbol<ConstraintListFn>((p + "_constraint_list").c_str());
+			decision_list_ = symbol<TypeListFn>((p + "_decision_list").c_str());
+			objective_list_ = symbol<ObjectiveListFn>((p + "_objective_list").c_str());
+			option_list_ = symbol<OptionListFn>((p + "_option_list").c_str());
+			statistic_list_ = symbol<StatisticListFn>((p + "_statistic_list").c_str());
+			solver_create_ = symbol<CreateFn>((p + "_solver_create").c_str());
+			solver_free_ = symbol<FreeFn>((p + "_solver_free").c_str());
+			solver_option_get_ = symbol<OptionGetFn>((p + "_solver_option_get").c_str());
+			solver_option_set_ = symbol<OptionSetFn>((p + "_solver_option_set").c_str());
+			solver_read_error_ = symbol<ReadErrorFn>((p + "_solver_read_error").c_str());
+			solver_run_ = symbol<RunFn>((p + "_solver_run").c_str());
+		} catch (...) {
+			detail::close_library(handle_);
+			throw;
+		}
+	}
 
 	template <class Fn>
 	Fn symbol(const char* name) const {

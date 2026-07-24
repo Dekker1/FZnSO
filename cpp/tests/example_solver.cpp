@@ -81,4 +81,7 @@ private:
 
 } // namespace
 
-FZNSO_EXPORT_SOLVER(ExampleSolver);
+// The library name matches the built library's base name
+// (`libcpp_example_solver.*` / `cpp_example_solver.dll`), so a loader recovers
+// it from the file name.
+FZNSO_EXPORT_SOLVER(ExampleSolver, cpp_example_solver);

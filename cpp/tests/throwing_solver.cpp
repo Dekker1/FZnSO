@@ -26,4 +26,4 @@ public:
 
 } // namespace
 
-FZNSO_EXPORT_SOLVER(ThrowingSolver);
+FZNSO_EXPORT_SOLVER(ThrowingSolver, throwing_solver);

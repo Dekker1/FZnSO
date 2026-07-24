@@ -128,4 +128,7 @@ impl SolverType for ExampleSolver {
 	}
 }
 
-fznso::fznso_export!(ExampleSolver);
+// The library name matches the cdylib's base name
+// (`libfznso_example_solver.*`), so `Library::new` recovers it from the file
+// name.
+fznso::fznso_export!(ExampleSolver, "fznso_example_solver");
