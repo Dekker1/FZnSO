@@ -1463,6 +1463,13 @@ private:
 		try {
 			std::string p{"fznso_"};
 			p += name;
+			// Reject an incompatible ABI before touching any other entry point.
+			auto abi_version = symbol<std::uint32_t (*)()>((p + "_abi_version").c_str());
+			if (std::uint32_t found = abi_version(); found != FZNSO_ABI_VERSION) {
+				throw std::runtime_error{"solver ABI version " + std::to_string(found) +
+				                         " is incompatible with this library's ABI version " +
+				                         std::to_string(FZNSO_ABI_VERSION)};
+			}
 			constraint_list_ = symbol<ConstraintListFn>((p + "_constraint_list").c_str());
 			decision_list_ = symbol<TypeListFn>((p + "_decision_list").c_str());
 			objective_list_ = symbol<ObjectiveListFn>((p + "_objective_list").c_str());

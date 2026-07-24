@@ -9,6 +9,15 @@ mod rust_interaction;
 
 use std::{ffi, marker::PhantomData};
 
+/// The FZnSO ABI version this crate defines.
+///
+/// A solver exports it as `fznso_<name>_abi_version`, and a loader rejects any
+/// solver whose reported version differs from its own. Bump it on every
+/// breaking change to the ABI — struct layout, vtable shape, function
+/// signature, or semantics; additive capabilities go through the capability
+/// lists instead.
+pub const FZNSO_ABI_VERSION: u32 = 1;
+
 #[repr(transparent)]
 #[derive(Debug)]
 /// The handle to a the data of a solution instance.

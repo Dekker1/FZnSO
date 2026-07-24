@@ -18,9 +18,9 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 
 def solver_path() -> str:
     prefix, suffix = ("lib", ".dylib") if sys.platform == "darwin" else ("lib", ".so")
-    path = REPO / "target" / "debug" / f"{prefix}fznso_example_solver{suffix}"
+    path = REPO / "target" / "debug" / "examples" / f"{prefix}example_solver{suffix}"
     if not path.exists():
-        pytest.skip(f"{path} not built; run `cargo build -p fznso-example-solver`")
+        pytest.skip(f"{path} not built; run `cargo build --example example_solver`")
     return str(path)
 
 

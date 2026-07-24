@@ -61,6 +61,11 @@
 #[macro_export]
 macro_rules! fznso_export {
 	($T:ty, $name:literal $(,)?) => {
+		#[unsafe(export_name = concat!("fznso_", $name, "_abi_version"))]
+		pub extern "C" fn fznso_abi_version() -> u32 {
+			$crate::fznso_types::FZNSO_ABI_VERSION
+		}
+
 		#[unsafe(export_name = concat!("fznso_", $name, "_constraint_list"))]
 		pub extern "C" fn fznso_constraint_list() -> $crate::ConstraintList<'static> {
 			<$T as $crate::SolverType>::CONSTRAINT_LIST
@@ -203,7 +208,7 @@ use fznso_types::{
 pub use rangelist::RangeList;
 
 pub use crate::{
-	library::Library,
+	library::{Library, LoadError},
 	model::{
 		Annotation, ConstraintView, DecisionView, LayerView, Model, ObjectiveView, ann_ref,
 		layered::{LayeredModel, OwnedAnnotation, OwnedValue},

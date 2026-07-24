@@ -17,7 +17,7 @@ test-cpp:
     ext=$(case "$(uname)" in Darwin) echo dylib;; *) echo so;; esac)
     warn="-std=c++17 -Wall -Wextra -Werror"
     san="-g -fsanitize=address,undefined -fno-omit-frame-pointer"
-    cargo build -p fznso-example-solver
+    cargo build --example example_solver --example bad_abi_solver
     c++ $warn -shared -fPIC -I c -I cpp -o "target/libcpp_example_solver.$ext" \
         cpp/tests/example_solver.cpp
     c++ $warn -shared -fPIC -I c -I cpp -o "target/libthrowing_solver.$ext" \
@@ -25,10 +25,12 @@ test-cpp:
     c++ $warn $san -I c -I cpp -o target/test_consumer cpp/tests/test_consumer.cpp
     c++ $warn $san -I c -I cpp -o target/test_value_source cpp/tests/test_value_source.cpp
     ./target/test_value_source
-    ./target/test_consumer "$(ls target/debug/libfznso_example_solver.* | grep -E '\.(so|dylib|dll)$' | head -1)"
+    ./target/test_consumer "target/debug/examples/libexample_solver.$ext"
     ./target/test_consumer "target/libcpp_example_solver.$ext"
     c++ $warn $san -I c -I cpp -o target/test_exceptions cpp/tests/test_exceptions.cpp
     ./target/test_exceptions "target/libthrowing_solver.$ext"
+    c++ $warn $san -I c -I cpp -o target/test_abi_version cpp/tests/test_abi_version.cpp
+    ./target/test_abi_version "target/debug/examples/libbad_abi_solver.$ext"
     if command -v x86_64-w64-mingw32-g++ >/dev/null 2>&1; then
         x86_64-w64-mingw32-g++ $warn -static -I c -I cpp \
             -o target/test_consumer.exe cpp/tests/test_consumer.cpp
@@ -48,7 +50,7 @@ test-cpp:
 test-python:
     #!/usr/bin/env sh
     set -e
-    cargo build -p fznso-example-solver
+    cargo build --example example_solver
     cd python
     [ -d .venv ] || uv venv --python 3.12
     . .venv/bin/activate

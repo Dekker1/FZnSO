@@ -4,7 +4,7 @@
 // `FZNSO_EXPORT_SOLVER(YourSolver, yoursolver)` once in a `cdylib`/shared-object
 // build to expose it across the interface. The second argument is the library's
 // name, which prefixes every entry point (`fznso_yoursolver_solver_run`, …).
-// Everything except those eleven entry points is done by templates, which the
+// Everything except those twelve entry points is done by templates, which the
 // macro forwards to.
 //
 // The consumer side — building models and loading solvers — is in `fznso.hpp`.
@@ -146,7 +146,7 @@ private:
 
 namespace detail {
 
-/// The thunks that back the eleven exported entry points for a solver `S`.
+/// The thunks that back the twelve exported entry points for a solver `S`.
 ///
 /// The solver methods are named through `S::`, so they dispatch directly rather
 /// than through the virtual interface — consistent with the model, value and
@@ -241,7 +241,7 @@ struct Export {
 /// Build an exported entry-point name `fznso_<Name><Suffix>`.
 #define FZNSO_SYMBOL(Name, Suffix) FZNSO_CONCAT(fznso_, FZNSO_CONCAT(Name, Suffix))
 
-/// Define the eleven interface entry points for a `fznso::Solver` subclass.
+/// Define the twelve interface entry points for a `fznso::Solver` subclass.
 ///
 /// Expand this exactly once, at namespace scope, in the shared object that is
 /// the solver. `Name` is the library's name: every entry point is named
@@ -257,6 +257,9 @@ struct Export {
 /// read; the rest have no error channel, so a leaked exception terminates the
 /// process rather than causing undefined behaviour.
 #define FZNSO_EXPORT_SOLVER(SolverType, Name)                                                      \
+	FZNSO_EXPORTED std::uint32_t FZNSO_SYMBOL(Name, _abi_version)(void) noexcept {                  \
+		return FZNSO_ABI_VERSION;                                                                   \
+	}                                                                                              \
 	FZNSO_EXPORTED FznsoConstraintList FZNSO_SYMBOL(Name, _constraint_list)(void) noexcept {       \
 		return SolverType::constraint_list();                                                      \
 	}                                                                                              \

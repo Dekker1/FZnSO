@@ -5,6 +5,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// The FZnSO ABI version this crate defines.
+//
+// A solver exports it as `fznso_<name>_abi_version`, and a loader rejects any
+// solver whose reported version differs from its own. Bump it on every breaking
+// change to the ABI — struct layout, vtable shape, function signature, or
+// semantics; additive capabilities go through the capability lists instead.
+#define FZNSO_ABI_VERSION 1
+
 // Representation of the base type of a value.
 typedef enum FznsoTypeBase {
   // Boolean type

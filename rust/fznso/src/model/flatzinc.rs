@@ -1,27 +1,28 @@
 use flatzinc_serde::{
-	Annotation as FznAnnotation, AnnotationArgument, AnnotationLiteral, Argument, Array, Domain,
-	FlatZinc, Literal, RangeList, Variable,
+	Annotation as FznAnnotation, AnnotationArgument, AnnotationLiteral, Argument, FlatZinc,
+	Literal, Method, RangeList, Type,
 };
 use fznso_types::{
 	FznsoDecisionIdx, FznsoFloatRange, FznsoIntRange, FznsoPtr, FznsoValue, FznsoValueKind,
 	FznsoValueMethods, FznsoValueRef,
 };
-use indexmap::IndexMap;
 
 use crate::{
 	AnnotationRef, ConstraintIdx, DecisionIdx, Value,
 	model::{AnnWrapper, Annotation as OwnedAnnotation, Model},
 };
 
-/// A [`FlatZinc`] model with the concrete container types used by this adapter.
-type FlatZincModel =
-	FlatZinc<String, IndexMap<String, Variable<String>>, IndexMap<String, Array<String>>>;
+/// The concrete [`FlatZinc`] model this adapter implements [`Model`] for.
+type FlatZincModel = FlatZinc<String>;
 
 /// Build a [`Value`] for an annotation argument.
 fn annotation_argument_value(arg: &AnnotationArgument<String>) -> Value<'_> {
 	match arg {
 		AnnotationArgument::Literal(lit) => annotation_literal_value(lit),
 		AnnotationArgument::Array(values) => annotation_literal_list_value(values),
+		// A named-array reference cannot be borrowed for the value's lifetime
+		// from here, so it is reported as absent.
+		AnnotationArgument::ArrayNamed(_) => (&()).into(),
 	}
 }
 
@@ -63,8 +64,16 @@ fn annotation_literal_list_value(values: &Vec<AnnotationLiteral<String>>) -> Val
 /// Build a [`Value`] for a single annotation literal.
 fn annotation_literal_value(lit: &AnnotationLiteral<String>) -> Value<'_> {
 	match lit {
-		AnnotationLiteral::BaseLiteral(lit) => literal_value_unresolved(lit),
-		AnnotationLiteral::Annotation(_) => (&()).into(),
+		AnnotationLiteral::Int(i) => i.into(),
+		AnnotationLiteral::Float(f) => f.into(),
+		AnnotationLiteral::Bool(b) => b.into(),
+		AnnotationLiteral::IntSet(set) => int_set_value(set),
+		AnnotationLiteral::FloatSet(set) => float_set_value(set),
+		// A variable reference cannot be resolved to an index without the model,
+		// and strings and nested annotations have no value representation.
+		AnnotationLiteral::Variable(_)
+		| AnnotationLiteral::String(_)
+		| AnnotationLiteral::Annotation(_) => (&()).into(),
 	}
 }
 
@@ -74,13 +83,17 @@ fn argument_value<'a>(model: &'a FlatZincModel, arg: &'a Argument<String>) -> Va
 	match arg {
 		Argument::Literal(lit) => literal_value(model, lit),
 		Argument::Array(values) => literal_list_value(values),
+		Argument::ArrayNamed(array) => literal_list_value(&array.contents),
 	}
 }
 
-/// Resolve a variable identifier to its [`DecisionIdx`], if it names a
-/// variable.
-fn decision_index(model: &FlatZincModel, ident: &str) -> Option<DecisionIdx> {
-	model.variables.get_index_of(ident).map(FznsoDecisionIdx)
+/// Resolve a variable name to its [`DecisionIdx`], if it names a variable.
+fn decision_index(model: &FlatZincModel, name: &str) -> Option<DecisionIdx> {
+	model
+		.variables
+		.iter()
+		.position(|var| var.name == name)
+		.map(FznsoDecisionIdx)
 }
 
 /// Build a [`Value`] for a float set, represented as a range list.
@@ -155,7 +168,7 @@ fn int_set_value(ranges: &RangeList<i64>) -> Value<'_> {
 	}
 }
 
-/// Build a [`Value`] for a list of literals.
+/// Build a [`Value`] for a list of literals, without resolving identifiers.
 fn literal_list_value(values: &Vec<Literal<String>>) -> Value<'_> {
 	extern "C" fn kind(_: FznsoPtr<'_, FznsoValue>) -> FznsoValueKind {
 		FznsoValueKind::FznsoValueList
@@ -190,7 +203,8 @@ fn literal_list_value(values: &Vec<Literal<String>>) -> Value<'_> {
 	}
 }
 
-/// Build a [`Value`] for a literal, resolving identifiers against `model`.
+/// Build a [`Value`] for a literal, resolving variable references against
+/// `model`.
 fn literal_value<'a>(model: &'a FlatZincModel, lit: &'a Literal<String>) -> Value<'a> {
 	match lit {
 		Literal::Int(i) => i.into(),
@@ -198,20 +212,14 @@ fn literal_value<'a>(model: &'a FlatZincModel, lit: &'a Literal<String>) -> Valu
 		Literal::Bool(b) => b.into(),
 		Literal::IntSet(set) => int_set_value(set),
 		Literal::FloatSet(set) => float_set_value(set),
-		Literal::Identifier(ident) => {
-			if let Some(decision) = decision_index(model, ident) {
-				decision.into()
-			} else if let Some(array) = model.arrays.get(ident) {
-				literal_list_value(&array.contents)
-			} else {
-				(&()).into()
-			}
+		Literal::Variable(var) => {
+			decision_index(model, &var.name).map_or_else(|| (&()).into(), Into::into)
 		}
 		Literal::String(_) => (&()).into(),
 	}
 }
 
-/// Build a [`Value`] for a literal without resolving identifiers.
+/// Build a [`Value`] for a literal without resolving variable references.
 fn literal_value_unresolved(lit: &Literal<String>) -> Value<'_> {
 	match lit {
 		Literal::Int(i) => i.into(),
@@ -219,7 +227,7 @@ fn literal_value_unresolved(lit: &Literal<String>) -> Value<'_> {
 		Literal::Bool(b) => b.into(),
 		Literal::IntSet(set) => int_set_value(set),
 		Literal::FloatSet(set) => float_set_value(set),
-		Literal::Identifier(_) | Literal::String(_) => (&()).into(),
+		Literal::Variable(_) | Literal::String(_) => (&()).into(),
 	}
 }
 
@@ -252,7 +260,7 @@ impl Model for FlatZincModel {
 		self.constraints
 			.get(con.0)
 			.and_then(|constraint| constraint.defines.as_ref())
-			.and_then(|ident| decision_index(self, ident))
+			.and_then(|named| decision_index(self, named.name()))
 	}
 
 	fn constraint_ident(&self, con: ConstraintIdx) -> &str {
@@ -283,11 +291,10 @@ impl Model for FlatZincModel {
 	}
 
 	fn decision_domain(&self, decision: DecisionIdx) -> Value<'_> {
-		let var = &self.variables[decision.0];
-		match &var.domain {
-			Some(Domain::Int(set)) => int_set_value(set),
-			Some(Domain::Float(set)) => float_set_value(set),
-			None => (&()).into(),
+		match &self.variables[decision.0].ty {
+			Type::Int(Some(set)) | Type::IntSet(Some(set)) => int_set_value(set),
+			Type::Float(Some(set)) => float_set_value(set),
+			Type::Bool | Type::Int(None) | Type::Float(None) | Type::IntSet(None) => (&()).into(),
 		}
 	}
 
@@ -300,9 +307,7 @@ impl Model for FlatZincModel {
 	}
 
 	fn decision_name(&self, decision: DecisionIdx) -> Option<&str> {
-		self.variables
-			.get_index(decision.0)
-			.map(|(k, _)| k.as_str())
+		self.variables.get(decision.0).map(|var| var.name.as_str())
 	}
 
 	fn layer_len(&self) -> usize {
@@ -334,17 +339,19 @@ impl Model for FlatZincModel {
 	}
 
 	fn objective_arg(&self) -> Value<'_> {
-		self.solve
-			.objective
-			.as_ref()
-			.map_or_else(|| (&()).into(), |obj| literal_value(self, obj))
+		match &self.solve.method {
+			Method::Minimize(objective) | Method::Maximize(objective) => {
+				literal_value(self, objective)
+			}
+			Method::Satisfy => (&()).into(),
+		}
 	}
 
 	fn objective_ident(&self) -> &str {
-		match self.solve.method {
-			flatzinc_serde::Method::Satisfy => "",
-			flatzinc_serde::Method::Minimize => "minimize",
-			flatzinc_serde::Method::Maximize => "maximize",
+		match &self.solve.method {
+			Method::Satisfy => "",
+			Method::Minimize(_) => "minimize",
+			Method::Maximize(_) => "maximize",
 		}
 	}
 }

@@ -9,6 +9,10 @@
 
 #include "fznso_types.h"
 
+// Report the FZnSO ABI version this solver was built against. A loader rejects
+// the solver if this does not match its own.
+uint32_t fznso_NAME_abi_version(void);
+
 // Returns the list of available constraint that can be added to the solver.
 FznsoConstraintList fznso_NAME_constraint_list(void);
 
@@ -32,8 +36,8 @@ FznsoSolver *fznso_NAME_solver_create(void);
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has not
-// yet been passed to this function.
+// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
+// not yet been passed to this function.
 void fznso_NAME_solver_free(FznsoSolver *solver);
 
 // Get the current value of an option for the solver.
@@ -43,8 +47,8 @@ void fznso_NAME_solver_free(FznsoSolver *solver);
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has not
-// yet been passed to [`fznso_NAME_solver_free`].
+// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
+// not yet been passed to [`fznso_NAME_solver_free`].
 FznsoValueRef fznso_NAME_solver_option_get(const FznsoSolver * solver, const char *ident);
 
 // Set the current value of an option for the solver.
@@ -56,8 +60,8 @@ FznsoValueRef fznso_NAME_solver_option_get(const FznsoSolver * solver, const cha
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has not
-// yet been passed to [`fznso_NAME_solver_free`].
+// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
+// not yet been passed to [`fznso_NAME_solver_free`].
 bool fznso_NAME_solver_option_set(FznsoSolver *solver, const char *ident, FznsoValueRef value);
 
 // Read an error message from the solver.
@@ -68,8 +72,8 @@ bool fznso_NAME_solver_option_set(FznsoSolver *solver, const char *ident, FznsoV
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has not
-// yet been passed to [`fznso_NAME_solver_free`].
+// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
+// not yet been passed to [`fznso_NAME_solver_free`].
 void fznso_NAME_solver_read_error(FznsoSolver *solver,
                                   void *context,
                                   void (*read_error)(void *context, const char *error));
@@ -84,8 +88,8 @@ void fznso_NAME_solver_read_error(FznsoSolver *solver,
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has not
-// yet been passed to [`fznso_NAME_solver_free`].
+// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
+// not yet been passed to [`fznso_NAME_solver_free`].
 FznsoStatus fznso_NAME_solver_run(FznsoSolver *solver,
                                   FznsoModelRef model,
                                   void *context,

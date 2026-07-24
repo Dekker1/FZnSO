@@ -27,6 +27,13 @@ use fznso_types::{
 };
 
 #[unsafe(no_mangle)]
+/// Report the FZnSO ABI version this solver was built against. A loader rejects
+/// the solver if this does not match its own.
+pub extern "C" fn fznso_NAME_abi_version() -> u32 {
+	fznso_types::FZNSO_ABI_VERSION
+}
+
+#[unsafe(no_mangle)]
 /// Returns the list of available constraint that can be added to the solver.
 pub extern "C" fn fznso_NAME_constraint_list() -> FznsoConstraintList<'static> {
 	unimplemented!()

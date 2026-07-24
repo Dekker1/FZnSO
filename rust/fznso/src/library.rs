@@ -7,13 +7,56 @@ use std::{
 };
 
 use fznso_types::{
-	FznsoConstraintList, FznsoModelRef, FznsoObjectiveList, FznsoOptionList, FznsoPtr,
-	FznsoSolutionRef, FznsoSolver, FznsoStatisticList, FznsoStatus, FznsoStr, FznsoTypeList,
-	FznsoValueRef,
+	FZNSO_ABI_VERSION, FznsoConstraintList, FznsoModelRef, FznsoObjectiveList, FznsoOptionList,
+	FznsoPtr, FznsoSolutionRef, FznsoSolver, FznsoStatisticList, FznsoStatus, FznsoStr,
+	FznsoTypeList, FznsoValueRef,
 };
 use libloading::Symbol;
 
 use crate::{DynSolution, DynSolver, Model, Status};
+
+/// Why loading a solver library through [`Library::new`] failed.
+#[derive(Debug)]
+pub enum LoadError {
+	/// The library could not be opened, or a required symbol was missing.
+	Library(libloading::Error),
+	/// The solver reports an ABI version this library cannot use.
+	AbiMismatch {
+		/// The version the solver reported.
+		found: u32,
+		/// The version this library requires
+		/// ([`fznso_types::FZNSO_ABI_VERSION`]).
+		expected: u32,
+	},
+}
+
+impl std::fmt::Display for LoadError {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			LoadError::Library(err) => write!(f, "{err}"),
+			LoadError::AbiMismatch { found, expected } => write!(
+				f,
+				"solver ABI version {found} is incompatible with this library's ABI version \
+				 {expected}"
+			),
+		}
+	}
+}
+
+impl std::error::Error for LoadError {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match self {
+			LoadError::Library(err) => Some(err),
+			LoadError::AbiMismatch { .. } => None,
+		}
+	}
+}
+
+impl From<libloading::Error> for LoadError {
+	fn from(err: libloading::Error) -> Self {
+		LoadError::Library(err)
+	}
+}
 
 /// A dynamically loaded FZnSO solver library.
 ///
@@ -195,24 +238,39 @@ impl Library {
 	/// points are prefixed `fznso_gecode_`. This is the only supported naming,
 	/// so the file name and the exported symbols must agree.
 	///
+	/// The solver's `fznso_<name>_abi_version` is checked first: loading fails
+	/// with [`LoadError::AbiMismatch`] if it does not equal
+	/// [`fznso_types::FZNSO_ABI_VERSION`], guarding against a solver built
+	/// against an incompatible version of the ABI.
+	///
 	/// # Safety
 	///
 	/// The library at `filename` must export valid implementations of all
-	/// eleven FZnSO ABI functions under the `fznso_<name>_` prefix
-	/// (`fznso_<name>_constraint_list`, `fznso_<name>_decision_list`,
-	/// `fznso_<name>_objective_list`, `fznso_<name>_option_list`,
-	/// `fznso_<name>_statistic_list`, `fznso_<name>_solver_create`,
-	/// `fznso_<name>_solver_free`, `fznso_<name>_solver_option_get`,
-	/// `fznso_<name>_solver_option_set`, `fznso_<name>_solver_read_error`,
-	/// `fznso_<name>_solver_run`). Behaviour is undefined if any symbol is
-	/// missing or does not conform to the FZnSO ABI.
-	pub unsafe fn new<S: AsRef<ffi::OsStr>>(filename: S) -> Result<Arc<Self>, libloading::Error> {
+	/// twelve FZnSO ABI functions under the `fznso_<name>_` prefix
+	/// (`abi_version`, `constraint_list`, `decision_list`, `objective_list`,
+	/// `option_list`, `statistic_list`, `solver_create`, `solver_free`,
+	/// `solver_option_get`, `solver_option_set`, `solver_read_error`,
+	/// `solver_run`). Behaviour is undefined if any symbol is missing or does
+	/// not conform to the FZnSO ABI.
+	pub unsafe fn new<S: AsRef<ffi::OsStr>>(filename: S) -> Result<Arc<Self>, LoadError> {
 		let filename = filename.as_ref();
 		let name = name_from_filename(filename);
 		// SAFETY: Caller guarantees the library is a valid FZnSO solver DLL.
 		let lib = unsafe {
 			let lib = libloading::Library::new(filename)?;
 			let sym = |suffix: &str| format!("fznso_{name}{suffix}\0");
+
+			// Reject an incompatible ABI before touching any other entry point.
+			let abi_version: Symbol<'static, unsafe extern "C" fn() -> u32> =
+				Self::get_symbol(&lib, sym("_abi_version").as_bytes())?;
+			let found = (*abi_version)();
+			if found != FZNSO_ABI_VERSION {
+				return Err(LoadError::AbiMismatch {
+					found,
+					expected: FZNSO_ABI_VERSION,
+				});
+			}
+
 			let constraint_list = Self::get_symbol(&lib, sym("_constraint_list").as_bytes())?;
 			let decision_list = Self::get_symbol(&lib, sym("_decision_list").as_bytes())?;
 			let objective_list = Self::get_symbol(&lib, sym("_objective_list").as_bytes())?;
