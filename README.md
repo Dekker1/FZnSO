@@ -2,6 +2,23 @@
 
 ## Introduction
 
+## Threading
+
+A solver may search on several threads (see the `threads` option). The protocol
+fixes how that interacts with the callbacks and the model passed to
+`fznso_solver_run`:
+
+- The `on_solution` and `on_message` callbacks are invoked **serially** — never
+  two at once, and never one while the other runs — but may be called from any
+  thread, as long as each call happens-before the next. A consumer therefore
+  never has to make its callbacks safe to call concurrently; if it wants to
+  process solutions in parallel it does so behind a serial callback (e.g. by
+  pushing to a queue). Serial reporting also keeps solutions in the improving
+  order that `intermediate` and `progress.bound` rely on.
+- The model is a **read-only** view for the duration of the call and may be
+  queried **concurrently** from any number of threads, so a consumer must make
+  its model safe for concurrent reads.
+
 ## Common Functionality
 
 Although solvers are able to define their own functionality using the FZnSO protocol, we advocate for the following common functionality to be implemented by different solvers.

@@ -243,6 +243,18 @@ impl FznsoTypeList<'static> {
 }
 
 impl<'a> FznsoStr<'a> {
+	/// Borrow a `&str` as an interface string.
+	///
+	/// Usable in const context, so that the capability lists a solver declares
+	/// — which are `static` — can name their identifiers directly.
+	pub const fn new(value: &'a str) -> Self {
+		Self {
+			ptr: value.as_ptr().cast(),
+			len: value.len(),
+			lifetime: PhantomData,
+		}
+	}
+
 	/// The absent string, signalled by a null `ptr`.
 	pub const NONE: Self = Self {
 		ptr: ptr::null(),
@@ -271,11 +283,7 @@ impl<'a> FznsoStr<'a> {
 
 impl<'a> From<&'a str> for FznsoStr<'a> {
 	fn from(value: &'a str) -> Self {
-		Self {
-			ptr: value.as_ptr() as *const ffi::c_char,
-			len: value.len(),
-			lifetime: PhantomData,
-		}
+		Self::new(value)
 	}
 }
 

@@ -8,9 +8,10 @@
 // The FZnSO ABI version this crate defines.
 //
 // A solver exports it as `fznso_<name>_abi_version`, and a loader rejects any
-// solver whose reported version differs from its own. Bump it on every breaking
-// change to the ABI — struct layout, vtable shape, function signature, or
-// semantics; additive capabilities go through the capability lists instead.
+// solver whose reported version differs from its own. Bump it on every
+// breaking change to the ABI — struct layout, vtable shape, function
+// signature, or semantics; additive capabilities go through the capability
+// lists instead.
 #define FZNSO_ABI_VERSION 1
 
 // Representation of the base type of a value.
@@ -82,6 +83,28 @@ typedef enum FznsoStatus {
 // fznso_solution`.
 typedef void FznsoAnnotation;
 
+// A borrowed UTF-8 string, passed across the interface as a pointer/length
+// pair.
+//
+// The bytes are **not** required to be null-terminated; consumers must use
+// `len` to determine the string extent. This matches the convention used by
+// [`FznsoValueMethods::as_string`], and allows implementations to hand out
+// slices of strings they already hold without copying them into a
+// null-terminated buffer.
+//
+// A null `ptr` signals the absence of a string, which is used where a name or
+// identifier is optional (e.g. [`FznsoModelMethods::decision_name`]).
+//
+// The string is valid for at least as long as the handle it was obtained
+// from.
+typedef struct FznsoStr {
+  // Pointer to the first UTF-8 byte of the string, or null if absent.
+  const char *ptr;
+  // The number of bytes in the string, **not** counting any trailing null
+  // byte.
+  size_t len;
+} FznsoStr;
+
 // Representation of a type to signal and check whether an argument takes the
 // correct type.
 typedef struct FznsoType {
@@ -103,7 +126,7 @@ typedef struct FznsoType {
 // types of its arguments.
 typedef struct FznsoConstraintType {
   // The identifier of the constraint type.
-  const char *ident;
+  struct FznsoStr ident;
   // The number of expected arguments for the constraint type.
   size_t arg_len;
   // The types of the expected arguments for the constraint type.
@@ -280,28 +303,6 @@ typedef struct FznsoValueRef {
   const struct FznsoValueMethods *methods;
 } FznsoValueRef;
 
-// A borrowed UTF-8 string, passed across the interface as a pointer/length
-// pair.
-//
-// The bytes are **not** required to be null-terminated; consumers must use
-// `len` to determine the string extent. This matches the convention used by
-// [`FznsoValueMethods::as_string`], and allows implementations to hand out
-// slices of strings they already hold without copying them into a
-// null-terminated buffer.
-//
-// A null `ptr` signals the absence of a string, which is used where a name or
-// identifier is optional (e.g. [`FznsoModelMethods::decision_name`]).
-//
-// The string is valid for at least as long as the handle it was obtained
-// from.
-typedef struct FznsoStr {
-  // Pointer to the first UTF-8 byte of the string, or null if absent.
-  const char *ptr;
-  // The number of bytes in the string, **not** counting any trailing null
-  // byte.
-  size_t len;
-} FznsoStr;
-
 // A struct containing the function pointers to interact with the
 // [`FznsoModel`]
 typedef struct FznsoAnnotationMethods {
@@ -468,7 +469,7 @@ typedef struct FznsoModelRef {
 // identifier and the type of its argument.
 typedef struct FznsoObjective {
   // The identifier of the objective type.
-  const char *ident;
+  struct FznsoStr ident;
   // The type of the expected argument for the constraint type.
   struct FznsoType arg_type;
 } FznsoObjective;
@@ -487,11 +488,11 @@ typedef struct FznsoObjectiveList {
 typedef struct FznsoOption {
   // The identifier used to set the option or get the current value of the
   // option.
-  const char *ident;
+  struct FznsoStr ident;
   // The type of value that is expected for this option.
-  struct FznsoValueRef arg_ty;
+  struct FznsoType arg_ty;
   // The default value for this option.
-  struct FznsoType arg_def;
+  struct FznsoValueRef arg_def;
 } FznsoOption;
 
 // A list of [`FznsoOption`]s.
@@ -522,7 +523,7 @@ typedef struct FznsoSolutionMethods {
   struct FznsoValueRef (*value)(const FznsoSolution * data, size_t decision_index);
   // Function callback to retrieve the statistical information made available
   // by the solver about the search process so far.
-  struct FznsoValueRef (*statistic)(const FznsoSolution * data, const char *ident);
+  struct FznsoValueRef (*statistic)(const FznsoSolution * data, struct FznsoStr ident);
 } FznsoSolutionMethods;
 
 // Handle for a solution emitted by the solver.
@@ -547,16 +548,22 @@ typedef void FznsoSolver;
 
 // The definition of statistical information that is made available by the
 // solver.
+//
+// The `solution` and `solver` flags say *where* the statistic can be read
+// from, and are independent: a statistic may be available from a solution,
+// from the solver instance, or from both. At least one of them must be set —
+// a statistic with neither could be read from nowhere.
 typedef struct FznsoStatistic {
   // The identifier used to retrieve the statistical information from the
   // solver or a solution.
-  const char *ident;
-  // The type of value that is expected for this option.
-  struct FznsoValueRef ty;
-  // Whether the statistical information is available as part of solutions.
+  struct FznsoStr ident;
+  // The type of value that is expected for this statistic.
+  struct FznsoType ty;
+  // Whether the statistic is available from a solution, read with
+  // [`FznsoSolutionMethods::statistic`].
   bool solution;
-  // Whether the statistical information is generally available from the
-  // solver instance.
+  // Whether the statistic is available from the solver instance, read with
+  // `fznso_solver_statistic`.
   bool solver;
 } FznsoStatistic;
 

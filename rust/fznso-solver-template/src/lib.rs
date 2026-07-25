@@ -89,10 +89,10 @@ pub unsafe extern "C" fn fznso_NAME_solver_free(solver: *mut FznsoSolver) {
 ///
 /// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
 /// not yet been passed to [`fznso_NAME_solver_free`].
-pub unsafe extern "C" fn fznso_NAME_solver_option_get(
-	solver: FznsoPtr<'_, FznsoSolver>,
-	ident: *const ffi::c_char,
-) -> FznsoValueRef<'_> {
+pub unsafe extern "C" fn fznso_NAME_solver_option_get<'a>(
+	solver: FznsoPtr<'a, FznsoSolver>,
+	ident: FznsoStr<'_>,
+) -> FznsoValueRef<'a> {
 	let _ = solver;
 	let _ = ident;
 	unimplemented!()
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn fznso_NAME_solver_option_get(
 /// not yet been passed to [`fznso_NAME_solver_free`].
 pub unsafe extern "C" fn fznso_NAME_solver_option_set(
 	solver: *mut FznsoSolver,
-	ident: *const ffi::c_char,
+	ident: FznsoStr<'_>,
 	value: FznsoValueRef<'_>,
 ) -> bool {
 	let _ = solver;
@@ -135,7 +135,7 @@ pub unsafe extern "C" fn fznso_NAME_solver_option_set(
 pub unsafe extern "C" fn fznso_NAME_solver_read_error(
 	solver: *mut FznsoSolver,
 	context: *mut ffi::c_void,
-	read_error: extern "C" fn(context: *mut ffi::c_void, error: *const ffi::c_char),
+	read_error: extern "C" fn(context: *mut ffi::c_void, error: FznsoStr<'_>),
 ) {
 	let _ = solver;
 	let _ = context;
@@ -151,6 +151,22 @@ pub unsafe extern "C" fn fznso_NAME_solver_read_error(
 /// callers can filter on a prefix. Failures are not reported here; they are
 /// signalled by returning [`FznsoError`] and retrieved with
 /// [`fznso_NAME_solver_read_error`].
+///
+/// # Threading
+///
+/// A solver may search on several threads. The contract for the callbacks and
+/// the model is:
+///
+/// - `on_solution` and `on_message` must be invoked **serially**: never two at
+///   once, and never one while the other runs. They may be called from any
+///   thread (for example the worker that found a solution), as long as each
+///   call happens-before the next. A caller therefore need not make its
+///   callbacks safe to call concurrently. (Serial reporting also keeps
+///   solutions in the improving order that intermediate/bound reporting relies
+///   on.)
+/// - `model` may be queried **concurrently**: it is a read-only view for the
+///   duration of the call, so a parallel solver may read it from many threads
+///   at once. A caller must therefore make the model safe for concurrent reads.
 ///
 /// # Safety
 ///
@@ -168,6 +184,28 @@ pub unsafe extern "C" fn fznso_NAME_solver_run(
 	let _ = context;
 	let _ = on_solution;
 	let _ = on_message;
+	unimplemented!()
+}
+
+#[unsafe(no_mangle)]
+/// Get the current value of a statistic from the solver instance.
+///
+/// Note that this is only valid to be called with statistics named by
+/// `fznso_NAME_statistic_list` whose `solver` flag is set; statistics carrying
+/// only the `solution` flag are read from a solution instead, using
+/// `FznsoSolutionMethods::statistic`. An unknown identifier yields a value of
+/// kind `FznsoValueAbsent`.
+///
+/// # Safety
+///
+/// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
+/// not yet been passed to [`fznso_NAME_solver_free`].
+pub unsafe extern "C" fn fznso_NAME_solver_statistic<'a>(
+	solver: FznsoPtr<'a, FznsoSolver>,
+	ident: FznsoStr<'_>,
+) -> FznsoValueRef<'a> {
+	let _ = solver;
+	let _ = ident;
 	unimplemented!()
 }
 

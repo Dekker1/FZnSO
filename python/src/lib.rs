@@ -136,7 +136,7 @@ fn py_to_value(obj: &Bound<'_, PyAny>) -> PyResult<OwnedValue> {
 
 /// Extract `(start, stop, step)` from a Python `range`, or `Err` otherwise.
 fn range_bounds(obj: &Bound<'_, PyAny>) -> PyResult<(i64, i64, i64)> {
-	if obj.get_type().name()?.to_string() != "range" {
+	if obj.get_type().name()? != "range" {
 		return Err(PyValueError::new_err("not a range"));
 	}
 	Ok((
@@ -455,20 +455,23 @@ static PY_VALUE_METHODS: FznsoValueMethods = FznsoValueMethods {
 struct PyModelAdapter {
 	object: PyObject,
 	/// The first error raised by a Python method, re-raised after the run.
-	error: std::cell::RefCell<Option<PyErr>>,
+	///
+	/// A `Mutex` rather than a `RefCell`: the model is a read-only view the
+	/// solver may query from several threads at once, so it must be `Sync`.
+	error: std::sync::Mutex<Option<PyErr>>,
 }
 
 impl PyModelAdapter {
 	fn new(object: PyObject) -> Self {
 		Self {
 			object,
-			error: std::cell::RefCell::new(None),
+			error: std::sync::Mutex::new(None),
 		}
 	}
 
 	/// Record a Python error to be re-raised once the run finishes.
 	fn record(&self, err: PyErr) {
-		let mut slot = self.error.borrow_mut();
+		let mut slot = self.error.lock().unwrap_or_else(|e| e.into_inner());
 		if slot.is_none() {
 			*slot = Some(err);
 		}
@@ -587,7 +590,7 @@ impl fznso_core::Model for PyModelAdapter {
 		Python::with_gil(|py| {
 			self.object
 				.call_method1(py, "constraint_arguments", (con.0,))
-				.and_then(|r| Ok(r.bind(py).len()?))
+				.and_then(|r| r.bind(py).len())
 				.unwrap_or_else(|err| {
 					self.record(err);
 					0
@@ -835,6 +838,12 @@ impl DynSolver {
 		value_to_py(py, &self.inner.option_get(name))
 	}
 
+	/// The current value of a named solver-level statistic, or `None` if the
+	/// solver does not report it.
+	fn statistic(&self, py: Python<'_>, name: &str) -> PyResult<PyObject> {
+		value_to_py(py, &self.inner.statistic(name))
+	}
+
 	/// Set a named option. Raises `ValueError` with the solver's message on
 	/// failure.
 	fn option_set(&mut self, name: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -854,18 +863,33 @@ impl DynSolver {
 	#[pyo3(signature = (model, on_solution=None, on_message=None))]
 	fn run(
 		&mut self,
-		py: Python<'_>,
+		// The GIL is held for the whole call, but the callbacks re-acquire it
+		// themselves since the solver may invoke them from another thread.
+		_py: Python<'_>,
 		model: &Bound<'_, PyAny>,
 		on_solution: Option<PyObject>,
 		on_message: Option<PyObject>,
 	) -> PyResult<Status> {
 		// A callback error is stashed and re-raised once `run` returns, since the
-		// solver's callbacks cannot themselves fail. A `RefCell` lets both
-		// closures share it without each taking a unique borrow.
-		let callback_error: std::cell::RefCell<Option<PyErr>> = std::cell::RefCell::new(None);
+		// solver's callbacks cannot themselves fail. A `Mutex` rather than a
+		// `RefCell`: the callbacks must be `Send`, because the solver may invoke
+		// them from any thread (one at a time — see `Solver::run`).
+		let callback_error: std::sync::Mutex<Option<PyErr>> = std::sync::Mutex::new(None);
+		let stash = |err: PyErr| {
+			let mut slot = callback_error.lock().unwrap_or_else(|e| e.into_inner());
+			if slot.is_none() {
+				*slot = Some(err);
+			}
+		};
+		let failed = || {
+			callback_error
+				.lock()
+				.unwrap_or_else(|e| e.into_inner())
+				.is_some()
+		};
 
 		let mut on_sol = |sol: &fznso_core::DynSolution<'_>| {
-			if callback_error.borrow().is_some() {
+			if failed() {
 				return;
 			}
 			let Some(handler) = &on_solution else {
@@ -875,38 +899,42 @@ impl DynSolver {
 			// its pointer never outlives `sol`.
 			let widened: *const fznso_core::DynSolution<'static> =
 				unsafe { std::mem::transmute(sol as *const fznso_core::DynSolution<'_>) };
-			match Py::new(
-				py,
-				Solution {
-					solution: widened,
-					live: true,
-				},
-			) {
-				Ok(wrapper) => {
-					if let Err(err) = handler.call1(py, (&wrapper,)) {
-						*callback_error.borrow_mut() = Some(err);
+			// The GIL is acquired here rather than captured: the callback may run
+			// on a solver thread that does not already hold it.
+			Python::with_gil(|py| {
+				match Py::new(
+					py,
+					Solution {
+						solution: widened,
+						live: true,
+					},
+				) {
+					Ok(wrapper) => {
+						if let Err(err) = handler.call1(py, (&wrapper,)) {
+							stash(err);
+						}
+						wrapper.borrow_mut(py).live = false;
 					}
-					wrapper.borrow_mut(py).live = false;
+					Err(err) => stash(err),
 				}
-				Err(err) => *callback_error.borrow_mut() = Some(err),
-			}
+			});
 		};
 
 		let mut on_msg = |scope: &str, value: Value<'_>| {
-			if callback_error.borrow().is_some() {
+			if failed() {
 				return;
 			}
 			let Some(handler) = &on_message else {
 				return;
 			};
-			match value_to_py(py, &value) {
+			Python::with_gil(|py| match value_to_py(py, &value) {
 				Ok(obj) => {
 					if let Err(err) = handler.call1(py, (scope, obj)) {
-						*callback_error.borrow_mut() = Some(err);
+						stash(err);
 					}
 				}
-				Err(err) => *callback_error.borrow_mut() = Some(err),
-			}
+				Err(err) => stash(err),
+			});
 		};
 
 		// A native `LayeredModel` runs directly; anything else is driven through the
@@ -918,11 +946,17 @@ impl DynSolver {
 		} else {
 			let adapter = PyModelAdapter::new(model.clone().unbind());
 			let status = self.inner.run(&adapter, &mut on_sol, &mut on_msg);
-			model_error = adapter.error.into_inner();
+			model_error = adapter
+				.error
+				.into_inner()
+				.unwrap_or_else(|e| e.into_inner());
 			status
 		};
 
-		if let Some(err) = callback_error.take() {
+		if let Some(err) = callback_error
+			.into_inner()
+			.unwrap_or_else(|e| e.into_inner())
+		{
 			return Err(err);
 		}
 		if let Some(err) = model_error {

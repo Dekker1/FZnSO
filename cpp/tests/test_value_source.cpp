@@ -10,8 +10,10 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 #include <string_view>
+#include <filesystem>
 #include <vector>
 
 namespace {
@@ -196,6 +198,106 @@ int main() {
 	fznso::AnnotationRef ann{annotation};
 	check(ann.ident() == "output_var", "annotation source ident");
 	check(ann.size() == 1 && ann[0].as_int() == 5, "annotation source argument");
+
+	// Every value hands out a *complete* vtable: the interface declares the slots
+	// as plain function pointers, so a null one is not a valid entry — a consumer
+	// in another language (Rust's `extern "C" fn` fields are non-nullable) may
+	// reject the table outright rather than read the null as "unsupported".
+	// Unimplemented slots point at an aborting stub instead.
+	auto check_complete = [](fznso::Value v, const char* what) {
+		const FznsoValueMethods* m = v.raw().methods;
+		check(m != nullptr, what);
+		check(m->kind != nullptr && m->len != nullptr, what);
+		check(m->as_decision != nullptr && m->as_constraint != nullptr, what);
+		check(m->as_int != nullptr && m->as_float != nullptr, what);
+		check(m->as_string != nullptr && m->as_bool != nullptr, what);
+		check(m->get_range_int != nullptr && m->get_range_float != nullptr, what);
+		check(m->get_element != nullptr, what);
+	};
+	const bool a_bool = true;
+	const std::int64_t an_int = 1;
+	const double a_float = 1.5;
+	const std::string a_string = "s";
+	const std::vector<fznso::Range<std::int64_t>> int_ranges{{1, 2}};
+	const std::vector<fznso::Range<double>> float_ranges{{1.0, 2.0}};
+	const std::vector<std::int64_t> a_list{1, 2};
+	check_complete(fznso::Value{}, "absent vtable complete");
+	check_complete(fznso::Value{a_bool}, "bool vtable complete");
+	check_complete(fznso::Value{an_int}, "int vtable complete");
+	check_complete(fznso::Value{a_float}, "float vtable complete");
+	check_complete(fznso::Value{a_string}, "string vtable complete");
+	check_complete(fznso::Value{fznso::Decision{3}}, "decision vtable complete");
+	check_complete(fznso::Value{fznso::Constraint{4}}, "constraint vtable complete");
+	check_complete(fznso::Value{int_ranges}, "int-set vtable complete");
+	check_complete(fznso::Value{float_ranges}, "float-set vtable complete");
+	check_complete(fznso::Value{a_list}, "list vtable complete");
+	check_complete(fznso::Value{ei}, "value-source vtable complete");
+
+	// A solver's name must spell the `fznso_<name>_` entry points, so the file
+	// name is validated up front rather than failing later as a missing symbol.
+	// The platform's versioning schemes all name `gecode`, which is what lets
+	// several versions sit side by side.
+	for (const char* path : {"libgecode.so", "libgecode.so.6", "libgecode.6.2.1.dylib",
+	                         "gecode.dll", "/usr/lib/fznso/libgecode.so.6"}) {
+		check(fznso::detail::name_from_path(path) == "gecode", "derives gecode");
+		check(fznso::detail::is_valid_name(fznso::detail::name_from_path(path)), "gecode is usable");
+	}
+	check(!fznso::detail::is_valid_name(fznso::detail::name_from_path(".hidden.so")),
+	      "a dotfile yields no usable name");
+	check(!fznso::detail::is_valid_name(fznso::detail::name_from_path("gecode-6.dll")),
+	      "a versioned Windows name is rejected");
+	check(!fznso::detail::is_valid_name("2fast"), "a leading digit is rejected");
+	check(fznso::detail::is_valid_name("or_tools2"), "digits and underscores are fine");
+
+	// The version is parsed out of the file name, and requests match by component.
+	{
+		std::string marker{fznso::detail::lib_marker()};
+		check(fznso::detail::version_from_path(("libgecode" + marker + ".6.2.1").c_str()) == "6.2.1",
+		      "version parsed");
+		check(fznso::detail::version_from_path(("libgecode" + marker).c_str()).empty(),
+		      "unversioned yields empty");
+	}
+	check(fznso::detail::version_matches("", "6.2.1"), "empty matches anything");
+	check(fznso::detail::version_matches("6", "6.2.1"), "6 selects 6.2.1");
+	check(fznso::detail::version_matches("6.2", "6.2.1"), "6.2 selects 6.2.1");
+	check(!fznso::detail::version_matches("6", "60"), "6 does not select 60");
+	check(!fznso::detail::version_matches("6.2", "6.1.0"), "6.2 does not select 6.1.0");
+	check(!fznso::detail::version_matches("6.2.1.0", "6.2.1"), "more specific request fails");
+
+	// Versions order naturally: 10 after 9, and zero-padding is insignificant.
+	check(fznso::detail::natural_less("libx.so.9", "libx.so.10"), "9 sorts before 10");
+	check(!fznso::detail::natural_less("libx.so.10", "libx.so.9"), "10 sorts after 9");
+	check(!fznso::detail::natural_less("libx.so.8", "libx.so.08") &&
+	          !fznso::detail::natural_less("libx.so.08", "libx.so.8"),
+	      "leading zeros do not matter");
+
+	// A directory scan skips non-libraries and unusable names, newest version
+	// first per solver. `discover` never opens anything, so fake files suffice.
+	{
+		namespace fs = std::filesystem;
+		fs::path dir = fs::temp_directory_path() / "fznso-cpp-discover";
+		fs::remove_all(dir);
+		fs::create_directories(dir);
+		std::string marker{fznso::detail::lib_marker()};
+		for (const std::string& f : {"libgecode" + marker + ".6", "libgecode" + marker + ".10",
+		                             "libchuffed" + marker, std::string{"README.txt"},
+		                             "lib2fast" + marker}) {
+			std::ofstream{dir / f};
+		}
+		std::string saved = fznso::detail::env("FZNSO_SOLVER_PATH");
+		::setenv("FZNSO_SOLVER_PATH", dir.string().c_str(), 1);
+		std::vector<fznso::Library::Discovered> found = fznso::Library::discover();
+		check(found.size() == 3, "three usable libraries discovered");
+		check(found[0].name == "chuffed" && found[0].version.empty(), "chuffed sorts first");
+		check(found[1].name == "gecode" && found[1].version == "10", "gecode 10 comes first");
+		check(found[2].name == "gecode" && found[2].version == "6", "then gecode 6");
+		if (saved.empty()) {
+			::unsetenv("FZNSO_SOLVER_PATH");
+		} else {
+			::setenv("FZNSO_SOLVER_PATH", saved.c_str(), 1);
+		}
+		fs::remove_all(dir);
+	}
 
 	std::printf("all value-source checks passed\n");
 	return 0;

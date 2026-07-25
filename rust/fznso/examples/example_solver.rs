@@ -13,7 +13,12 @@
 
 #![allow(missing_docs, reason = "the exported ABI entry points are generated")]
 
-use fznso::{Model, Solution, Solver, SolverType, Status, Value, ValueExt, ValueView};
+use std::marker::PhantomData;
+
+use fznso::{
+	Model, Solution, Solver, SolverType, Statistic, StatisticList, Status, Str, Type, TypeBase,
+	Value, ValueExt, ValueView,
+};
 
 /// The assignment produced by [`ExampleSolver`].
 #[derive(Debug)]
@@ -44,7 +49,39 @@ impl Solution for ExampleSolution {
 pub struct ExampleSolver {
 	/// Value of the `solution_limit` option: how many solutions to emit.
 	solution_limit: i64,
+	/// How many times [`Solver::run`] has been called, reported as the
+	/// solver-level `runs` statistic.
+	runs: i64,
 }
+
+/// An integer statistic, the only shape this fixture reports.
+const INT_STAT: Type = Type {
+	list_of: false,
+	decision: false,
+	set_of: false,
+	opt: false,
+	base: TypeBase::FznsoTypeBaseInt,
+};
+
+/// The statistics this fixture reports, one of each scope: `solutions` is read
+/// from a solution, `runs` from the solver instance. A statistic may also set
+/// both flags, in which case either route works.
+const STATS: &[Statistic<'static>] = &[
+	Statistic {
+		ident: Str::new("solutions"),
+		ty: INT_STAT,
+		solution: true,
+		solver: false,
+		lifetime: PhantomData,
+	},
+	Statistic {
+		ident: Str::new("runs"),
+		ty: INT_STAT,
+		solution: false,
+		solver: true,
+		lifetime: PhantomData,
+	},
+];
 
 impl Solver for ExampleSolver {
 	type Solution<'s> = ExampleSolution;
@@ -52,6 +89,13 @@ impl Solver for ExampleSolver {
 	fn option_get(&self, name: &str) -> Value<'_> {
 		match name {
 			"solution_limit" => (&self.solution_limit).into(),
+			_ => (&()).into(),
+		}
+	}
+
+	fn statistic(&self, name: &str) -> Value<'_> {
+		match name {
+			"runs" => (&self.runs).into(),
 			_ => (&()).into(),
 		}
 	}
@@ -69,10 +113,12 @@ impl Solver for ExampleSolver {
 
 	fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
 	where
-		M: Model,
-		F: for<'s> FnMut(&'s Self::Solution<'s>),
-		G: FnMut(&str, Value<'_>),
+		M: Model + Sync,
+		F: for<'s> FnMut(&'s Self::Solution<'s>) + Send,
+		G: FnMut(&str, Value<'_>) + Send,
 	{
+		self.runs += 1;
+
 		// This fixture ignores the constraints, which is worth saying out loud.
 		let warning = format!("ignoring {} constraint(s)", model.constraint_len());
 		on_message("warn", (&warning).into());
@@ -122,10 +168,19 @@ impl Solver for ExampleSolver {
 }
 
 impl SolverType for ExampleSolver {
-	/// This fixture declares no capabilities, so every list keeps its empty
-	/// default; only the constructor is required.
+	/// The statistic list is declared so the `solution`/`solver` scope flags
+	/// are exercised; the other capability lists keep their empty default.
+	const STATISTIC_LIST: StatisticList<'static> = StatisticList {
+		len: STATS.len(),
+		stats: STATS.as_ptr(),
+		lifetime: PhantomData,
+	};
+
 	fn new() -> Self {
-		Self { solution_limit: 1 }
+		Self {
+			solution_limit: 1,
+			runs: 0,
+		}
 	}
 }
 

@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <iterator>
 #include <optional>
 #include <stdexcept>
@@ -72,6 +73,14 @@ struct Range {
 		return a.min == b.min && a.max == b.max;
 	}
 };
+
+/// Borrow a string as the interface's string handle.
+///
+/// Identifiers and strings cross the interface as a pointer/length pair, never
+/// as a null-terminated C string, so nothing here needs to be re-encoded or
+/// null-terminated. `constexpr`, so the capability lists a solver declares can
+/// name their identifiers directly.
+constexpr FznsoStr str(std::string_view s) { return FznsoStr{s.data(), s.size()}; }
 
 namespace detail {
 
@@ -201,6 +210,8 @@ inline std::string last_error() {
 /// name with any leading `lib` and everything from the first `.` removed, so
 /// `.../libgecode.6.2.1.dylib`, `libgecode.so.6` and `gecode.dll` all yield
 /// `gecode`. The view is valid for as long as `path` is.
+///
+/// See the [`Library`] constructor for the naming rules this assumes.
 inline std::string_view name_from_path(const char* path) {
 	std::string_view name{path};
 	if (std::size_t slash = name.find_last_of("/\\"); slash != std::string_view::npos) {
@@ -213,6 +224,148 @@ inline std::string_view name_from_path(const char* path) {
 		name = name.substr(0, dot);
 	}
 	return name;
+}
+
+/// Whether `name` can spell the `fznso_<name>_...` entry points.
+///
+/// The name is pasted straight into a symbol, so it must be a C identifier:
+/// ASCII letters, digits and underscores, not starting with a digit. This
+/// rejects what would otherwise surface as a baffling missing-symbol error — an
+/// empty name from a dotfile, or a `-` from a versioned Windows file name such
+/// as `gecode-6.dll`.
+/// The file-name marker that identifies a shared library on this platform.
+constexpr std::string_view lib_marker() {
+#if defined(_WIN32)
+	return ".dll";
+#elif defined(__APPLE__)
+	return ".dylib";
+#else
+	return ".so";
+#endif
+}
+
+inline bool is_valid_name(std::string_view name) {
+	auto ident_char = [](char c) {
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+		       c == '_';
+	};
+	if (name.empty() || (!((name[0] >= 'a' && name[0] <= 'z') ||
+	                       (name[0] >= 'A' && name[0] <= 'Z') || name[0] == '_'))) {
+		return false;
+	}
+	for (char c : name) {
+		if (!ident_char(c)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/// Order two file names so embedded numbers compare numerically, putting
+/// `libx.so.10` after `libx.so.9`. Leading zeros are insignificant.
+inline bool natural_less(std::string_view a, std::string_view b) {
+	std::size_t i = 0;
+	std::size_t j = 0;
+	while (i < a.size() && j < b.size()) {
+		if (std::isdigit(static_cast<unsigned char>(a[i])) &&
+		    std::isdigit(static_cast<unsigned char>(b[j]))) {
+			std::size_t ai = i;
+			std::size_t bj = j;
+			while (ai < a.size() && std::isdigit(static_cast<unsigned char>(a[ai]))) {
+				++ai;
+			}
+			while (bj < b.size() && std::isdigit(static_cast<unsigned char>(b[bj]))) {
+				++bj;
+			}
+			std::string_view da = a.substr(i, ai - i);
+			std::string_view db = b.substr(j, bj - j);
+			da.remove_prefix(std::min(da.find_first_not_of('0'), da.size()));
+			db.remove_prefix(std::min(db.find_first_not_of('0'), db.size()));
+			if (da.size() != db.size()) {
+				return da.size() < db.size();
+			}
+			if (da != db) {
+				return da < db;
+			}
+			i = ai;
+			j = bj;
+		} else {
+			if (a[i] != b[j]) {
+				return a[i] < b[j];
+			}
+			++i;
+			++j;
+		}
+	}
+	return (a.size() - i) < (b.size() - j);
+}
+
+/// The version a solver file name carries, or empty if none. The file name with
+/// the leading `lib`, the solver name, the platform marker and surrounding dots
+/// removed, so `libgecode.so.6.2.1` and `libgecode.6.2.1.dylib` both give
+/// `6.2.1`.
+inline std::string version_from_path(const char* path) {
+	std::string_view file{path};
+	if (std::size_t slash = file.find_last_of("/\\"); slash != std::string_view::npos) {
+		file.remove_prefix(slash + 1);
+	}
+	if (file.substr(0, 3) == "lib") {
+		file.remove_prefix(3);
+	}
+	std::size_t name_end = file.find('.');
+	if (name_end == std::string_view::npos) {
+		return {};
+	}
+	std::string rest{file.substr(name_end)};
+	std::string_view marker = lib_marker();
+	if (std::size_t m = rest.find(marker); m != std::string::npos) {
+		rest.erase(m, marker.size());
+	}
+	std::size_t begin = rest.find_first_not_of('.');
+	if (begin == std::string::npos) {
+		return {};
+	}
+	std::size_t end = rest.find_last_not_of('.');
+	return rest.substr(begin, end - begin + 1);
+}
+
+/// Whether `requested` selects `actual`, matching whole dotted components so
+/// that `6` selects `6.2.1` but not `60`. Empty matches any version.
+inline bool version_matches(std::string_view requested, std::string_view actual) {
+	// Compare component by component; the request selects `actual` if every one
+	// of its components equals the matching component of `actual`.
+	auto next = [](std::string_view& s, bool& done) -> std::string_view {
+		if (done) {
+			return {};
+		}
+		std::size_t dot = s.find('.');
+		std::string_view head = s.substr(0, dot);
+		if (dot == std::string_view::npos) {
+			done = true;
+		} else {
+			s.remove_prefix(dot + 1);
+		}
+		return head;
+	};
+	bool r_done = requested.empty();
+	bool a_done = false;
+	while (!r_done) {
+		std::string_view rc = next(requested, r_done);
+		if (a_done) {
+			return false; // request is more specific than `actual`
+		}
+		std::string_view ac = next(actual, a_done);
+		if (rc != ac) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/// Read an environment variable, or empty if unset.
+inline std::string env(const char* name) {
+	const char* value = std::getenv(name);
+	return value == nullptr ? std::string{} : std::string{value};
 }
 
 } // namespace detail
@@ -1037,17 +1190,61 @@ namespace detail {
 /// Publishes a `string_view` as the interface's string handle.
 inline FznsoStr from_view(std::string_view s) { return FznsoStr{s.data(), s.size()}; }
 
+/// Reports that a value vtable slot was called that this value does not
+/// implement, and stops the process.
+[[noreturn]] inline void value_slot_misuse(const char* accessor) {
+	std::fprintf(stderr, "fznso: value accessor %s called for a value of another kind\n", accessor);
+	std::abort();
+}
+
+/// A complete value vtable, describing the absent value.
+///
+/// Every slot is filled: the interface declares them as plain function
+/// pointers, so a null slot is not a valid entry — a consumer in another
+/// language may reject the whole table rather than read the null as
+/// "unsupported". Slots a value does not implement therefore point at an
+/// aborting stub instead of being left null.
+///
+/// Build a value's table by copying this and overriding only the slots that
+/// value actually implements; the absent value is simply the unmodified
+/// default.
+inline FznsoValueMethods default_value_methods() {
+	FznsoValueMethods m{};
+	m.kind = [](const FznsoValue*) { return FznsoValueAbsent; };
+	m.len = [](const FznsoValue*) -> std::size_t { return 0; };
+	m.as_decision = [](const FznsoValue*) -> FznsoDecisionIdx { value_slot_misuse("as_decision"); };
+	m.as_constraint = [](const FznsoValue*) -> FznsoConstraintIdx {
+		value_slot_misuse("as_constraint");
+	};
+	m.as_int = [](const FznsoValue*) -> std::int64_t { value_slot_misuse("as_int"); };
+	m.as_float = [](const FznsoValue*) -> double { value_slot_misuse("as_float"); };
+	m.as_string = [](const FznsoValue*) -> const char* { value_slot_misuse("as_string"); };
+	m.as_bool = [](const FznsoValue*) -> bool { value_slot_misuse("as_bool"); };
+	m.get_range_int = [](const FznsoValue*, std::size_t) -> FznsoIntRange {
+		value_slot_misuse("get_range_int");
+	};
+	m.get_range_float = [](const FznsoValue*, std::size_t) -> FznsoFloatRange {
+		value_slot_misuse("get_range_float");
+	};
+	m.get_element = [](const FznsoValue*, std::size_t) -> FznsoValueRef {
+		value_slot_misuse("get_element");
+	};
+	return m;
+}
+
 /// A decision reference carried *in* the handle's pointer word rather than
 /// behind it, so that synthesising one needs no storage.
 ///
 /// The pointer is never dereferenced; only `as_decision` reads it back.
 inline FznsoValueRef decision_value(Decision decision) {
-	static const FznsoValueMethods table = {
-		[](const FznsoValue*) { return FznsoValueDecision; },
-		[](const FznsoValue*) -> std::size_t { return 0; },
-		[](const FznsoValue* v) -> FznsoDecisionIdx { return reinterpret_cast<std::uintptr_t>(v); },
-		nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-	};
+	static const FznsoValueMethods table = [] {
+		FznsoValueMethods m = default_value_methods();
+		m.kind = [](const FznsoValue*) { return FznsoValueDecision; };
+		m.as_decision = [](const FznsoValue* v) -> FznsoDecisionIdx {
+			return reinterpret_cast<std::uintptr_t>(v);
+		};
+		return m;
+	}();
 	return FznsoValueRef{reinterpret_cast<const FznsoValue*>(
 							 static_cast<std::uintptr_t>(decision.index)),
 	                     &table};
@@ -1055,13 +1252,14 @@ inline FznsoValueRef decision_value(Decision decision) {
 
 /// A constraint reference, carried in the pointer word like [`decision_value`].
 inline FznsoValueRef constraint_value(Constraint constraint) {
-	static const FznsoValueMethods table = {
-		[](const FznsoValue*) { return FznsoValueConstraint; },
-		[](const FznsoValue*) -> std::size_t { return 0; },
-		nullptr,
-		[](const FznsoValue* v) -> FznsoConstraintIdx { return reinterpret_cast<std::uintptr_t>(v); },
-		nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-	};
+	static const FznsoValueMethods table = [] {
+		FznsoValueMethods m = default_value_methods();
+		m.kind = [](const FznsoValue*) { return FznsoValueConstraint; };
+		m.as_constraint = [](const FznsoValue* v) -> FznsoConstraintIdx {
+			return reinterpret_cast<std::uintptr_t>(v);
+		};
+		return m;
+	}();
 	return FznsoValueRef{reinterpret_cast<const FznsoValue*>(
 							 static_cast<std::uintptr_t>(constraint.index)),
 	                     &table};
@@ -1069,11 +1267,7 @@ inline FznsoValueRef constraint_value(Constraint constraint) {
 
 /// The absent value, which likewise needs no storage.
 inline FznsoValueRef absent_value() {
-	static const FznsoValueMethods table = {
-		[](const FznsoValue*) { return FznsoValueAbsent; },
-		[](const FznsoValue*) -> std::size_t { return 0; },
-		nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-	};
+	static const FznsoValueMethods table = default_value_methods();
 	return FznsoValueRef{nullptr, &table};
 }
 
@@ -1082,73 +1276,75 @@ inline FznsoValueRef absent_value() {
 // every use of the handle.
 
 inline FznsoValueRef int_value(const std::int64_t& v) {
-	static const FznsoValueMethods table = {
-		[](const FznsoValue*) { return FznsoValueInt; },
-		[](const FznsoValue*) -> std::size_t { return 0; }, nullptr, nullptr,
-		[](const FznsoValue* p) { return *reinterpret_cast<const std::int64_t*>(p); }, nullptr,
-		nullptr, nullptr, nullptr, nullptr, nullptr,
-	};
+	static const FznsoValueMethods table = [] {
+		FznsoValueMethods m = default_value_methods();
+		m.kind = [](const FznsoValue*) { return FznsoValueInt; };
+		m.as_int = [](const FznsoValue* p) { return *reinterpret_cast<const std::int64_t*>(p); };
+		return m;
+	}();
 	return FznsoValueRef{reinterpret_cast<const FznsoValue*>(&v), &table};
 }
 
 inline FznsoValueRef float_value(const double& v) {
-	static const FznsoValueMethods table = {
-		[](const FznsoValue*) { return FznsoValueFloat; },
-		[](const FznsoValue*) -> std::size_t { return 0; }, nullptr, nullptr, nullptr,
-		[](const FznsoValue* p) { return *reinterpret_cast<const double*>(p); }, nullptr, nullptr,
-		nullptr, nullptr, nullptr,
-	};
+	static const FznsoValueMethods table = [] {
+		FznsoValueMethods m = default_value_methods();
+		m.kind = [](const FznsoValue*) { return FznsoValueFloat; };
+		m.as_float = [](const FznsoValue* p) { return *reinterpret_cast<const double*>(p); };
+		return m;
+	}();
 	return FznsoValueRef{reinterpret_cast<const FznsoValue*>(&v), &table};
 }
 
 inline FznsoValueRef bool_value(const bool& v) {
-	static const FznsoValueMethods table = {
-		[](const FznsoValue*) { return FznsoValueBool; },
-		[](const FznsoValue*) -> std::size_t { return 0; }, nullptr, nullptr, nullptr, nullptr,
-		nullptr, [](const FznsoValue* p) { return *reinterpret_cast<const bool*>(p); }, nullptr,
-		nullptr, nullptr,
-	};
+	static const FznsoValueMethods table = [] {
+		FznsoValueMethods m = default_value_methods();
+		m.kind = [](const FznsoValue*) { return FznsoValueBool; };
+		m.as_bool = [](const FznsoValue* p) { return *reinterpret_cast<const bool*>(p); };
+		return m;
+	}();
 	return FznsoValueRef{reinterpret_cast<const FznsoValue*>(&v), &table};
 }
 
 inline FznsoValueRef string_value(const std::string& s) {
-	static const FznsoValueMethods table = {
-		[](const FznsoValue*) { return FznsoValueString; },
-		[](const FznsoValue* p) { return reinterpret_cast<const std::string*>(p)->size(); }, nullptr,
-		nullptr, nullptr, nullptr,
-		[](const FznsoValue* p) { return reinterpret_cast<const std::string*>(p)->data(); }, nullptr,
-		nullptr, nullptr, nullptr,
-	};
+	static const FznsoValueMethods table = [] {
+		FznsoValueMethods m = default_value_methods();
+		m.kind = [](const FznsoValue*) { return FznsoValueString; };
+		m.len = [](const FznsoValue* p) { return reinterpret_cast<const std::string*>(p)->size(); };
+		m.as_string = [](const FznsoValue* p) {
+			return reinterpret_cast<const std::string*>(p)->data();
+		};
+		return m;
+	}();
 	return FznsoValueRef{reinterpret_cast<const FznsoValue*>(&s), &table};
 }
 
 inline FznsoValueRef int_set_value(const std::vector<Range<std::int64_t>>& ranges) {
 	using Ranges = std::vector<Range<std::int64_t>>;
-	static const FznsoValueMethods table = {
-		[](const FznsoValue*) { return FznsoValueSetInt; },
-		[](const FznsoValue* p) { return reinterpret_cast<const Ranges*>(p)->size(); }, nullptr,
-		nullptr, nullptr, nullptr, nullptr, nullptr,
-		[](const FznsoValue* p, std::size_t i) {
+	static const FznsoValueMethods table = [] {
+		FznsoValueMethods m = default_value_methods();
+		m.kind = [](const FznsoValue*) { return FznsoValueSetInt; };
+		m.len = [](const FznsoValue* p) { return reinterpret_cast<const Ranges*>(p)->size(); };
+		m.get_range_int = [](const FznsoValue* p, std::size_t i) {
 			const Range<std::int64_t>& r = (*reinterpret_cast<const Ranges*>(p))[i];
 			return FznsoIntRange{r.min, r.max};
-		},
-		nullptr, nullptr,
-	};
+		};
+		return m;
+	}();
 	return FznsoValueRef{reinterpret_cast<const FznsoValue*>(&ranges), &table};
 }
 
 inline FznsoValueRef float_set_value(const std::vector<Range<double>>& ranges) {
 	using Ranges = std::vector<Range<double>>;
-	static const FznsoValueMethods table = {
-		[](const FznsoValue*) { return FznsoValueSetFloat; },
-		[](const FznsoValue* p) { return reinterpret_cast<const Ranges*>(p)->size(); }, nullptr,
-		nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-		[](const FznsoValue* p, std::size_t i) {
+	static const FznsoValueMethods table = [] {
+		FznsoValueMethods m = default_value_methods();
+		m.kind = [](const FznsoValue*) { return FznsoValueSetFloat; };
+		m.len = [](const FznsoValue* p) { return reinterpret_cast<const Ranges*>(p)->size(); };
+		m.get_range_float = [](const FznsoValue* p, std::size_t i) {
 			const Range<double>& r = (*reinterpret_cast<const Ranges*>(p))[i];
 			return FznsoFloatRange{r.min, r.max};
-		},
-		nullptr,
-	};
+		};
+		return m;
+	}();
 	return FznsoValueRef{reinterpret_cast<const FznsoValue*>(&ranges), &table};
 }
 
@@ -1172,14 +1368,17 @@ namespace detail {
 /// [`ValueSource`].
 template <class T>
 const FznsoValueMethods& list_methods() {
-	static const FznsoValueMethods table = {
-		[](const FznsoValue*) noexcept { return FznsoValueList; },
-		[](const FznsoValue* p) noexcept { return reinterpret_cast<const std::vector<T>*>(p)->size(); },
-		nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-		[](const FznsoValue* p, std::size_t i) noexcept {
+	static const FznsoValueMethods table = [] {
+		FznsoValueMethods m = default_value_methods();
+		m.kind = [](const FznsoValue*) noexcept { return FznsoValueList; };
+		m.len = [](const FznsoValue* p) noexcept {
+			return reinterpret_cast<const std::vector<T>*>(p)->size();
+		};
+		m.get_element = [](const FznsoValue* p, std::size_t i) noexcept {
 			return Value{(*reinterpret_cast<const std::vector<T>*>(p))[i]}.raw();
-		},
-	};
+		};
+		return m;
+	}();
 	return table;
 }
 } // namespace detail
@@ -1335,8 +1534,8 @@ public:
 		return Value{raw_.methods->value(raw_.data, decision.index)};
 	}
 	/// A named statistic for this solution.
-	Value statistic(const char* name) const {
-		return Value{raw_.methods->statistic(raw_.data, name)};
+	Value statistic(std::string_view name) const {
+		return Value{raw_.methods->statistic(raw_.data, str(name))};
 	}
 
 private:
@@ -1375,9 +1574,16 @@ public:
 	~DynSolver();
 
 	/// The current value of a named option.
-	Value option_get(const char* name) const;
+	Value option_get(std::string_view name) const;
 	/// Set a named option. Returns the solver's message on failure.
-	std::optional<std::string> option_set(const char* name, const Value& value);
+	std::optional<std::string> option_set(std::string_view name, const Value& value);
+
+	/// The current value of a named solver-level statistic, or absent if unknown.
+	///
+	/// Only statistics the library declares with the `solver` flag set are
+	/// readable here; those carrying only the `solution` flag are read from a
+	/// [`Solution`] instead.
+	Value statistic(std::string_view name) const;
 
 	/// Run the solver over `model`, reporting solutions and messages.
 	///
@@ -1408,16 +1614,173 @@ private:
 /// outlive them.
 class Library {
 public:
+	/// Thrown when a solver reports an ABI version this header cannot use. A
+	/// subclass of `std::runtime_error`, so existing handlers still catch it.
+	struct AbiMismatch : std::runtime_error {
+		using std::runtime_error::runtime_error;
+	};
+
+	/// The directories searched for solver libraries, in search order:
+	/// `$FZNSO_SOLVER_PATH`, then the per-user directory, then the system ones.
+	///
+	/// Solvers live in their own `fznso` directory rather than on the normal
+	/// library path: a shim is usually named after the solver it wraps, so
+	/// `libgecode.so` would otherwise collide with real Gecode, and a dedicated
+	/// directory is what makes [`discover`] possible at all.
+	static std::vector<std::filesystem::path> search_paths() {
+		std::vector<std::filesystem::path> dirs;
+		std::string override_var = detail::env("FZNSO_SOLVER_PATH");
+		if (!override_var.empty()) {
+#if defined(_WIN32)
+			char sep = ';';
+#else
+			char sep = ':';
+#endif
+			std::size_t start = 0;
+			while (start <= override_var.size()) {
+				std::size_t end = override_var.find(sep, start);
+				if (end == std::string::npos) {
+					end = override_var.size();
+				}
+				if (end > start) {
+					dirs.emplace_back(override_var.substr(start, end - start));
+				}
+				start = end + 1;
+			}
+		}
+#if defined(_WIN32)
+		if (std::string local = detail::env("LOCALAPPDATA"); !local.empty()) {
+			dirs.emplace_back(std::filesystem::path{local} / "fznso");
+		}
+#elif defined(__APPLE__)
+		if (std::string home = detail::env("HOME"); !home.empty()) {
+			dirs.emplace_back(std::filesystem::path{home} / "Library/Application Support/fznso");
+		}
+#else
+		if (std::string xdg = detail::env("XDG_DATA_HOME"); !xdg.empty()) {
+			dirs.emplace_back(std::filesystem::path{xdg} / "fznso");
+		} else if (std::string home = detail::env("HOME"); !home.empty()) {
+			dirs.emplace_back(std::filesystem::path{home} / ".local/share/fznso");
+		}
+#endif
+#if defined(_WIN32)
+		// Beside the executable is left to the caller on Windows; add nothing.
+#else
+		dirs.emplace_back("/usr/local/lib/fznso");
+		dirs.emplace_back("/usr/lib/fznso");
+#endif
+		return dirs;
+	}
+
+	/// A solver library found on the search path, reported without loading it.
+	struct Discovered {
+		std::string name;
+		std::string version; ///< Parsed from the file name; empty if none.
+		std::filesystem::path path;
+	};
+
+	/// List the solver libraries on the search path, without loading any.
+	///
+	/// Directories are visited in [`search_paths`] order and, within a
+	/// directory, the highest version of a solver comes first. Nothing is
+	/// opened, so the ABI version is not checked here — [`find`] skips a
+	/// candidate built for another ABI.
+	static std::vector<Discovered> discover() {
+		std::vector<Discovered> out;
+		for (const std::filesystem::path& dir : search_paths()) {
+			std::error_code ec;
+			std::vector<std::pair<std::string, Discovered>> here;
+			for (std::filesystem::directory_iterator it{dir, ec}, end; it != end && !ec;
+			     it.increment(ec)) {
+				std::string file = it->path().filename().string();
+				if (file.find(detail::lib_marker()) == std::string::npos) {
+					continue;
+				}
+				std::string_view name = detail::name_from_path(file.c_str());
+				if (!detail::is_valid_name(name)) {
+					continue;
+				}
+				here.push_back(
+					{file, Discovered{std::string{name},
+				                      detail::version_from_path(it->path().string().c_str()),
+				                      it->path()}});
+			}
+			std::sort(here.begin(), here.end(), [](const auto& a, const auto& b) {
+				if (a.second.name != b.second.name) {
+					return detail::natural_less(a.second.name, b.second.name);
+				}
+				// highest version first
+				return detail::natural_less(b.second.version, a.second.version);
+			});
+			for (auto& [file, d] : here) {
+				out.push_back(std::move(d));
+			}
+		}
+		return out;
+	}
+
+	/// Load a solver by name from the search path, choosing the newest version.
+	///
+	/// Candidates are tried in [`discover`] order: directory precedence first (a
+	/// solver in `$FZNSO_SOLVER_PATH` or the per-user directory overrides a
+	/// system one even if older), then newest version among equals. A candidate
+	/// built for a different ABI is skipped and the search continues. Throws
+	/// `std::runtime_error` if no matching solver loads.
+	static std::unique_ptr<Library> find(std::string_view name) {
+		return find_selected(name, std::string_view{}, false);
+	}
+
+	/// Load a solver by name and version from the search path.
+	///
+	/// `version` selects by whole dotted components, so `"6"` matches `6.2.1`;
+	/// an empty string behaves like [`find`]. The newest match is chosen.
+	static std::unique_ptr<Library> find_version(std::string_view name, std::string_view version) {
+		return find_selected(name, version, true);
+	}
+
 	/// Dynamically load a solver library, resolving every entry point it must
 	/// export.
 	///
 	/// The entry points are `fznso_<name>_...`, where `<name>` is recovered from
-	/// the file name (see [`detail::name_from_path`]); this is the only supported
-	/// naming, so the file name and the exported symbols must agree.
+	/// the file name by stripping a leading `lib` and everything from the first
+	/// `.`; this is the only supported naming, so the file name and the exported
+	/// symbols must agree.
 	///
-	/// Throws `std::runtime_error` if the library cannot be opened or is missing
-	/// a symbol.
-	explicit Library(const char* path) { load(path, detail::name_from_path(path)); }
+	/// A solver's *name* has to satisfy both C and the platform's library naming
+	/// at once, so:
+	///
+	/// 1. It must be a valid C identifier: ASCII letters, digits and
+	///    underscores, not starting with a digit. Lowercase is the convention.
+	///    No `-`, no `.`, nothing non-ASCII — those cannot appear in a symbol.
+	/// 2. It must not begin with `lib`, which could not be told apart from the
+	///    platform prefix: `libssat` reads back as `libssat` from
+	///    `liblibssat.so` but as `ssat` from `libssat.dll`.
+	/// 3. The file's base name must be `<name>`, optionally prefixed with `lib`,
+	///    followed by any version and extension components. Everything from the
+	///    first `.` is ignored, so `<name>` must not contain a `.`.
+	///
+	/// Because everything from the first `.` is ignored, the platform's usual
+	/// versioning schemes work unchanged and several versions of one solver can
+	/// sit side by side (`libgecode.so.6`, `libgecode.so.7`). They export the
+	/// same symbols, but libraries are opened privately (`RTLD_LOCAL`, and
+	/// Windows resolves per module), so several can be loaded at once; pass the
+	/// exact path to choose one. Windows has no file-name versioning convention,
+	/// and `gecode-6.dll` is not a legal name, so there put the version in the
+	/// directory instead.
+	///
+	/// Throws `std::runtime_error` if the file name yields an unusable name, or
+	/// if the library cannot be opened or is missing a symbol.
+	explicit Library(const char* path) {
+		std::string_view name = detail::name_from_path(path);
+		if (!detail::is_valid_name(name)) {
+			throw std::runtime_error{std::string{"cannot derive a solver name from `"} + path +
+			                         "`: `" + std::string{name} +
+			                         "` is not a valid FZnSO solver name (expected "
+			                         "[A-Za-z_][A-Za-z0-9_]*, so that it can spell the "
+			                         "fznso_<name>_ entry points)"};
+		}
+		load(path, name);
+	}
 
 	Library(const Library&) = delete;
 	Library& operator=(const Library&) = delete;
@@ -1446,9 +1809,10 @@ private:
 	using StatisticListFn = FznsoStatisticList (*)();
 	using CreateFn = FznsoSolver* (*)();
 	using FreeFn = void (*)(FznsoSolver*);
-	using OptionGetFn = FznsoValueRef (*)(const FznsoSolver*, const char*);
-	using OptionSetFn = bool (*)(FznsoSolver*, const char*, FznsoValueRef);
-	using ReadErrorFn = void (*)(FznsoSolver*, void*, void (*)(void*, const char*));
+	using OptionGetFn = FznsoValueRef (*)(const FznsoSolver*, FznsoStr);
+	using StatisticFn = FznsoValueRef (*)(const FznsoSolver*, FznsoStr);
+	using OptionSetFn = bool (*)(FznsoSolver*, FznsoStr, FznsoValueRef);
+	using ReadErrorFn = void (*)(FznsoSolver*, void*, void (*)(void*, FznsoStr));
 	using RunFn = FznsoStatus (*)(FznsoSolver*, FznsoModelRef, void*,
 	                              void (*)(void*, FznsoSolutionRef),
 	                              void (*)(void*, FznsoStr, FznsoValueRef));
@@ -1466,9 +1830,9 @@ private:
 			// Reject an incompatible ABI before touching any other entry point.
 			auto abi_version = symbol<std::uint32_t (*)()>((p + "_abi_version").c_str());
 			if (std::uint32_t found = abi_version(); found != FZNSO_ABI_VERSION) {
-				throw std::runtime_error{"solver ABI version " + std::to_string(found) +
-				                         " is incompatible with this library's ABI version " +
-				                         std::to_string(FZNSO_ABI_VERSION)};
+				throw AbiMismatch{"solver ABI version " + std::to_string(found) +
+				                  " is incompatible with this library's ABI version " +
+				                  std::to_string(FZNSO_ABI_VERSION)};
 			}
 			constraint_list_ = symbol<ConstraintListFn>((p + "_constraint_list").c_str());
 			decision_list_ = symbol<TypeListFn>((p + "_decision_list").c_str());
@@ -1478,6 +1842,7 @@ private:
 			solver_create_ = symbol<CreateFn>((p + "_solver_create").c_str());
 			solver_free_ = symbol<FreeFn>((p + "_solver_free").c_str());
 			solver_option_get_ = symbol<OptionGetFn>((p + "_solver_option_get").c_str());
+			solver_statistic_ = symbol<StatisticFn>((p + "_solver_statistic").c_str());
 			solver_option_set_ = symbol<OptionSetFn>((p + "_solver_option_set").c_str());
 			solver_read_error_ = symbol<ReadErrorFn>((p + "_solver_read_error").c_str());
 			solver_run_ = symbol<RunFn>((p + "_solver_run").c_str());
@@ -1497,11 +1862,35 @@ private:
 		return reinterpret_cast<Fn>(found);
 	}
 
+	/// Shared implementation of `find` and `find_version`.
+	static std::unique_ptr<Library> find_selected(std::string_view name, std::string_view version,
+	                                               bool by_version) {
+		std::string last_mismatch;
+		for (const Discovered& candidate : discover()) {
+			if (candidate.name != name) {
+				continue;
+			}
+			if (by_version && !detail::version_matches(version, candidate.version)) {
+				continue;
+			}
+			try {
+				return std::unique_ptr<Library>{new Library{candidate.path.string().c_str()}};
+			} catch (const AbiMismatch& e) {
+				last_mismatch = e.what(); // another ABI generation may follow
+			}
+		}
+		if (!last_mismatch.empty()) {
+			throw std::runtime_error{last_mismatch};
+		}
+		throw std::runtime_error{"no solver named `" + std::string{name} +
+		                         "` found on the FZnSO search path"};
+	}
+
 	/// Collect the solver's error message into a string.
 	std::string read_error(FznsoSolver* solver) const {
 		std::string message;
-		solver_read_error_(solver, &message, [](void* ctx, const char* chunk) {
-			static_cast<std::string*>(ctx)->append(chunk);
+		solver_read_error_(solver, &message, [](void* ctx, FznsoStr chunk) {
+			static_cast<std::string*>(ctx)->append(detail::to_view(chunk));
 		});
 		return message;
 	}
@@ -1515,6 +1904,7 @@ private:
 	CreateFn solver_create_ = nullptr;
 	FreeFn solver_free_ = nullptr;
 	OptionGetFn solver_option_get_ = nullptr;
+	StatisticFn solver_statistic_ = nullptr;
 	OptionSetFn solver_option_set_ = nullptr;
 	ReadErrorFn solver_read_error_ = nullptr;
 	RunFn solver_run_ = nullptr;
@@ -1526,12 +1916,16 @@ inline DynSolver::~DynSolver() {
 	}
 }
 
-inline Value DynSolver::option_get(const char* name) const {
-	return Value{lib_->solver_option_get_(handle_, name)};
+inline Value DynSolver::statistic(std::string_view name) const {
+	return Value{lib_->solver_statistic_(handle_, str(name))};
 }
 
-inline std::optional<std::string> DynSolver::option_set(const char* name, const Value& value) {
-	if (lib_->solver_option_set_(handle_, name, value.raw())) {
+inline Value DynSolver::option_get(std::string_view name) const {
+	return Value{lib_->solver_option_get_(handle_, str(name))};
+}
+
+inline std::optional<std::string> DynSolver::option_set(std::string_view name, const Value& value) {
+	if (lib_->solver_option_set_(handle_, str(name), value.raw())) {
 		return std::nullopt;
 	}
 	return lib_->read_error(handle_);

@@ -8,6 +8,8 @@
 
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -46,6 +48,24 @@ int main(int argc, char** argv) {
 	// An unknown option is reported rather than silently accepted.
 	check(solver.option_set("no_such_option", fznso::Value{three}).has_value(),
 	      "unknown option is rejected");
+
+	// Solver-level statistics are read from the solver instance; a name that is
+	// unknown, or declared solution-only, is absent rather than an error.
+	check(solver.statistic("runs").as_int() == 0, "runs starts at zero");
+	check(solver.statistic("no_such_statistic").kind() == FznsoValueAbsent,
+	      "unknown statistic is absent");
+	check(solver.statistic("solutions").kind() == FznsoValueAbsent,
+	      "solution-only statistic is absent on the solver");
+
+	// The declared metadata says where each statistic can be read from.
+	FznsoStatisticList stats = library.statistics();
+	check(stats.len == 2, "two statistics are declared");
+	check(fznso::detail::to_view(stats.stats[0].ident) == "solutions" && stats.stats[0].solution &&
+	          !stats.stats[0].solver,
+	      "solutions is solution-scoped");
+	check(fznso::detail::to_view(stats.stats[1].ident) == "runs" && !stats.stats[1].solution &&
+	          stats.stats[1].solver,
+	      "runs is solver-scoped");
 
 	fznso::LayeredModel model;
 	build(model);
@@ -123,6 +143,51 @@ int main(int argc, char** argv) {
 	fznso::Value empty = opt_back.constraint_argument(fznso::Constraint{0}, 1);
 	check(present.kind() == FznsoValueInt && present.as_int() == 42, "present optional is its value");
 	check(empty.kind() == FznsoValueAbsent, "empty optional is absent");
+
+	// The same solver is reachable by name off the search path, not just by path.
+	// Stage a copy under an `fznso` directory pointed at by FZNSO_SOLVER_PATH.
+	{
+		namespace fs = std::filesystem;
+		std::string derived{fznso::detail::name_from_path(argv[1])};
+		fs::path dir = fs::temp_directory_path() / "fznso-consumer-find";
+		fs::remove_all(dir);
+		fs::create_directories(dir);
+		fs::copy_file(argv[1], dir / fs::path{argv[1]}.filename(),
+		              fs::copy_options::overwrite_existing);
+		::setenv("FZNSO_SOLVER_PATH", dir.string().c_str(), 1);
+
+		bool listed = false;
+		for (const fznso::Library::Discovered& d : fznso::Library::discover()) {
+			listed = listed || d.name == derived;
+		}
+		check(listed, "the staged solver is discovered by name");
+
+		std::unique_ptr<fznso::Library> lib = fznso::Library::find(derived);
+		fznso::DynSolver solver = lib->create_solver();
+		check(solver.option_get("solution_limit").as_int() == 1, "loaded-by-name solver runs");
+
+		// The staged example carries no version, so an empty request finds it and
+		// a specific one does not.
+		check(fznso::Library::find_version(derived, "") != nullptr, "empty version finds it");
+		bool version_threw = false;
+		try {
+			fznso::Library::find_version(derived, "9");
+		} catch (const std::runtime_error&) {
+			version_threw = true;
+		}
+		check(version_threw, "a version that is not installed throws");
+
+		bool threw = false;
+		try {
+			fznso::Library::find("definitely_absent");
+		} catch (const std::runtime_error&) {
+			threw = true;
+		}
+		check(threw, "an absent solver name throws");
+
+		::unsetenv("FZNSO_SOLVER_PATH");
+		fs::remove_all(dir);
+	}
 
 	std::printf("all C++ consumer checks passed\n");
 	return 0;

@@ -1,10 +1,6 @@
 //! Dynamic loading of FZnSO solver libraries.
 
-use std::{
-	ffi::{self, CStr},
-	mem,
-	sync::Arc,
-};
+use std::{ffi, mem, sync::Arc};
 
 use fznso_types::{
 	FZNSO_ABI_VERSION, FznsoConstraintList, FznsoModelRef, FznsoObjectiveList, FznsoOptionList,
@@ -20,6 +16,21 @@ use crate::{DynSolution, DynSolver, Model, Status};
 pub enum LoadError {
 	/// The library could not be opened, or a required symbol was missing.
 	Library(libloading::Error),
+	/// The file name does not yield a usable solver name.
+	InvalidName {
+		/// The file name the loader was given.
+		file_name: String,
+		/// The name derived from it, which cannot spell the `fznso_<name>_`
+		/// entry points.
+		derived: String,
+	},
+	/// No solver of the requested name was found on the search path.
+	NotFound {
+		/// The solver name that was looked for.
+		name: String,
+		/// The directories that were searched.
+		searched: Vec<std::path::PathBuf>,
+	},
 	/// The solver reports an ABI version this library cannot use.
 	AbiMismatch {
 		/// The version the solver reported.
@@ -34,6 +45,21 @@ impl std::fmt::Display for LoadError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			LoadError::Library(err) => write!(f, "{err}"),
+			LoadError::NotFound { name, searched } => write!(
+				f,
+				"no solver named `{name}` found in {}",
+				searched
+					.iter()
+					.map(|p| p.display().to_string())
+					.collect::<Vec<_>>()
+					.join(", ")
+			),
+			LoadError::InvalidName { file_name, derived } => write!(
+				f,
+				"cannot derive a solver name from file name `{file_name}`: `{derived}` is not a \
+				 valid FZnSO solver name (expected `[A-Za-z_][A-Za-z0-9_]*`, so that it can spell \
+				 the `fznso_<name>_` entry points)"
+			),
 			LoadError::AbiMismatch { found, expected } => write!(
 				f,
 				"solver ABI version {found} is incompatible with this library's ABI version \
@@ -47,7 +73,9 @@ impl std::error::Error for LoadError {
 	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
 		match self {
 			LoadError::Library(err) => Some(err),
-			LoadError::AbiMismatch { .. } => None,
+			LoadError::InvalidName { .. }
+			| LoadError::NotFound { .. }
+			| LoadError::AbiMismatch { .. } => None,
 		}
 	}
 }
@@ -83,12 +111,15 @@ pub struct Library {
 	/// Symbol for `fznso_<name>_solver_option_get`.
 	solver_option_get: Symbol<
 		'static,
-		unsafe extern "C" fn(FznsoPtr<'_, FznsoSolver>, *const ffi::c_char) -> FznsoValueRef<'_>,
+		for<'a, 'i> unsafe extern "C" fn(
+			FznsoPtr<'a, FznsoSolver>,
+			FznsoStr<'i>,
+		) -> FznsoValueRef<'a>,
 	>,
 	/// Symbol for `fznso_<name>_solver_option_set`.
 	solver_option_set: Symbol<
 		'static,
-		unsafe extern "C" fn(*mut FznsoSolver, *const ffi::c_char, FznsoValueRef<'_>) -> bool,
+		unsafe extern "C" fn(*mut FznsoSolver, FznsoStr<'_>, FznsoValueRef<'_>) -> bool,
 	>,
 	/// Symbol for `fznso_<name>_solver_read_error`.
 	solver_read_error: Symbol<
@@ -96,7 +127,7 @@ pub struct Library {
 		unsafe extern "C" fn(
 			*mut FznsoSolver,
 			*mut ffi::c_void,
-			extern "C" fn(*mut ffi::c_void, *const ffi::c_char),
+			extern "C" fn(*mut ffi::c_void, FznsoStr<'_>),
 		),
 	>,
 	/// Symbol for `fznso_<name>_solver_run`.
@@ -109,6 +140,14 @@ pub struct Library {
 			extern "C" fn(*mut ffi::c_void, FznsoSolutionRef),
 			extern "C" fn(*mut ffi::c_void, FznsoStr<'_>, FznsoValueRef<'_>),
 		) -> FznsoStatus,
+	>,
+	/// Symbol for `fznso_<name>_solver_statistic`.
+	solver_statistic: Symbol<
+		'static,
+		for<'a, 'i> unsafe extern "C" fn(
+			FznsoPtr<'a, FznsoSolver>,
+			FznsoStr<'i>,
+		) -> FznsoValueRef<'a>,
 	>,
 	/// Symbol for `fznso_<name>_statistic_list`.
 	statistic_list: Symbol<'static, unsafe extern "C" fn() -> FznsoStatisticList<'static>>,
@@ -132,12 +171,15 @@ extern "C" fn wrap_on_message_cb<F, G>(
 	scope: FznsoStr<'_>,
 	value: FznsoValueRef<'_>,
 ) where
-	F: for<'s> FnMut(&'s DynSolution<'s>),
-	G: FnMut(&str, FznsoValueRef<'_>),
+	F: for<'s> FnMut(&'s DynSolution<'s>) + Send,
+	G: FnMut(&str, FznsoValueRef<'_>) + Send,
 {
 	let ctx = ctx as *mut RunCallbacks<'_, F, G>;
 	// SAFETY: ctx was created from &mut RunCallbacks in solver_run; the callback
-	// is only invoked during that call, so it is still live.
+	// is only invoked during that call, so it is still live. The solver may
+	// invoke it from a different thread, but never concurrently (see the
+	// `Solver::run` threading contract), so the &mut is exclusive; `F: Send` and
+	// `G: Send` make `RunCallbacks` sound to touch from that thread.
 	let cbs = unsafe { &mut *ctx };
 	// SAFETY: the solver guarantees `scope` is valid UTF-8 for this call.
 	let scope = unsafe { scope.as_str() }.unwrap_or_default();
@@ -148,12 +190,15 @@ extern "C" fn wrap_on_message_cb<F, G>(
 /// a [`DynSolution`] and forwards it to the Rust closure stored behind `ctx`.
 extern "C" fn wrap_on_solution_cb<F, G>(ctx: *mut ffi::c_void, sol: FznsoSolutionRef<'_>)
 where
-	F: for<'s> FnMut(&'s DynSolution<'s>),
-	G: FnMut(&str, FznsoValueRef<'_>),
+	F: for<'s> FnMut(&'s DynSolution<'s>) + Send,
+	G: FnMut(&str, FznsoValueRef<'_>) + Send,
 {
 	let ctx = ctx as *mut RunCallbacks<'_, F, G>;
 	// SAFETY: ctx was created from &mut RunCallbacks in solver_run; the callback
-	// is only invoked during that call, so it is still live.
+	// is only invoked during that call, so it is still live. The solver may
+	// invoke it from a different thread, but never concurrently (see the
+	// `Solver::run` threading contract), so the &mut is exclusive; `F: Send` and
+	// `G: Send` make `RunCallbacks` sound to touch from that thread.
 	let cbs = unsafe { &mut *ctx };
 	let sol = DynSolution { inner: sol };
 	(cbs.on_solution)(&sol);
@@ -161,14 +206,21 @@ where
 
 /// ABI callback passed to `fznso_solver_read_error`; receives a C string and
 /// forwards it as `&str` to the Rust closure stored behind `ctx`.
-extern "C" fn wrap_read_error_cb<F: FnMut(&str)>(ctx: *mut ffi::c_void, msg: *const ffi::c_char) {
+extern "C" fn wrap_read_error_cb<F: FnMut(&str)>(ctx: *mut ffi::c_void, msg: FznsoStr<'_>) {
 	let ctx = ctx as *mut F;
 	// SAFETY: ctx was created from &mut F in solver_read_error; the callback is
 	// only invoked during that call, so F is still live.
 	let read_err = unsafe { &mut *ctx };
-	// SAFETY: msg is a valid null-terminated C string provided by the library.
-	let msg = unsafe { CStr::from_ptr(msg).to_str().unwrap() };
-	read_err(msg);
+	let bytes = if msg.ptr.is_null() {
+		&[][..]
+	} else {
+		// SAFETY: the library guarantees `ptr` covers `len` bytes for this call.
+		unsafe { std::slice::from_raw_parts(msg.ptr.cast::<u8>(), msg.len) }
+	};
+	// A solver may emit non-UTF-8 bytes; lossily convert rather than panic across
+	// the FFI boundary (which would abort the whole process while reporting an
+	// error).
+	read_err(&String::from_utf8_lossy(bytes));
 }
 
 /// Derive a solver's library name from its file name, borrowing from it.
@@ -176,7 +228,9 @@ extern "C" fn wrap_read_error_cb<F: FnMut(&str)>(ctx: *mut ffi::c_void, msg: *co
 /// Strips a leading `lib` and everything from the first `.`, so
 /// `libgecode.6.2.1.dylib`, `libgecode.so.6` and `gecode.dll` all yield
 /// `gecode`. A non-UTF-8 file name yields `""` — it cannot name ASCII symbols,
-/// so loading then fails.
+/// so [`is_valid_name`] then rejects it.
+///
+/// See [`Library::new`] for the naming rules this assumes.
 fn name_from_filename(filename: &ffi::OsStr) -> &str {
 	let base = std::path::Path::new(filename)
 		.file_name()
@@ -184,6 +238,21 @@ fn name_from_filename(filename: &ffi::OsStr) -> &str {
 		.unwrap_or("");
 	let name = base.strip_prefix("lib").unwrap_or(base);
 	name.split('.').next().unwrap_or(name)
+}
+
+/// Whether `name` can spell the `fznso_<name>_...` entry points.
+///
+/// The name is pasted straight into a symbol, so it must be a C identifier:
+/// ASCII letters, digits and underscores, not starting with a digit. This
+/// rejects the cases that would otherwise fail later as a baffling
+/// missing-symbol error — an empty name from a dotfile, a `-` from a versioned
+/// Windows file name like `gecode-6.dll`, or non-ASCII.
+fn is_valid_name(name: &str) -> bool {
+	let mut chars = name.chars();
+	chars
+		.next()
+		.is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+		&& chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 impl Library {
@@ -231,12 +300,47 @@ impl Library {
 
 	/// Dynamically load a FZnSO solver library from `filename`.
 	///
-	/// The solver's entry points are `fznso_<name>_...`, where `<name>` is
-	/// recovered from the file name: the base name with any leading `lib` and
-	/// everything from the first `.` removed. So `libgecode.so.6`,
+	/// # Naming rules
+	///
+	/// A solver's *name* is the identifier pasted into its entry points
+	/// (`fznso_<name>_solver_run` and friends). It has to satisfy both C and
+	/// the platform's library naming at once, so:
+	///
+	/// 1. **It must be a valid C identifier**: ASCII letters, digits and
+	///    underscores, not starting with a digit (`[A-Za-z_][A-Za-z0-9_]*`).
+	///    Lowercase is the convention. No `-`, no `.`, nothing non-ASCII —
+	///    those cannot appear in a symbol name.
+	/// 2. **It must not begin with `lib`.** On Unix the file is `lib<name>.so`,
+	///    so a name that itself began with `lib` could not be told apart from
+	///    the platform prefix on a platform that has none: `libssat` would be
+	///    read back as `libssat` from `liblibssat.so` but as `ssat` from
+	///    `libssat.dll`.
+	/// 3. **The file's base name must be `<name>`**, optionally prefixed with
+	///    `lib`, followed by any version and extension components. Everything
+	///    from the first `.` is ignored, so `<name>` must not contain a `.`.
+	///
+	/// The name is recovered from the file name by stripping a leading `lib`
+	/// and everything from the first `.`, so `libgecode.so.6`,
 	/// `libgecode.6.2.1.dylib` and `gecode.dll` all load a solver whose entry
 	/// points are prefixed `fznso_gecode_`. This is the only supported naming,
-	/// so the file name and the exported symbols must agree.
+	/// so the file name and the exported symbols must agree. A file name that
+	/// yields something unusable is rejected with [`LoadError::InvalidName`]
+	/// rather than failing later as a missing symbol.
+	///
+	/// # Versioning
+	///
+	/// Because everything from the first `.` is ignored, the platform's usual
+	/// versioning schemes all work unchanged, and several versions of one
+	/// solver can sit side by side — `libgecode.so.6` and `libgecode.so.7`
+	/// both name `gecode`. They export the same `fznso_gecode_*` symbols, but
+	/// the library is opened with `RTLD_LOCAL` (and Windows resolves per
+	/// module), so more than one can be loaded in a single process without
+	/// colliding. Which one is used is the caller's choice: pass the exact
+	/// path.
+	///
+	/// Windows has no file-name versioning convention, and `gecode-6.dll` is
+	/// not a legal name (rule 1), so on Windows put the version in the
+	/// directory rather than the file name.
 	///
 	/// The solver's `fznso_<name>_abi_version` is checked first: loading fails
 	/// with [`LoadError::AbiMismatch`] if it does not equal
@@ -246,15 +350,21 @@ impl Library {
 	/// # Safety
 	///
 	/// The library at `filename` must export valid implementations of all
-	/// twelve FZnSO ABI functions under the `fznso_<name>_` prefix
+	/// thirteen FZnSO ABI functions under the `fznso_<name>_` prefix
 	/// (`abi_version`, `constraint_list`, `decision_list`, `objective_list`,
 	/// `option_list`, `statistic_list`, `solver_create`, `solver_free`,
 	/// `solver_option_get`, `solver_option_set`, `solver_read_error`,
-	/// `solver_run`). Behaviour is undefined if any symbol is missing or does
-	/// not conform to the FZnSO ABI.
+	/// `solver_run`, `solver_statistic`). Behaviour is undefined if any symbol
+	/// is missing or does not conform to the FZnSO ABI.
 	pub unsafe fn new<S: AsRef<ffi::OsStr>>(filename: S) -> Result<Arc<Self>, LoadError> {
 		let filename = filename.as_ref();
 		let name = name_from_filename(filename);
+		if !is_valid_name(name) {
+			return Err(LoadError::InvalidName {
+				file_name: filename.to_string_lossy().into_owned(),
+				derived: name.to_owned(),
+			});
+		}
 		// SAFETY: Caller guarantees the library is a valid FZnSO solver DLL.
 		let lib = unsafe {
 			let lib = libloading::Library::new(filename)?;
@@ -281,6 +391,7 @@ impl Library {
 			let solver_option_set = Self::get_symbol(&lib, sym("_solver_option_set").as_bytes())?;
 			let solver_read_error = Self::get_symbol(&lib, sym("_solver_read_error").as_bytes())?;
 			let solver_run = Self::get_symbol(&lib, sym("_solver_run").as_bytes())?;
+			let solver_statistic = Self::get_symbol(&lib, sym("_solver_statistic").as_bytes())?;
 			let statistic_list = Self::get_symbol(&lib, sym("_statistic_list").as_bytes())?;
 			Self {
 				_lib: lib,
@@ -294,6 +405,7 @@ impl Library {
 				solver_option_set,
 				solver_read_error,
 				solver_run,
+				solver_statistic,
 				statistic_list,
 			}
 		};
@@ -328,10 +440,8 @@ impl Library {
 		solver: *const FznsoSolver,
 		name: &str,
 	) -> FznsoValueRef<'_> {
-		let cname = ffi::CString::new(name).unwrap();
-		// SAFETY: solver is a valid solver pointer; cname is a valid C string
-		// that outlives the call.
-		unsafe { (*self.solver_option_get)(FznsoPtr::new(solver), cname.as_ptr()) }
+		// SAFETY: solver is a valid solver pointer; `name` outlives the call.
+		unsafe { (*self.solver_option_get)(FznsoPtr::new(solver), FznsoStr::from(name)) }
 	}
 
 	/// Call `fznso_solver_option_set`; on failure, retrieve the error via
@@ -342,9 +452,8 @@ impl Library {
 		name: &str,
 		value: FznsoValueRef<'_>,
 	) -> Result<(), String> {
-		let cname = ffi::CString::new(name).unwrap();
-		// SAFETY: solver is valid; cname and value outlive the call.
-		let ok = unsafe { (*self.solver_option_set)(solver, cname.as_ptr(), value) };
+		// SAFETY: solver is valid; `name` and `value` outlive the call.
+		let ok = unsafe { (*self.solver_option_set)(solver, FznsoStr::from(name), value) };
 		if !ok {
 			let mut err = String::default();
 			self.solver_read_error(solver, |msg| err.push_str(msg));
@@ -377,9 +486,9 @@ impl Library {
 		on_message: &mut G,
 	) -> Status
 	where
-		M: Model,
-		F: for<'s> FnMut(&'s DynSolution<'s>),
-		G: FnMut(&str, FznsoValueRef<'_>),
+		M: Model + Sync,
+		F: for<'s> FnMut(&'s DynSolution<'s>) + Send,
+		G: FnMut(&str, FznsoValueRef<'_>) + Send,
 	{
 		let model = crate::model::model_ref(model);
 		let mut callbacks = RunCallbacks {
@@ -411,9 +520,465 @@ impl Library {
 		}
 	}
 
+	/// Call `fznso_solver_statistic` and return the resulting value reference.
+	pub(crate) fn solver_statistic(
+		&self,
+		solver: *const FznsoSolver,
+		name: &str,
+	) -> FznsoValueRef<'_> {
+		// SAFETY: solver is a valid solver pointer; `name` outlives the call.
+		unsafe { (*self.solver_statistic)(FznsoPtr::new(solver), FznsoStr::from(name)) }
+	}
+
 	/// Get the list of statistics produced by solvers from this library.
 	pub fn statistic_list(&self) -> FznsoStatisticList<'_> {
 		// SAFETY: The symbol is a valid function pointer for as long as self lives.
 		unsafe { (*self.statistic_list)() }
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::path::PathBuf;
+
+	use super::{
+		Discovered, discover_in, is_valid_name, name_from_filename, natural_cmp, search_paths_from,
+		version_from_filename, version_matches,
+	};
+
+	/// The name a file yields, and whether it can spell the entry points.
+	#[test]
+	fn solver_names_are_derived_and_validated() {
+		fn derive(f: &str) -> &str {
+			name_from_filename(std::ffi::OsStr::new(f))
+		}
+
+		// The platform's library and versioning schemes all name `gecode`, which
+		// is what lets several versions sit side by side.
+		for file in [
+			"libgecode.so",
+			"libgecode.so.6",
+			"libgecode.so.6.2.1",
+			"libgecode.dylib",
+			"libgecode.6.2.1.dylib",
+			"gecode.dll",
+			"/usr/lib/fznso/libgecode.so.6",
+		] {
+			assert_eq!(derive(file), "gecode", "deriving from {file}");
+			assert!(is_valid_name(derive(file)), "{file}");
+		}
+
+		// Rejected rather than left to fail as a missing symbol: a dotfile yields
+		// nothing, and a versioned Windows name yields a `-`.
+		assert_eq!(derive(".hidden.so"), "");
+		assert!(!is_valid_name(derive(".hidden.so")));
+		assert_eq!(derive("gecode-6.dll"), "gecode-6");
+		assert!(!is_valid_name(derive("gecode-6.dll")));
+
+		// A leading digit cannot start a C identifier.
+		assert!(!is_valid_name("2fast"));
+		assert!(is_valid_name("_private"));
+		assert!(is_valid_name("or_tools2"));
+
+		// Rule 2: a name starting with `lib` reads back differently per platform,
+		// which is exactly why such names are forbidden.
+		assert_eq!(derive("liblibssat.so"), "libssat");
+		assert_eq!(derive("libssat.dll"), "ssat");
+	}
+
+	/// The search path is override, then user, then system, in that order.
+	#[test]
+	fn search_path_is_ordered() {
+		let dirs = search_paths_from(
+			Some(std::ffi::OsStr::new("/env/a")),
+			Some(PathBuf::from("/user")),
+			&["/usr/local/lib/fznso", "/usr/lib/fznso"],
+		);
+		assert_eq!(
+			dirs,
+			vec![
+				PathBuf::from("/env/a"),
+				PathBuf::from("/user"),
+				PathBuf::from("/usr/local/lib/fznso"),
+				PathBuf::from("/usr/lib/fznso"),
+			]
+		);
+
+		// An absent override and user directory just leave the system ones.
+		assert_eq!(
+			search_paths_from(None, None, &["/usr/lib/fznso"]),
+			vec![PathBuf::from("/usr/lib/fznso")]
+		);
+	}
+
+	/// Versions sort naturally: `10` after `9`, and zero-padding does not
+	/// matter.
+	#[test]
+	fn versions_sort_naturally() {
+		let mut v = ["libx.so.9", "libx.so.10", "libx.so.2"];
+		v.sort_by(|a, b| natural_cmp(a, b));
+		assert_eq!(v, ["libx.so.2", "libx.so.9", "libx.so.10"]);
+		assert_eq!(
+			natural_cmp("libx.so.08", "libx.so.8"),
+			std::cmp::Ordering::Equal
+		);
+	}
+
+	/// A directory scan skips non-libraries and unusable names, and orders each
+	/// solver's versions newest-first.
+	#[test]
+	#[cfg_attr(miri, ignore = "reads a real directory")]
+	fn discovery_scans_a_directory() {
+		let dir = std::env::temp_dir().join(format!("fznso-discover-{}", std::process::id()));
+		let _ = std::fs::remove_dir_all(&dir);
+		std::fs::create_dir_all(&dir).unwrap();
+		let marker = super::LIB_MARKER;
+		for file in [
+			format!("libgecode{marker}.6"),
+			format!("libgecode{marker}.10"),
+			format!("libchuffed{marker}"),
+			"README.txt".to_owned(),     // not a library
+			format!("lib2fast{marker}"), // derives `2fast`, not a C identifier
+		] {
+			std::fs::write(dir.join(file), b"").unwrap();
+		}
+
+		let found = discover_in(&dir);
+		let listed: Vec<(&str, &str)> = found
+			.iter()
+			.map(|d| (d.name.as_str(), d.version.as_str()))
+			.collect();
+		// chuffed and gecode only; the txt file and the digit-led name are skipped.
+		// gecode appears twice, its highest version first, each with its version.
+		assert_eq!(
+			listed,
+			vec![("chuffed", ""), ("gecode", "10"), ("gecode", "6")]
+		);
+
+		let _ = std::fs::remove_dir_all(&dir);
+	}
+
+	/// The version is parsed out of the file name across the platform schemes.
+	#[test]
+	fn versions_are_parsed_from_file_names() {
+		// Only the marker for the current platform is recognised, so test that one.
+		let marker = super::LIB_MARKER;
+		assert_eq!(
+			version_from_filename(&format!("libgecode{marker}.6.2.1")),
+			"6.2.1"
+		);
+		assert_eq!(version_from_filename(&format!("libgecode{marker}")), "");
+		assert_eq!(version_from_filename(&format!("gecode{marker}")), "");
+	}
+
+	/// A version request matches by whole dotted components.
+	#[test]
+	fn version_requests_match_by_component() {
+		assert!(version_matches("", "6.2.1")); // empty matches anything
+		assert!(version_matches("6", "6.2.1"));
+		assert!(version_matches("6.2", "6.2.1"));
+		assert!(version_matches("6.2.1", "6.2.1"));
+		assert!(!version_matches("6", "60")); // component, not prefix
+		assert!(!version_matches("6.2", "6.1.0"));
+		assert!(!version_matches("6.2.1.0", "6.2.1")); // request more specific
+	}
+
+	/// `Discovered` is public data; keep it constructible in the doctest sense.
+	#[test]
+	fn discovered_is_a_plain_record() {
+		let d = Discovered {
+			name: "gecode".to_owned(),
+			version: "6.2.1".to_owned(),
+			path: PathBuf::from("/usr/lib/fznso/libgecode.so.6.2.1"),
+		};
+		assert_eq!(d.name, "gecode");
+		assert_eq!(d.version, "6.2.1");
+	}
+}
+
+/// A solver library found on the search path, reported without loading it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Discovered {
+	/// The solver's name, derived from the file name.
+	pub name: String,
+	/// The version, parsed from the file name, or empty if the file carries
+	/// none. Compared component-wise, so `10` is newer than `9`.
+	pub version: String,
+	/// The full path to the library.
+	pub path: std::path::PathBuf,
+}
+
+/// The file-name marker that identifies a shared library on this platform.
+const LIB_MARKER: &str = if cfg!(target_os = "windows") {
+	".dll"
+} else if cfg!(target_os = "macos") {
+	".dylib"
+} else {
+	".so"
+};
+
+/// The version a solver file name carries, or `""` if it carries none.
+///
+/// It is the file name with the leading `lib`, the solver name, the platform's
+/// library marker and any surrounding dots removed — so `libgecode.so.6.2.1`
+/// and `libgecode.6.2.1.dylib` both yield `6.2.1`, `gecode.dll` and
+/// `libgecode.so` yield `""`.
+fn version_from_filename(file_name: &str) -> String {
+	let stripped = file_name.strip_prefix("lib").unwrap_or(file_name);
+	let name = stripped.split('.').next().unwrap_or(stripped);
+	let rest = &stripped[name.len()..];
+	rest.replacen(LIB_MARKER, "", 1)
+		.trim_matches('.')
+		.to_owned()
+}
+
+/// Whether `requested` selects `actual`, matching whole dotted components so
+/// that `6` selects `6.2.1` but not `60`, and `6.2` selects `6.2.1` but not
+/// `6`. An empty request matches any version.
+fn version_matches(requested: &str, actual: &str) -> bool {
+	if requested.is_empty() {
+		return true;
+	}
+	let mut req = requested.split('.');
+	let mut act = actual.split('.');
+	loop {
+		match (req.next(), act.next()) {
+			(None, _) => return true,
+			(Some(_), None) => return false,
+			(Some(r), Some(a)) if r == a => {}
+			(Some(_), Some(_)) => return false,
+		}
+	}
+}
+
+/// Compare two file names so that embedded numbers order numerically, putting
+/// `libgecode.so.10` after `libgecode.so.9` rather than before it.
+fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+	/// Split off the leading run of digits, with insignificant zeros trimmed.
+	fn take_digits<'a>(s: &mut &'a [u8]) -> &'a [u8] {
+		let end = s
+			.iter()
+			.position(|c| !c.is_ascii_digit())
+			.unwrap_or(s.len());
+		let (digits, rest) = s.split_at(end);
+		*s = rest;
+		let trimmed = digits
+			.iter()
+			.position(|c| *c != b'0')
+			.unwrap_or(digits.len());
+		&digits[trimmed..]
+	}
+
+	let (mut x, mut y) = (a.as_bytes(), b.as_bytes());
+	loop {
+		match (x.first(), y.first()) {
+			(None, None) => return std::cmp::Ordering::Equal,
+			(None, Some(_)) => return std::cmp::Ordering::Less,
+			(Some(_), None) => return std::cmp::Ordering::Greater,
+			(Some(p), Some(q)) if p.is_ascii_digit() && q.is_ascii_digit() => {
+				// A longer digit run is the larger number once zeros are trimmed.
+				let (dx, dy) = (take_digits(&mut x), take_digits(&mut y));
+				match dx.len().cmp(&dy.len()).then_with(|| dx.cmp(dy)) {
+					std::cmp::Ordering::Equal => {}
+					other => return other,
+				}
+			}
+			(Some(p), Some(q)) => {
+				match p.cmp(q) {
+					std::cmp::Ordering::Equal => {}
+					other => return other,
+				}
+				x = &x[1..];
+				y = &y[1..];
+			}
+		}
+	}
+}
+
+/// Build the search path from its inputs, so the ordering can be tested without
+/// touching the environment.
+fn search_paths_from(
+	override_var: Option<&ffi::OsStr>,
+	user_dir: Option<std::path::PathBuf>,
+	system_dirs: &[&str],
+) -> Vec<std::path::PathBuf> {
+	let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+	if let Some(var) = override_var {
+		dirs.extend(std::env::split_paths(var).filter(|p| !p.as_os_str().is_empty()));
+	}
+	dirs.extend(user_dir);
+	dirs.extend(system_dirs.iter().map(std::path::PathBuf::from));
+	dirs
+}
+
+/// The per-user solver directory, following each platform's convention.
+fn user_solver_dir() -> Option<std::path::PathBuf> {
+	let home = || std::env::var_os("HOME").map(std::path::PathBuf::from);
+	if cfg!(target_os = "windows") {
+		std::env::var_os("LOCALAPPDATA")
+			.map(std::path::PathBuf::from)
+			.map(|p| p.join("fznso"))
+	} else if cfg!(target_os = "macos") {
+		home().map(|p| p.join("Library/Application Support/fznso"))
+	} else {
+		std::env::var_os("XDG_DATA_HOME")
+			.map(std::path::PathBuf::from)
+			.or_else(|| home().map(|p| p.join(".local/share")))
+			.map(|p| p.join("fznso"))
+	}
+}
+
+/// List the solver libraries in one directory, best candidate first.
+///
+/// Files that are not shared libraries, or whose name cannot spell the entry
+/// points, are skipped rather than reported as errors — a solver directory may
+/// hold unrelated files. Several versions of one solver all appear, ordered so
+/// that the highest version comes first.
+fn discover_in(dir: &std::path::Path) -> Vec<Discovered> {
+	let Ok(entries) = std::fs::read_dir(dir) else {
+		return Vec::new();
+	};
+	let mut found: Vec<Discovered> = entries
+		.flatten()
+		.filter_map(|entry| {
+			let path = entry.path();
+			let file_name = path.file_name()?.to_str()?;
+			if !file_name.contains(LIB_MARKER) {
+				return None;
+			}
+			let name = name_from_filename(path.file_name()?);
+			if !is_valid_name(name) {
+				return None;
+			}
+			let version = version_from_filename(file_name);
+			let name = name.to_owned();
+			Some(Discovered {
+				name,
+				version,
+				path,
+			})
+		})
+		.collect();
+	// Group by name, and within a name put the highest version first, so a bare
+	// name resolves to the newest build in this directory.
+	found.sort_by(|a, b| {
+		natural_cmp(&a.name, &b.name).then_with(|| natural_cmp(&b.version, &a.version))
+	});
+	found
+}
+
+impl Library {
+	/// The directories searched for solver libraries, in search order.
+	///
+	/// Solvers live in a directory of their own rather than on the normal
+	/// library path: a FZnSO shim is usually named after the solver it wraps,
+	/// so `libgecode.so` would otherwise collide with real Gecode, and a
+	/// dedicated directory is what makes [`discover`](Library::discover)
+	/// possible at all.
+	///
+	/// The order is
+	/// 1. `$FZNSO_SOLVER_PATH`, split on the platform's path separator,
+	/// 2. the per-user directory (`$XDG_DATA_HOME/fznso`,
+	///    `~/Library/Application Support/fznso`, or `%LOCALAPPDATA%\fznso`),
+	/// 3. the system directories (`/usr/local/lib/fznso`, `/usr/lib/fznso`, or
+	///    `fznso` beside the running executable on Windows).
+	pub fn search_paths() -> Vec<std::path::PathBuf> {
+		let system: Vec<String> = if cfg!(target_os = "windows") {
+			std::env::current_exe()
+				.ok()
+				.and_then(|exe| Some(exe.parent()?.join("fznso").to_str()?.to_owned()))
+				.into_iter()
+				.collect()
+		} else {
+			vec![
+				"/usr/local/lib/fznso".to_owned(),
+				"/usr/lib/fznso".to_owned(),
+			]
+		};
+		let system: Vec<&str> = system.iter().map(String::as_str).collect();
+		search_paths_from(
+			std::env::var_os("FZNSO_SOLVER_PATH").as_deref(),
+			user_solver_dir(),
+			&system,
+		)
+	}
+
+	/// List the solver libraries on the search path, without loading any.
+	///
+	/// Directories are visited in [`search_paths`](Library::search_paths) order
+	/// and, within one directory, the highest version of a solver comes first.
+	/// Nothing is opened, so the ABI version is *not* checked here — a
+	/// directory may hold solvers built for another ABI, and
+	/// [`find`](Library::find) skips those.
+	pub fn discover() -> Vec<Discovered> {
+		Self::search_paths()
+			.iter()
+			.flat_map(|dir| discover_in(dir))
+			.collect()
+	}
+
+	/// Load a solver by name from the search path, choosing the newest version.
+	///
+	/// Candidates are tried in [`discover`](Library::discover) order, so the
+	/// highest version in the earliest directory wins. Directory precedence
+	/// comes first — a solver placed in `$FZNSO_SOLVER_PATH` or the per-user
+	/// directory overrides a system one even if the system one is newer — and
+	/// the newest version is chosen only among candidates of equal precedence.
+	/// To pin a version regardless, use
+	/// [`find_version`](Library::find_version).
+	///
+	/// A candidate built for a different ABI version is skipped and the search
+	/// continues, since solvers for several ABI versions can share one
+	/// directory.
+	///
+	/// # Safety
+	///
+	/// The libraries found on the search path must be valid FZnSO solvers; see
+	/// [`Library::new`].
+	pub unsafe fn find(name: &str) -> Result<Arc<Self>, LoadError> {
+		// SAFETY: guaranteed by the caller.
+		unsafe { Self::find_selected(name, None) }
+	}
+
+	/// Load a solver by name and version from the search path.
+	///
+	/// `version` selects by whole dotted components, so `"6"` matches `6.2.1`
+	/// and `"6.2"` matches `6.2.1` but not `6.1.0`; an empty string matches any
+	/// version, i.e. behaves like [`find`](Library::find). Among the matches
+	/// the newest is chosen, in [`discover`](Library::discover) order.
+	///
+	/// # Safety
+	///
+	/// The libraries found on the search path must be valid FZnSO solvers; see
+	/// [`Library::new`].
+	pub unsafe fn find_version(name: &str, version: &str) -> Result<Arc<Self>, LoadError> {
+		// SAFETY: guaranteed by the caller.
+		unsafe { Self::find_selected(name, Some(version)) }
+	}
+
+	/// Shared implementation of [`find`](Library::find) and
+	/// [`find_version`](Library::find_version).
+	///
+	/// # Safety
+	///
+	/// The libraries found on the search path must be valid FZnSO solvers.
+	unsafe fn find_selected(name: &str, version: Option<&str>) -> Result<Arc<Self>, LoadError> {
+		let mut last_mismatch = None;
+		let matches = Self::discover()
+			.into_iter()
+			.filter(|d| d.name == name && version.is_none_or(|v| version_matches(v, &d.version)));
+		for candidate in matches {
+			// SAFETY: guaranteed by the caller.
+			match unsafe { Self::new(&candidate.path) } {
+				Ok(lib) => return Ok(lib),
+				// Another ABI generation may sit in the same directory; keep looking.
+				Err(err @ LoadError::AbiMismatch { .. }) => last_mismatch = Some(err),
+				Err(err) => return Err(err),
+			}
+		}
+		Err(last_mismatch.unwrap_or_else(|| LoadError::NotFound {
+			name: name.to_owned(),
+			searched: Self::search_paths(),
+		}))
 	}
 }

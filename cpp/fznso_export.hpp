@@ -4,7 +4,7 @@
 // `FZNSO_EXPORT_SOLVER(YourSolver, yoursolver)` once in a `cdylib`/shared-object
 // build to expose it across the interface. The second argument is the library's
 // name, which prefixes every entry point (`fznso_yoursolver_solver_run`, …).
-// Everything except those twelve entry points is done by templates, which the
+// Everything except those thirteen entry points is done by templates, which the
 // macro forwards to.
 //
 // The consumer side — building models and loading solvers — is in `fznso.hpp`.
@@ -52,8 +52,8 @@ const FznsoSolutionMethods& solution_methods() {
 		[](const FznsoSolution* p, std::size_t i) noexcept {
 			return reinterpret_cast<const S*>(p)->S::value(Decision{i}).raw();
 		},
-		[](const FznsoSolution* p, const char* name) noexcept {
-			return reinterpret_cast<const S*>(p)->S::statistic(std::string_view{name}).raw();
+		[](const FznsoSolution* p, FznsoStr name) noexcept {
+			return reinterpret_cast<const S*>(p)->S::statistic(to_view(name)).raw();
 		},
 	};
 	return table;
@@ -122,7 +122,23 @@ public:
 	/// receives it. Return `std::nullopt` on success.
 	virtual std::optional<std::string> option_set(std::string_view name, Value value) = 0;
 
+	/// The current value of a named solver-level statistic, or absent if unknown.
+	///
+	/// Only statistics this solver declares with the `solver` flag set in
+	/// `statistic_list()` are readable here; statistics carrying only the
+	/// `solution` flag are reported through `SolutionSource::statistic` instead.
+	/// A solver with no solver-level statistics need not override this.
+	virtual Value statistic(std::string_view /*name*/) const { return Value{}; }
+
 	/// Run against `model`, reporting solutions and messages through the sinks.
+	///
+	/// Threading contract, if the solver searches on several threads: the sinks
+	/// must be driven *serially* — `SolutionSink::solution` and
+	/// `MessageSink::message` may be called from any thread, but never two at
+	/// once and never one while the other runs (funnel them through the thread
+	/// that updates the incumbent, or a dedicated reporting thread). `model` is a
+	/// read-only view for the duration of the call and may be queried
+	/// concurrently from any number of threads.
 	virtual Status run(const Model& model, SolutionSink& solutions, MessageSink& messages) = 0;
 
 	/// The constraints this solver accepts. Empty by default.
@@ -146,7 +162,7 @@ private:
 
 namespace detail {
 
-/// The thunks that back the twelve exported entry points for a solver `S`.
+/// The thunks that back the thirteen exported entry points for a solver `S`.
 ///
 /// The solver methods are named through `S::`, so they dispatch directly rather
 /// than through the virtual interface — consistent with the model, value and
@@ -173,14 +189,18 @@ struct Export {
 	static FznsoSolver* create() { return reinterpret_cast<FznsoSolver*>(new S()); }
 	static void free(FznsoSolver* p) { delete reinterpret_cast<S*>(p); }
 
-	static FznsoValueRef option_get(const FznsoSolver* p, const char* name) {
-		return at(p).S::option_get(std::string_view{name}).raw();
+	static FznsoValueRef option_get(const FznsoSolver* p, FznsoStr name) {
+		return at(p).S::option_get(detail::to_view(name)).raw();
 	}
 
-	static bool option_set(FznsoSolver* p, const char* name, FznsoValueRef value) {
+	static FznsoValueRef statistic(const FznsoSolver* p, FznsoStr name) {
+		return at(p).S::statistic(detail::to_view(name)).raw();
+	}
+
+	static bool option_set(FznsoSolver* p, FznsoStr name, FznsoValueRef value) {
 		try {
 			std::optional<std::string> error =
-				at(p).S::option_set(std::string_view{name}, Value{value});
+				at(p).S::option_set(detail::to_view(name), Value{value});
 			if (error.has_value()) {
 				base(p).last_error_ = std::move(*error);
 				return false;
@@ -192,9 +212,8 @@ struct Export {
 		}
 	}
 
-	static void read_error(FznsoSolver* p, void* context,
-	                       void (*read)(void*, const char*)) {
-		read(context, base(p).last_error_.c_str());
+	static void read_error(FznsoSolver* p, void* context, void (*read)(void*, FznsoStr)) {
+		read(context, str(base(p).last_error_));
 	}
 
 	static FznsoStatus run(FznsoSolver* p, FznsoModelRef model, void* context,
@@ -241,7 +260,7 @@ struct Export {
 /// Build an exported entry-point name `fznso_<Name><Suffix>`.
 #define FZNSO_SYMBOL(Name, Suffix) FZNSO_CONCAT(fznso_, FZNSO_CONCAT(Name, Suffix))
 
-/// Define the twelve interface entry points for a `fznso::Solver` subclass.
+/// Define the thirteen interface entry points for a `fznso::Solver` subclass.
 ///
 /// Expand this exactly once, at namespace scope, in the shared object that is
 /// the solver. `Name` is the library's name: every entry point is named
@@ -282,15 +301,19 @@ struct Export {
 		::fznso::detail::Export<SolverType>::free(solver);                                         \
 	}                                                                                              \
 	FZNSO_EXPORTED FznsoValueRef FZNSO_SYMBOL(Name, _solver_option_get)(                           \
-		const FznsoSolver* solver, const char* ident) noexcept {                                   \
+		const FznsoSolver* solver, FznsoStr ident) noexcept {                                      \
 		return ::fznso::detail::Export<SolverType>::option_get(solver, ident);                     \
 	}                                                                                              \
 	FZNSO_EXPORTED bool FZNSO_SYMBOL(Name, _solver_option_set)(                                    \
-		FznsoSolver* solver, const char* ident, FznsoValueRef value) noexcept {                    \
+		FznsoSolver* solver, FznsoStr ident, FznsoValueRef value) noexcept {                       \
 		return ::fznso::detail::Export<SolverType>::option_set(solver, ident, value);              \
 	}                                                                                              \
+	FZNSO_EXPORTED FznsoValueRef FZNSO_SYMBOL(Name, _solver_statistic)(                            \
+		const FznsoSolver* solver, FznsoStr ident) noexcept {                                      \
+		return ::fznso::detail::Export<SolverType>::statistic(solver, ident);                      \
+	}                                                                                              \
 	FZNSO_EXPORTED void FZNSO_SYMBOL(Name, _solver_read_error)(                                    \
-		FznsoSolver* solver, void* context, void (*read_error)(void*, const char*)) noexcept {     \
+		FznsoSolver* solver, void* context, void (*read_error)(void*, FznsoStr)) noexcept {        \
 		::fznso::detail::Export<SolverType>::read_error(solver, context, read_error);              \
 	}                                                                                              \
 	FZNSO_EXPORTED FznsoStatus FZNSO_SYMBOL(Name, _solver_run)(                                    \

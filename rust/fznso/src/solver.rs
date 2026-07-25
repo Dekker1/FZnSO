@@ -43,6 +43,19 @@ pub trait Solver {
 	/// human-readable message if the option is unknown or the value is invalid.
 	fn option_set(&mut self, name: &str, value: Value<'_>) -> Result<(), String>;
 
+	/// The current value of a named solver-level statistic.
+	///
+	/// Only statistics this solver declares with the `solver` flag set in
+	/// [`SolverType::STATISTIC_LIST`] are readable here; statistics carrying
+	/// only the `solution` flag are read from a [`Solution`] instead. An
+	/// unknown name yields the absent value, which is what the default
+	/// implementation returns — a solver with no solver-level statistics need
+	/// not override it.
+	fn statistic(&self, name: &str) -> Value<'_> {
+		let _ = name;
+		(&()).into()
+	}
+
 	/// Run the solver against the given model, invoking `on_solution` for each
 	/// solution found.  Returns the completion [`Status`].
 	///
@@ -52,11 +65,34 @@ pub trait Solver {
 	/// (`warn`, `warn.domain`, `progress.objective`); see the README for the
 	/// scopes solvers are encouraged to use. Failures are *not* reported here —
 	/// those surface as [`Status::Error`].
+	///
+	/// # Threading
+	///
+	/// A solver may search on several threads, so the contract is defined in
+	/// terms of them:
+	///
+	/// - **Callbacks are invoked serially.** The solver must never call
+	///   `on_solution` and `on_message` concurrently — not with themselves, and
+	///   not with each other. It *may* call them from any thread (for example
+	///   the worker that found a solution), as long as it synchronises so that
+	///   each call happens-before the next. That is why the callbacks need only
+	///   be [`Send`], not `Sync`: an ordinary closure that is not safe to call
+	///   concurrently is enough. For an optimising solver this falls out of the
+	///   incumbent update it already serialises, and it keeps solutions in the
+	///   improving order that `intermediate`/`progress.bound` rely on.
+	/// - **The model may be queried concurrently.** The model is a read-only
+	///   view for the duration of the run, so the solver may query it from many
+	///   threads at once (the search hot path). That is why the model must be
+	///   [`Sync`].
+	///
+	/// A consumer that wants to handle solutions in parallel does so *behind* a
+	/// serial callback (push to a channel, fan out downstream); it never has to
+	/// make the callback itself thread-safe.
 	fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
 	where
-		M: Model,
-		F: for<'s> FnMut(&'s Self::Solution<'s>),
-		G: FnMut(&str, Value<'_>);
+		M: Model + Sync,
+		F: for<'s> FnMut(&'s Self::Solution<'s>) + Send,
+		G: FnMut(&str, Value<'_>) + Send;
 }
 
 /// What a solver implementation declares about itself, independently of any
@@ -139,11 +175,15 @@ impl Solver for DynSolver {
 		self.lib.solver_option_set(self.solver, name, value)
 	}
 
+	fn statistic(&self, name: &str) -> Value<'_> {
+		self.lib.solver_statistic(self.solver, name)
+	}
+
 	fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
 	where
-		M: Model,
-		F: for<'s> FnMut(&'s Self::Solution<'s>),
-		G: FnMut(&str, Value<'_>),
+		M: Model + Sync,
+		F: for<'s> FnMut(&'s Self::Solution<'s>) + Send,
+		G: FnMut(&str, Value<'_>) + Send,
 	{
 		self.lib
 			.solver_run(self.solver, model, on_solution, on_message)

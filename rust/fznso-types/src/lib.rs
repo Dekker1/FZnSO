@@ -89,7 +89,7 @@ pub struct FznsoConstraintList<'a> {
 /// types of its arguments.
 pub struct FznsoConstraintType<'a> {
 	/// The identifier of the constraint type.
-	pub ident: *const ffi::c_char,
+	pub ident: FznsoStr<'a>,
 	/// The number of expected arguments for the constraint type.
 	pub arg_len: usize,
 	/// The types of the expected arguments for the constraint type.
@@ -334,7 +334,7 @@ pub struct FznsoModelRef<'a> {
 /// identifier and the type of its argument.
 pub struct FznsoObjective<'a> {
 	/// The identifier of the objective type.
-	pub ident: *const ffi::c_char,
+	pub ident: FznsoStr<'a>,
 	/// The type of the expected argument for the constraint type.
 	pub arg_type: FznsoType,
 	/// The lifetime for which the `ident` attribute is allocated.
@@ -361,12 +361,12 @@ pub struct FznsoObjectiveList<'a> {
 pub struct FznsoOption<'a> {
 	/// The identifier used to set the option or get the current value of the
 	/// option.
-	pub ident: *const ffi::c_char,
+	pub ident: FznsoStr<'a>,
 	/// The type of value that is expected for this option.
-	pub arg_ty: FznsoValueRef<'a>,
+	pub arg_ty: FznsoType,
 	/// The default value for this option.
-	pub arg_def: FznsoType,
-	/// The lifetime of the `ident` attribute.
+	pub arg_def: FznsoValueRef<'a>,
+	/// The lifetime of the `ident` and `arg_def` attributes.
 	pub lifetime: PhantomData<&'a ()>,
 }
 
@@ -409,10 +409,10 @@ pub struct FznsoSolutionMethods {
 	) -> FznsoValueRef<'_>,
 	/// Function callback to retrieve the statistical information made available
 	/// by the solver about the search process so far.
-	pub statistic: extern "C" fn(
-		data: FznsoPtr<'_, FznsoSolution>,
-		ident: *const ffi::c_char,
-	) -> FznsoValueRef<'_>,
+	pub statistic: for<'a, 'i> extern "C" fn(
+		data: FznsoPtr<'a, FznsoSolution>,
+		ident: FznsoStr<'i>,
+	) -> FznsoValueRef<'a>,
 }
 
 #[repr(C)]
@@ -443,16 +443,22 @@ pub struct FznsoSolver(pub ffi::c_void);
 #[derive(Clone, Debug)]
 /// The definition of statistical information that is made available by the
 /// solver.
+///
+/// The `solution` and `solver` flags say *where* the statistic can be read
+/// from, and are independent: a statistic may be available from a solution,
+/// from the solver instance, or from both. At least one of them must be set —
+/// a statistic with neither could be read from nowhere.
 pub struct FznsoStatistic<'a> {
 	/// The identifier used to retrieve the statistical information from the
 	/// solver or a solution.
-	pub ident: *const ffi::c_char,
-	/// The type of value that is expected for this option.
-	pub ty: FznsoValueRef<'a>,
-	/// Whether the statistical information is available as part of solutions.
+	pub ident: FznsoStr<'a>,
+	/// The type of value that is expected for this statistic.
+	pub ty: FznsoType,
+	/// Whether the statistic is available from a solution, read with
+	/// [`FznsoSolutionMethods::statistic`].
 	pub solution: bool,
-	/// Whether the statistical information is generally available from the
-	/// solver instance.
+	/// Whether the statistic is available from the solver instance, read with
+	/// `fznso_solver_statistic`.
 	pub solver: bool,
 	/// The lifetime of the `ident` attribute.
 	pub lifetime: PhantomData<&'a ()>,

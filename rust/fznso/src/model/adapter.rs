@@ -13,6 +13,14 @@ use crate::{AnnotationRef, ConstraintIdx, DecisionIdx, Value, model::Model};
 #[derive(Debug)]
 pub struct ModelRefAdapter<'a>(FznsoModelRef<'a>);
 
+// SAFETY: an adapter only ever wraps a `FznsoModelRef` received across the
+// FZnSO interface, and the `Solver::run` threading contract requires such a
+// model to be safe to query concurrently. `Sync` only permits sharing `&self`
+// across threads, which is exactly a concurrent query; the wrapped data is
+// never mutated through `&self`. The auto-impl is absent only because of the
+// raw data pointer inside.
+unsafe impl Sync for ModelRefAdapter<'_> {}
+
 impl<'a> ModelRefAdapter<'a> {
 	/// Return the inner [`FznsoModelRef`].
 	pub fn into_inner(self) -> FznsoModelRef<'a> {

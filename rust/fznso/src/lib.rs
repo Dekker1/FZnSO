@@ -112,27 +112,39 @@ macro_rules! fznso_export {
 		}
 
 		#[unsafe(export_name = concat!("fznso_", $name, "_solver_option_get"))]
-		pub unsafe extern "C" fn fznso_solver_option_get(
-			solver: $crate::fznso_types::FznsoPtr<'_, $crate::fznso_types::FznsoSolver>,
-			ident: *const ::core::ffi::c_char,
-		) -> $crate::Value<'_> {
+		pub unsafe extern "C" fn fznso_solver_option_get<'a>(
+			solver: $crate::fznso_types::FznsoPtr<'a, $crate::fznso_types::FznsoSolver>,
+			ident: $crate::fznso_types::FznsoStr<'_>,
+		) -> $crate::Value<'a> {
 			// SAFETY: the handle was produced by fznso_solver_create.
 			let state: &($T, ::std::string::String) = unsafe { &*solver.cast() };
-			// SAFETY: `ident` is a null-terminated C string supplied by the caller.
-			let name = unsafe { ::core::ffi::CStr::from_ptr(ident).to_str().unwrap() };
+			// SAFETY: the caller guarantees `ident` is valid UTF-8 for this call.
+			let name = unsafe { ident.as_str() }.unwrap_or_default();
 			<$T as $crate::Solver>::option_get(&state.0, name)
+		}
+
+		#[unsafe(export_name = concat!("fznso_", $name, "_solver_statistic"))]
+		pub unsafe extern "C" fn fznso_solver_statistic<'a>(
+			solver: $crate::fznso_types::FznsoPtr<'a, $crate::fznso_types::FznsoSolver>,
+			ident: $crate::fznso_types::FznsoStr<'_>,
+		) -> $crate::Value<'a> {
+			// SAFETY: the handle was produced by fznso_solver_create.
+			let state: &($T, ::std::string::String) = unsafe { &*solver.cast() };
+			// SAFETY: the caller guarantees `ident` is valid UTF-8 for this call.
+			let name = unsafe { ident.as_str() }.unwrap_or_default();
+			<$T as $crate::Solver>::statistic(&state.0, name)
 		}
 
 		#[unsafe(export_name = concat!("fznso_", $name, "_solver_option_set"))]
 		pub unsafe extern "C" fn fznso_solver_option_set(
 			solver: *mut $crate::fznso_types::FznsoSolver,
-			ident: *const ::core::ffi::c_char,
+			ident: $crate::fznso_types::FznsoStr<'_>,
 			value: $crate::Value<'_>,
 		) -> bool {
 			// SAFETY: the handle was produced by fznso_solver_create.
 			let state: &mut ($T, ::std::string::String) = unsafe { &mut *solver.cast() };
-			// SAFETY: `ident` is a null-terminated C string supplied by the caller.
-			let name = unsafe { ::core::ffi::CStr::from_ptr(ident).to_str().unwrap() };
+			// SAFETY: the caller guarantees `ident` is valid UTF-8 for this call.
+			let name = unsafe { ident.as_str() }.unwrap_or_default();
 			match <$T as $crate::Solver>::option_set(&mut state.0, name, value) {
 				::std::result::Result::Ok(()) => true,
 				::std::result::Result::Err(message) => {
@@ -146,13 +158,14 @@ macro_rules! fznso_export {
 		pub unsafe extern "C" fn fznso_solver_read_error(
 			solver: *mut $crate::fznso_types::FznsoSolver,
 			context: *mut ::core::ffi::c_void,
-			read_error: extern "C" fn(*mut ::core::ffi::c_void, *const ::core::ffi::c_char),
+			read_error: extern "C" fn(*mut ::core::ffi::c_void, $crate::fznso_types::FznsoStr<'_>),
 		) {
 			// SAFETY: the handle was produced by fznso_solver_create.
 			let state: &($T, ::std::string::String) = unsafe { &*solver.cast() };
-			// Interior null bytes cannot be conveyed as a C string; drop them.
-			let message = ::std::ffi::CString::new(state.1.replace('\0', "")).unwrap_or_default();
-			read_error(context, message.as_ptr());
+			read_error(
+				context,
+				$crate::fznso_types::FznsoStr::from(state.1.as_str()),
+			);
 		}
 
 		#[unsafe(export_name = concat!("fznso_", $name, "_solver_run"))]
@@ -173,11 +186,30 @@ macro_rules! fznso_export {
 			// SAFETY: the handle was produced by fznso_solver_create.
 			let state: &mut ($T, ::std::string::String) = unsafe { &mut *solver.cast() };
 			let adapter = $crate::ModelRefAdapter::new(model);
+			// The consumer's `context` is a raw pointer, so it is not `Send` by
+			// itself. The `Solver::run` threading contract lets the solver forward
+			// a callback from any thread but never concurrently, and the consumer
+			// guarantees its `context` is safe to use under that rule — so wrap it
+			// to carry it across the `Send` bound on the callbacks.
+			#[derive(Clone, Copy)]
+			struct SendCtx(*mut ::core::ffi::c_void);
+			// SAFETY: upheld by the `Solver::run` threading contract, as above.
+			unsafe impl ::core::marker::Send for SendCtx {}
+			let context = SendCtx(context);
 			let status = <$T as $crate::Solver>::run(
 				&mut state.0,
 				&adapter,
-				&mut |sol| on_solution(context, $crate::solution_ref(sol)),
-				&mut |scope: &str, value| on_message(context, scope.into(), value),
+				&mut move |sol| {
+					// Rebind so the closure captures the whole `SendCtx`, not just its
+					// `*mut c_void` field — edition-2021 disjoint capture would otherwise
+					// grab the raw pointer directly and drop the `Send` we added.
+					let context = context;
+					on_solution(context.0, $crate::solution_ref(sol))
+				},
+				&mut move |scope: &str, value| {
+					let context = context;
+					on_message(context.0, scope.into(), value)
+				},
 			);
 			match status {
 				$crate::Status::Complete => $crate::fznso_types::FznsoStatus::FznsoComplete,
@@ -202,8 +234,8 @@ pub use fznso_types;
 use fznso_types::{
 	FznsoAnnotationRef, FznsoConstraintIdx, FznsoConstraintList, FznsoConstraintType,
 	FznsoDecisionIdx, FznsoObjective, FznsoObjectiveList, FznsoOption, FznsoOptionList,
-	FznsoStatistic, FznsoStatisticList, FznsoType, FznsoTypeBase, FznsoTypeList, FznsoValueKind,
-	FznsoValueRef,
+	FznsoStatistic, FznsoStatisticList, FznsoStr, FznsoType, FznsoTypeBase, FznsoTypeList,
+	FznsoValueKind, FznsoValueRef,
 };
 pub use rangelist::RangeList;
 
@@ -242,6 +274,9 @@ pub type ObjectiveList<'a> = FznsoObjectiveList<'a>;
 pub type OptionDef<'a> = FznsoOption<'a>;
 /// A list of options; see [`fznso_types::FznsoOptionList`].
 pub type OptionList<'a> = FznsoOptionList<'a>;
+/// A borrowed UTF-8 string passed across the interface; see
+/// [`fznso_types::FznsoStr`].
+pub type Str<'a> = FznsoStr<'a>;
 /// A single statistic descriptor; see [`fznso_types::FznsoStatistic`].
 pub type Statistic<'a> = FznsoStatistic<'a>;
 /// A list of statistics; see [`fznso_types::FznsoStatisticList`].
@@ -302,7 +337,7 @@ mod tests {
 	use std::ffi;
 
 	use fznso_types::{
-		FznsoConstraintIdx, FznsoDecisionIdx, FznsoPtr, FznsoSolutionRef, FznsoStatus,
+		FznsoConstraintIdx, FznsoDecisionIdx, FznsoPtr, FznsoSolutionRef, FznsoStatus, FznsoStr,
 	};
 
 	use crate::{
@@ -359,9 +394,9 @@ mod tests {
 
 		fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
 		where
-			M: Model,
-			F: for<'s> FnMut(&'s Self::Solution<'s>),
-			G: FnMut(&str, Value<'_>),
+			M: Model + Sync,
+			F: for<'s> FnMut(&'s Self::Solution<'s>) + Send,
+			G: FnMut(&str, Value<'_>) + Send,
 		{
 			on_message("warn", (&String::from("ignoring all constraints")).into());
 			// Read back through the model vtable, so the model handle is exercised.
@@ -399,11 +434,7 @@ mod tests {
 	}
 
 	/// Collects the scopes and payloads passed to the `on_message` callback.
-	extern "C" fn collect_messages(
-		ctx: *mut ffi::c_void,
-		scope: fznso_types::FznsoStr<'_>,
-		value: Value<'_>,
-	) {
+	extern "C" fn collect_messages(ctx: *mut ffi::c_void, scope: FznsoStr<'_>, value: Value<'_>) {
 		// SAFETY: `ctx` is the `&mut Collected` handed to `fznso_solver_run`.
 		let out = unsafe { &mut *(ctx as *mut Collected) };
 		// SAFETY: the scope is valid UTF-8 for the duration of this call.
@@ -417,10 +448,7 @@ mod tests {
 		// SAFETY: `ctx` is the `&mut Collected` handed to `fznso_solver_run`.
 		let out = unsafe { &mut *(ctx as *mut Collected) };
 		let value = (sol.methods.value)(sol.data, 0).get_int();
-		let stat = {
-			let name = ffi::CString::new("nodes").unwrap();
-			(sol.methods.statistic)(sol.data, name.as_ptr()).get_int()
-		};
+		let stat = (sol.methods.statistic)(sol.data, FznsoStr::new("nodes")).get_int();
 		out.solutions.push((value, stat));
 	}
 
@@ -448,20 +476,21 @@ mod tests {
 		let solver = fznso_solver_create();
 
 		// Option round trip across the opaque solver handle.
-		let name = ffi::CString::new("seed").unwrap();
+		let name = FznsoStr::new("seed");
 		// SAFETY: `solver` came from `fznso_solver_create`.
-		let seed = unsafe { fznso_solver_option_get(FznsoPtr::new(solver), name.as_ptr()) };
+		let seed = unsafe { fznso_solver_option_get(FznsoPtr::new(solver), name) };
 		assert_eq!(seed.get_int(), 100);
 		// SAFETY: `solver` came from `fznso_solver_create`.
-		assert!(unsafe { fznso_solver_option_set(solver, name.as_ptr(), (&7_i64).into()) });
+		assert!(unsafe { fznso_solver_option_set(solver, name, (&7_i64).into()) });
 		// SAFETY: `solver` came from `fznso_solver_create`.
-		let seed = unsafe { fznso_solver_option_get(FznsoPtr::new(solver), name.as_ptr()) };
+		let seed = unsafe { fznso_solver_option_get(FznsoPtr::new(solver), name) };
 		assert_eq!(seed.get_int(), 7);
 
 		// Unknown options are rejected rather than silently accepted.
-		let bogus = ffi::CString::new("nope").unwrap();
 		// SAFETY: `solver` came from `fznso_solver_create`.
-		assert!(!unsafe { fznso_solver_option_set(solver, bogus.as_ptr(), (&1_i64).into()) });
+		assert!(!unsafe {
+			fznso_solver_option_set(solver, FznsoStr::new("nope"), (&1_i64).into())
+		});
 
 		let m = model();
 		let mut out = Collected::default();

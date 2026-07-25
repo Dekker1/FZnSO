@@ -44,6 +44,14 @@ def test_options_round_trip(solver):
     assert solver.option_get("solution_limit") == 3
 
 
+def test_solver_statistic(solver):
+    # `runs` is declared solver-scoped, so it is read from the solver instance.
+    assert solver.statistic("runs") == 0
+    # Unknown, and solution-scoped, statistics are absent here.
+    assert solver.statistic("nope") is None
+    assert solver.statistic("solutions") is None
+
+
 def test_unknown_option_raises_with_message(solver):
     with pytest.raises(ValueError, match="unknown option `nope`"):
         solver.option_set("nope", 1)

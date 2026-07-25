@@ -49,7 +49,7 @@ void fznso_NAME_solver_free(FznsoSolver *solver);
 //
 // `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
 // not yet been passed to [`fznso_NAME_solver_free`].
-FznsoValueRef fznso_NAME_solver_option_get(const FznsoSolver * solver, const char *ident);
+FznsoValueRef fznso_NAME_solver_option_get(const FznsoSolver * solver, FznsoStr ident);
 
 // Set the current value of an option for the solver.
 //
@@ -62,7 +62,7 @@ FznsoValueRef fznso_NAME_solver_option_get(const FznsoSolver * solver, const cha
 //
 // `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
 // not yet been passed to [`fznso_NAME_solver_free`].
-bool fznso_NAME_solver_option_set(FznsoSolver *solver, const char *ident, FznsoValueRef value);
+bool fznso_NAME_solver_option_set(FznsoSolver *solver, FznsoStr ident, FznsoValueRef value);
 
 // Read an error message from the solver.
 //
@@ -76,7 +76,7 @@ bool fznso_NAME_solver_option_set(FznsoSolver *solver, const char *ident, FznsoV
 // not yet been passed to [`fznso_NAME_solver_free`].
 void fznso_NAME_solver_read_error(FznsoSolver *solver,
                                   void *context,
-                                  void (*read_error)(void *context, const char *error));
+                                  void (*read_error)(void *context, FznsoStr error));
 
 // Run the solver with the given model
 //
@@ -85,6 +85,21 @@ void fznso_NAME_solver_read_error(FznsoSolver *solver,
 // callers can filter on a prefix. Failures are not reported here; they are
 // signalled by returning [`FznsoError`] and retrieved with
 // [`fznso_NAME_solver_read_error`].
+//
+// # Threading
+//
+// A solver may search on several threads. The contract for the callbacks and
+// the model is:
+//
+// - `on_solution` and `on_message` must be invoked **serially**: never two at
+//   once, and never one while the other runs. They may be called from any
+//   thread (for example the worker that found a solution), as long as each call
+//   happens-before the next. A caller therefore need not make its callbacks
+//   safe to call concurrently. (Serial reporting also keeps solutions in the
+//   improving order that intermediate/bound reporting relies on.)
+// - `model` may be queried **concurrently**: it is a read-only view for the
+//   duration of the call, so a parallel solver may read it from many threads at
+//   once. A caller must therefore make the model safe for concurrent reads.
 //
 // # Safety
 //
@@ -97,6 +112,20 @@ FznsoStatus fznso_NAME_solver_run(FznsoSolver *solver,
                                   void (*on_message)(void *context,
                                                      FznsoStr scope,
                                                      FznsoValueRef value));
+
+// Get the current value of a statistic from the solver instance.
+//
+// Note that this is only valid to be called with statistics named by
+// `fznso_NAME_statistic_list` whose `solver` flag is set; statistics carrying
+// only the `solution` flag are read from a solution instead, using
+// `FznsoSolutionMethods::statistic`. An unknown identifier yields a value of
+// kind `FznsoValueAbsent`.
+//
+// # Safety
+//
+// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
+// not yet been passed to [`fznso_NAME_solver_free`].
+FznsoValueRef fznso_NAME_solver_statistic(const FznsoSolver * solver, FznsoStr ident);
 
 // Returns the list of available statistical information that can be requested
 // from the solver and its solutions.

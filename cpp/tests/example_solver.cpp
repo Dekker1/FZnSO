@@ -42,6 +42,21 @@ public:
 		return name == "solution_limit" ? fznso::Value{solution_limit_} : fznso::Value{};
 	}
 
+	fznso::Value statistic(std::string_view name) const override {
+		return name == "runs" ? fznso::Value{runs_} : fznso::Value{};
+	}
+
+	/// One statistic of each scope: `solutions` is read from a solution, `runs`
+	/// from the solver instance. A statistic may also set both flags.
+	static FznsoStatisticList statistic_list() {
+		static const FznsoType int_stat{false, false, false, false, FznsoTypeBaseInt};
+		static const FznsoStatistic stats[] = {
+			{fznso::str("solutions"), int_stat, true, false},
+			{fznso::str("runs"), int_stat, false, true},
+		};
+		return {sizeof(stats) / sizeof(stats[0]), stats};
+	}
+
 	std::optional<std::string> option_set(std::string_view name, fznso::Value value) override {
 		if (name == "solution_limit") {
 			solution_limit_ = value.as_int();
@@ -52,6 +67,8 @@ public:
 
 	fznso::Status run(const fznso::Model& model, fznso::SolutionSink& solutions,
 	                  fznso::MessageSink& messages) override {
+		++runs_;
+
 		// This fixture ignores the constraints, which is worth saying out loud.
 		std::string warning = "ignoring " + std::to_string(model.constraint_count()) + " constraint(s)";
 		messages.message("warn", fznso::Value{warning});
@@ -77,6 +94,7 @@ public:
 
 private:
 	std::int64_t solution_limit_ = 1;
+	std::int64_t runs_ = 0;
 };
 
 } // namespace

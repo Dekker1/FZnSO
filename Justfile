@@ -9,6 +9,7 @@ build:
 # Run the test suite.
 test: test-cpp test-python
     cargo test --workspace --all-features
+    cargo check --manifest-path python/Cargo.toml --all-targets
 
 # Exercise the C++ bindings.
 test-cpp:
@@ -62,11 +63,14 @@ test-python:
 check: check-headers
     cargo clippy --tests -- -D warnings
     cargo +nightly fmt --check
+    cargo clippy --manifest-path python/Cargo.toml --all-targets -- -D warnings
+    cargo +nightly fmt --check --manifest-path python/Cargo.toml
     just --unstable --fmt --check
 
 # Format all the files in the project.
 format:
     cargo +nightly fmt
+    cargo +nightly fmt --manifest-path python/Cargo.toml
     just --unstable --fmt
 
 # Check that the (generated) headers compile.

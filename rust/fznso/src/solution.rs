@@ -1,8 +1,6 @@
 //! Solution types and the [`Solution`] trait for Rust solver implementations.
 
-use std::ffi;
-
-use fznso_types::{FznsoPtr, FznsoSolution, FznsoSolutionMethods, FznsoSolutionRef};
+use fznso_types::{FznsoPtr, FznsoSolution, FznsoSolutionMethods, FznsoSolutionRef, FznsoStr};
 
 use crate::Value;
 
@@ -47,14 +45,14 @@ pub fn solution_ref<S: Solution + 'static>(sol: &S) -> FznsoSolutionRef<'_> {
 }
 
 /// Vtable thunk: delegates to [`Solution::statistic`].
-extern "C" fn wrap_sol_statistic<S: Solution + 'static>(
-	data: FznsoPtr<'_, FznsoSolution>,
-	ident: *const ffi::c_char,
-) -> fznso_types::FznsoValueRef<'_> {
+extern "C" fn wrap_sol_statistic<'a, S: Solution + 'static>(
+	data: FznsoPtr<'a, FznsoSolution>,
+	ident: FznsoStr<'_>,
+) -> fznso_types::FznsoValueRef<'a> {
 	// SAFETY: data was created from &S in SolutionWrapper::into_ref via transmute.
 	let sol: &S = unsafe { &*data.cast::<S>() };
-	// SAFETY: ident is a valid null-terminated C string provided by the caller.
-	let name = unsafe { ffi::CStr::from_ptr(ident).to_str().unwrap() };
+	// SAFETY: the caller guarantees `ident` is valid UTF-8 for this call.
+	let name = unsafe { ident.as_str() }.unwrap_or_default();
 	sol.statistic(name)
 }
 
@@ -70,8 +68,9 @@ extern "C" fn wrap_sol_value<S: Solution + 'static>(
 
 impl Solution for DynSolution<'_> {
 	fn statistic(&self, name: &str) -> Value<'_> {
-		let cname = ffi::CString::new(name).unwrap();
-		(self.inner.methods.statistic)(self.inner.data, cname.as_ptr())
+		// The identifier crosses as a pointer/length pair, so no re-encoding (and
+		// no interior-nul failure mode) is involved.
+		(self.inner.methods.statistic)(self.inner.data, FznsoStr::from(name))
 	}
 
 	fn value(&self, decision_idx: usize) -> Value<'_> {

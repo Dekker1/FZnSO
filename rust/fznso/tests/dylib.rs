@@ -114,6 +114,52 @@ fn load_and_run_a_dynamic_solver() {
 		.expect_err("unknown option is rejected");
 	assert_eq!(error, "unknown option `no_such_option`");
 
+	// Identifiers cross as a pointer/length pair, so an interior nul is just an
+	// ordinary byte: the name is carried through intact and simply matches no
+	// declared option. There is no re-encoding step left to fail.
+	assert_eq!(
+		solver.option_get("bad\0name").kind(),
+		fznso::ValueKind::FznsoValueAbsent
+	);
+	assert_eq!(
+		solver
+			.option_set("bad\0name", (&1_i64).into())
+			.expect_err("unknown option is rejected"),
+		"unknown option `bad\0name`"
+	);
+
+	// Solver-level statistics are readable from the solver instance itself, and
+	// an unknown name is absent rather than an error.
+	assert_eq!(solver.statistic("runs").get_int(), 0);
+	assert_eq!(
+		solver.statistic("no_such_statistic").kind(),
+		fznso::ValueKind::FznsoValueAbsent
+	);
+	// `solutions` is declared solution-only, so it does not answer here.
+	assert_eq!(
+		solver.statistic("solutions").kind(),
+		fznso::ValueKind::FznsoValueAbsent
+	);
+
+	// The declared metadata says where each statistic can be read from.
+	let stats = solver.statistic_list();
+	// SAFETY: the library returns a valid array of `len` statistics, valid for
+	// as long as the library is loaded.
+	let stats = unsafe { std::slice::from_raw_parts(stats.stats, stats.len) };
+	let scopes: Vec<(&str, bool, bool)> = stats
+		.iter()
+		.map(|s| {
+			// SAFETY: the library guarantees each `ident` is valid UTF-8 for as
+			// long as it stays loaded.
+			let ident = unsafe { s.ident.as_str() }.unwrap_or_default();
+			(ident, s.solution, s.solver)
+		})
+		.collect();
+	assert_eq!(
+		scopes,
+		vec![("solutions", true, false), ("runs", false, true)]
+	);
+
 	let m = model();
 	let mut solutions: Vec<(i64, i64, i64)> = Vec::new();
 	let mut messages: Vec<(String, String)> = Vec::new();
@@ -132,6 +178,8 @@ fn load_and_run_a_dynamic_solver() {
 	);
 
 	assert!(matches!(status, Status::Complete), "got {status:?}");
+	// The solver-level statistic reflects state accumulated by the run.
+	assert_eq!(solver.statistic("runs").get_int(), 1);
 	// The fixture assigns each domain's lower bound, shifting the first variable
 	// by the solution index.
 	assert_eq!(solutions, vec![(3, 10, 0), (4, 10, 1), (5, 10, 2)]);
@@ -140,6 +188,58 @@ fn load_and_run_a_dynamic_solver() {
 		messages,
 		vec![("warn".to_owned(), "ignoring 1 constraint(s)".to_owned())]
 	);
+}
+
+#[test]
+#[cfg_attr(miri, ignore = "miri cannot dynamically load a library")]
+fn find_loads_a_solver_from_the_search_path() {
+	// Stage the built example under a name matching the file it will be found by,
+	// in a directory pointed at by FZNSO_SOLVER_PATH.
+	let built = example_path("example_solver");
+	let dir = env::temp_dir().join(format!("fznso-find-{}", std::process::id()));
+	let _ = std::fs::remove_dir_all(&dir);
+	std::fs::create_dir_all(&dir).unwrap();
+	let staged = dir.join(built.file_name().unwrap());
+	let _ = std::fs::copy(&built, &staged).unwrap();
+
+	// SAFETY: this test is single-threaded, and the var is removed again below.
+	unsafe { env::set_var("FZNSO_SOLVER_PATH", &dir) };
+
+	// It is discovered by name without a path...
+	let listed = Library::discover();
+	assert!(
+		listed.iter().any(|d| d.name == "example_solver"),
+		"discover() did not list it: {listed:?}"
+	);
+
+	// ...and loading by name runs it just like loading by path.
+	// SAFETY: the staged library is this workspace's own example solver.
+	let lib = unsafe { Library::find("example_solver") }.expect("find example solver");
+	let solver = lib.create_solver();
+	assert_eq!(solver.option_get("solution_limit").get_int(), 1);
+
+	// The staged example carries no version, so an empty request finds it and a
+	// specific request does not.
+	// SAFETY: the staged library is this workspace's own example solver.
+	assert!(unsafe { Library::find_version("example_solver", "") }.is_ok());
+	// SAFETY: as above; no such version is installed, so it must not load.
+	let versioned = unsafe { Library::find_version("example_solver", "9") };
+	assert!(
+		matches!(versioned, Err(LoadError::NotFound { .. })),
+		"got {versioned:?}"
+	);
+
+	// An unknown name reports where it looked.
+	// SAFETY: no such solver exists; `find` must return NotFound.
+	let missing = unsafe { Library::find("definitely_absent") };
+	assert!(
+		matches!(missing, Err(LoadError::NotFound { .. })),
+		"got {missing:?}"
+	);
+
+	// SAFETY: single-threaded test; restore the environment.
+	unsafe { env::remove_var("FZNSO_SOLVER_PATH") };
+	let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
