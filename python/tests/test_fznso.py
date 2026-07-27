@@ -24,9 +24,23 @@ def solver_path() -> str:
     return str(path)
 
 
+def threaded_solver_path() -> str:
+    prefix, suffix = ("lib", ".dylib") if sys.platform == "darwin" else ("lib", ".so")
+    path = REPO / "target" / "debug" / "examples" / f"{prefix}threaded_solver{suffix}"
+    if not path.exists():
+        pytest.skip(f"{path} not built; run `cargo build --example threaded_solver`")
+    return str(path)
+
+
 @pytest.fixture
 def solver():
     return fznso.Library(solver_path()).create_solver()
+
+
+@pytest.fixture
+def threaded_solver():
+    """A solver that reads the model and reports from a worker thread."""
+    return fznso.Library(threaded_solver_path()).create_solver()
 
 
 def build_model():
@@ -149,6 +163,44 @@ def test_custom_python_model(solver):
     # Lower bounds 7 and 30; the solver shifts the first by the solution index.
     assert solutions == [(7, 30), (8, 30)]
     assert messages == [("warn", "ignoring 2 constraint(s)")]
+
+
+def test_threaded_solver_does_not_deadlock(threaded_solver):
+    """A solver reporting from its own thread must not hang.
+
+    ``run`` releases the GIL for the duration of the search, so a worker thread
+    can take it to invoke the callbacks. Were it held across the run, this would
+    *hang* rather than fail — which is exactly why the case needs a test.
+    """
+    m, a, _ = build_model()  # a native LayeredModel: two decisions
+
+    solutions, messages = [], []
+    status = threaded_solver.run(
+        m,
+        on_solution=lambda s: solutions.append(s[a]),
+        on_message=lambda scope, value: messages.append((scope, value)),
+    )
+
+    assert status == fznso.Status.Complete
+    # The fixture reports the decision count it read from the worker thread.
+    assert solutions == [2]
+    assert messages == [("log", "read 2 decision(s) from a worker thread")]
+
+
+def test_threaded_solver_reads_a_python_model(threaded_solver):
+    """The strongest case: the worker thread re-enters Python for *model reads*.
+
+    With a model implemented in Python, every query the worker makes has to
+    reacquire the GIL from a thread that never held it, on top of the callbacks.
+    """
+    model = DomainModel([(7, 20), (30, 40), (1, 2)])
+
+    solutions = []
+    status = threaded_solver.run(model, on_solution=lambda s: solutions.append(s.value(0)))
+
+    assert status == fznso.Status.Complete
+    # Three decisions, counted by the worker through the Python model.
+    assert solutions == [3]
 
 
 class TwoLayerModel(fznso.Model):

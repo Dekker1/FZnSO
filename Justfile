@@ -51,7 +51,7 @@ test-cpp:
 test-python:
     #!/usr/bin/env sh
     set -e
-    cargo build --example example_solver
+    cargo build --example example_solver --example threaded_solver
     cd python
     [ -d .venv ] || uv venv --python 3.12
     . .venv/bin/activate

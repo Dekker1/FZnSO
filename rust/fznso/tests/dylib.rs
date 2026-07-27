@@ -242,6 +242,45 @@ fn find_loads_a_solver_from_the_search_path() {
 	let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A solver may read the model and report from its own threads, which is what
+/// the [`fznso::Solver::run`] contract permits.
+///
+/// This is the only test that drives a solver which actually does so, and so
+/// the only one that relies on `M: Sync`, `F`/`G: Send` and the `unsafe impl
+/// Sync` on the model adapter rather than merely declaring them.
+#[test]
+#[cfg_attr(miri, ignore = "miri cannot dynamically load a library")]
+fn a_solver_may_report_from_a_worker_thread() {
+	let path = example_path("threaded_solver");
+	// SAFETY: the library is this workspace's own example solver, so it exports
+	// the full FZnSO ABI.
+	let lib = unsafe { Library::new(&path) }.expect("load threaded solver");
+	let mut solver = lib.create_solver();
+
+	let m = model();
+	let mut values: Vec<i64> = Vec::new();
+	let mut messages: Vec<(String, String)> = Vec::new();
+	let status = solver.run(
+		&m,
+		&mut |sol: &fznso::DynSolution<'_>| values.push(sol.value(0).get_int()),
+		&mut |scope: &str, value: fznso::Value<'_>| {
+			messages.push((scope.to_owned(), value.get_string().to_owned()));
+		},
+	);
+
+	assert!(matches!(status, Status::Complete), "got {status:?}");
+	// The worker thread read the model across the thread boundary: the fixture
+	// reports the decision count it saw, and the model has two.
+	assert_eq!(values, vec![2]);
+	assert_eq!(
+		messages,
+		vec![(
+			"log".to_owned(),
+			"read 2 decision(s) from a worker thread".to_owned()
+		)]
+	);
+}
+
 #[test]
 #[cfg_attr(miri, ignore = "miri cannot dynamically load a library")]
 fn loading_a_non_solver_library_fails() {

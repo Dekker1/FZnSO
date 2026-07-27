@@ -831,6 +831,30 @@ struct DynSolver {
 	inner: fznso_core::DynSolver,
 }
 
+/// Carries the solver handle into [`Python::allow_threads`].
+///
+/// `allow_threads` requires its closure to be `Send`, which pyo3 uses as a
+/// proxy for "holds no GIL-bound reference" — the closure itself runs on the
+/// calling thread, so nothing is actually sent anywhere. A
+/// [`fznso_core::DynSolver`] is `!Send` only because it holds the solver's raw
+/// handle, which is not a GIL-bound reference, so carrying it in is sound.
+struct SendSolver<'a>(&'a mut fznso_core::DynSolver);
+
+// SAFETY: as above. The closure `allow_threads` runs stays on this thread, and
+// the wrapped handle borrows nothing owned by the interpreter.
+unsafe impl Send for SendSolver<'_> {}
+
+impl<'a> SendSolver<'a> {
+	/// Unwrap the handle inside the closure.
+	///
+	/// A method rather than a field access: `self.0` inside a closure would let
+	/// edition-2021 disjoint capture grab the `!Send` reference directly and
+	/// defeat the wrapper.
+	fn into_inner(self) -> &'a mut fznso_core::DynSolver {
+		self.0
+	}
+}
+
 #[pymethods]
 impl DynSolver {
 	/// The current value of a named option.
@@ -863,9 +887,10 @@ impl DynSolver {
 	#[pyo3(signature = (model, on_solution=None, on_message=None))]
 	fn run(
 		&mut self,
-		// The GIL is held for the whole call, but the callbacks re-acquire it
-		// themselves since the solver may invoke them from another thread.
-		_py: Python<'_>,
+		// The GIL is *released* for the duration of the search, so that a solver
+		// which reports from its own threads can acquire it; everything that
+		// re-enters Python takes it back with `Python::with_gil`.
+		py: Python<'_>,
 		model: &Bound<'_, PyAny>,
 		on_solution: Option<PyObject>,
 		on_message: Option<PyObject>,
@@ -939,13 +964,33 @@ impl DynSolver {
 
 		// A native `LayeredModel` runs directly; anything else is driven through the
 		// adapter, which may itself record a Python error.
+		//
+		// Both run inside `allow_threads`: holding the GIL across the search would
+		// deadlock any solver whose worker threads call back into Python, since
+		// the callbacks and the adapter both wait for it. Releasing it costs a
+		// real acquire per callback instead of a cheap re-entrant one, which is
+		// the price of supporting a threaded solver at all.
 		let mut model_error: Option<PyErr> = None;
 		let status = if let Ok(native) = model.downcast::<LayeredModel>() {
 			let native = native.borrow();
-			self.inner.run(&native.inner, &mut on_sol, &mut on_msg)
+			// The `PyRef` deliberately stays *outside* the closure: it holds pyo3's
+			// borrow flag for the whole run, so Python code that tries to mutate the
+			// model from a callback raises "already borrowed" rather than aliasing
+			// it while the solver reads it.
+			let model_ref: &fznso_core::LayeredModel = &native.inner;
+			let solver = SendSolver(&mut self.inner);
+			py.allow_threads(move || solver.into_inner().run(model_ref, &mut on_sol, &mut on_msg))
 		} else {
 			let adapter = PyModelAdapter::new(model.clone().unbind());
-			let status = self.inner.run(&adapter, &mut on_sol, &mut on_msg);
+			let status = {
+				let adapter_ref = &adapter;
+				let solver = SendSolver(&mut self.inner);
+				py.allow_threads(move || {
+					solver
+						.into_inner()
+						.run(adapter_ref, &mut on_sol, &mut on_msg)
+				})
+			};
 			model_error = adapter
 				.error
 				.into_inner()
