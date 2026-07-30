@@ -6,6 +6,10 @@
 // Prefixing every symbol this way lets several solvers be linked into one binary
 // without colliding (with each other or with any wrapped library), and lets a
 // loader recover the name from the file name.
+//
+// The rules that hold across the whole interface — opaque handles, accessor
+// preconditions, what stays valid for how long, and how the version is matched —
+// are stated once at the top of `fznso_types.h`.
 
 #include "fznso_types.h"
 
@@ -14,16 +18,28 @@
 uint32_t fznso_NAME_abi_version(void);
 
 // Returns the list of available constraint that can be added to the solver.
+//
+// The returned array must stay valid for as long as the library is loaded, so
+// it is `static`. The caller never frees it.
 FznsoConstraintList fznso_NAME_constraint_list(void);
 
 // Returns the list of types for which decision variable can be created by the
 // solver.
+//
+// The returned array must stay valid for as long as the library is loaded, so
+// it is `static`. The caller never frees it.
 FznsoTypeList fznso_NAME_decision_list(void);
 
 // Returns the list of available objective that can be achieved by the solver.
+//
+// The returned array must stay valid for as long as the library is loaded, so
+// it is `static`. The caller never frees it.
 FznsoObjectiveList fznso_NAME_objective_list(void);
 
 // Returns the list of available options that can be set of the solver.
+//
+// The returned array must stay valid for as long as the library is loaded, so
+// it is `static`. The caller never frees it.
 FznsoOptionList fznso_NAME_option_list(void);
 
 // Create a new solver instance
@@ -44,6 +60,11 @@ void fznso_NAME_solver_free(FznsoSolver *solver);
 //
 // Note that this is only valid to be called with options named by
 // `fznso_NAME_option_list`.
+//
+// The returned value must stay valid until the next call that can change the
+// solver (e.g. `_solver_option_set`, `_solver_run`, or `_solver_free`).
+// Returning a borrow of the solver's own state is the intent; the caller never
+// frees it.
 //
 // # Safety
 //
@@ -70,6 +91,9 @@ bool fznso_NAME_solver_option_set(FznsoSolver *solver, FznsoStr ident, FznsoValu
 // error has occurred. For example, if [`fznso_NAME_solver_run`] returns
 // [`FznsoError`] or [`fznso_NAME_solver_option_set`] returns `false`.
 //
+// The message is handed to `read_error` rather than returned, so it need only
+// stay valid for the duration of that callback.
+//
 // # Safety
 //
 // `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
@@ -86,12 +110,19 @@ void fznso_NAME_solver_read_error(FznsoSolver *solver,
 // signalled by returning [`FznsoError`] and retrieved with
 // [`fznso_NAME_solver_read_error`].
 //
-// `on_message` may be **null**, meaning nobody is listening. A solver should
+// `on_message` may be [`None`], meaning nobody is listening. A solver should
 // then skip *building* diagnostics rather than formatting them and handing
 // them to a sink that discards them — that is the point of making it nullable.
 //
-// # Stopping early
+// # What stays valid for how long
 //
+// `model` is borrowed for the duration of this call and is read-only
+// throughout. Everything the solver hands *out* is borrowed the same way: the
+// solution passed to `on_solution`, and the scope and value passed to
+// `on_message`, need only stay valid for the duration of that one callback,
+// and a caller that wants to keep any of it must copy it.
+//
+// # Stopping early
 //
 // `should_stop` lets the caller abandon the search: the solver polls it, and a
 // `true` answer means stop as soon as convenient and return
@@ -154,6 +185,9 @@ FznsoStatus fznso_NAME_solver_run(FznsoSolver *solver,
 // `FznsoSolutionMethods::statistic`. An unknown identifier yields a value of
 // kind `FznsoValueAbsent`.
 //
+// As with `_solver_option_get`, the returned value must stay valid until
+// the next call that can change the solver.
+//
 // # Safety
 //
 // `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
@@ -162,4 +196,7 @@ FznsoValueRef fznso_NAME_solver_statistic(const FznsoSolver * solver, FznsoStr i
 
 // Returns the list of available statistical information that can be requested
 // from the solver and its solutions.
+//
+// The returned array must stay valid for as long as the library is loaded, so
+// it is `static`. The caller never frees it.
 FznsoStatisticList fznso_NAME_statistic_list(void);

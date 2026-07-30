@@ -203,7 +203,7 @@ impl FznsoObjectiveList<'static> {
 	pub const fn empty() -> Self {
 		Self {
 			len: 0,
-			options: ptr::null(),
+			objectives: ptr::null(),
 			lifetime: PhantomData,
 		}
 	}

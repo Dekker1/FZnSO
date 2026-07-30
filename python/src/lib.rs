@@ -6,12 +6,12 @@
 use std::{ffi::c_char, sync::Arc};
 
 use fznso_core::{
+	AnnotationRef, ConstraintIdx, DecisionIdx, OwnedValue, Solver as _, Status as CoreStatus,
+	Value, ValueExt as _,
 	fznso_types::{
 		FznsoConstraintIdx, FznsoDecisionIdx, FznsoFloatRange, FznsoIntRange, FznsoPtr, FznsoValue,
 		FznsoValueKind, FznsoValueMethods, FznsoValueRef,
 	},
-	AnnotationRef, ConstraintIdx, DecisionIdx, OwnedValue, Solver as _, Status as CoreStatus,
-	Value, ValueExt as _,
 };
 use pyo3::{
 	exceptions::{PyRuntimeError, PyValueError},

@@ -9,7 +9,11 @@ header = """
 // the base name of the built library file (e.g. `gecode` for `libgecode.so`).
 // Prefixing every symbol this way lets several solvers be linked into one binary
 // without colliding (with each other or with any wrapped library), and lets a
-// loader recover the name from the file name."""
+// loader recover the name from the file name.
+//
+// The rules that hold across the whole interface — opaque handles, accessor
+// preconditions, what stays valid for how long, and how the version is matched —
+// are stated once at the top of `fznso_types.h`."""
 documentation_style = "c99"
 no_includes = true
 includes = ["fznso_types.h"]

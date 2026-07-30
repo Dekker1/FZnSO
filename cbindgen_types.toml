@@ -1,6 +1,51 @@
 language = "C"
 
 # Wrapping header contents
+#
+# The preamble states the four contracts that hold across the whole interface, so
+# that individual declarations need only name their own precondition. It lives
+# here rather than in a Rust doc comment because it spells out in prose what the
+# Rust side expresses in types: `FznsoPtr` documents the pointer-word encoding,
+# lifetimes bound the borrow windows, and `Option` marks what may be absent.
+header = """
+// FZnSO — the shared types of the solver interface.
+//
+// A *solver* implements the `fznso_<name>_...` entry points (see
+// `fznso_solver_template.c`); an *application* loads a solver library and calls
+// them. The types below are used by both sides.
+//
+// Four rules hold throughout, and so are not repeated on every declaration.
+//
+// **Handles are opaque.** `FznsoModel`, `FznsoValue`, `FznsoSolution`,
+// `FznsoAnnotation` and `FznsoSolver` are handles, meaningful only to the side
+// that created one. The receiver passes a handle back to the callbacks it
+// arrived with, and never inspects or dereferences it: a handle need not address
+// memory at all, since a small payload such as a decision index is commonly
+// stored *in* the pointer word, and a null handle is a legitimate value. Reach
+// the contents through the `methods` table of the matching `...Ref` struct.
+//
+// **Accessors have preconditions.** Most `methods` entries are meaningful only
+// in a particular state: a getter for the kind a value actually holds, an index
+// below the matching length. An implementation is not required to check, so
+// violating a precondition may read nonsense or abort the process. Read `kind` —
+// or the relevant length — first, and call only what the answer permits.
+//
+// **Nothing transfers ownership.** Every pointer, string and handle crossing the
+// interface is borrowed. The receiver never frees it, and must not keep it past
+// the window in which it is valid:
+//
+//   - a capability list (`fznso_<name>_constraint_list` and friends) stays valid
+//     while the library is loaded;
+//   - a value, string or annotation read from a model, solution or annotation is
+//     valid for as long as that handle;
+//   - a solution is valid only for the duration of the `on_solution` callback;
+//   - a value from `fznso_<name>_solver_option_get` or `..._solver_statistic` is
+//     valid until the next call that changes the solver.
+//
+// Copy anything that has to outlive its window.
+//
+// **The version must match exactly.** A loader rejects a solver whose
+// `fznso_<name>_abi_version` differs from its own."""
 include_guard = "fznso_types_h"
 documentation_style = "c99"
 sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]
