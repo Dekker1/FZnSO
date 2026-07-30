@@ -6,6 +6,7 @@
 
 #include "fznso.hpp"
 
+#include <atomic>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -143,6 +144,30 @@ int main(int argc, char** argv) {
 	fznso::Value empty = opt_back.constraint_argument(fznso::Constraint{0}, 1);
 	check(present.kind() == FznsoValueInt && present.as_int() == 42, "present optional is its value");
 	check(empty.kind() == FznsoValueAbsent, "empty optional is absent");
+
+	// A run can be abandoned part-way: `should_stop` returning true after the
+	// first solution ends the search, and the run reports Incomplete.
+	{
+		fznso::OwnedValue five{std::int64_t{5}};
+		check(!solver.option_set("solution_limit", fznso::Value{five}).has_value(),
+		      "raising solution_limit succeeds");
+
+		std::atomic<bool> stop{false};
+		int seen = 0;
+		fznso::Status stopped = solver.run(
+			model, [&](const fznso::Solution&) { ++seen; stop.store(true); },
+			[](std::string_view, const fznso::Value&) {}, [&] { return stop.load(); });
+		check(seen == 1, "the solver stopped after the first solution");
+		check(stopped.kind == fznso::Status::Kind::Incomplete, "a stopped run is incomplete");
+
+		// Already asked to stop before the run begins: no search at all.
+		seen = 0;
+		fznso::Status none = solver.run(
+			model, [&](const fznso::Solution&) { ++seen; },
+			[](std::string_view, const fznso::Value&) {}, [] { return true; });
+		check(seen == 0, "a pre-stopped run does not search");
+		check(none.kind == fznso::Status::Kind::Incomplete, "a pre-stopped run is incomplete");
+	}
 
 	// The same solver is reachable by name off the search path, not just by path.
 	// Stage a copy under an `fznso` directory pointed at by FZNSO_SOLVER_PATH.

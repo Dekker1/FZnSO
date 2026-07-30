@@ -57,26 +57,44 @@ impl Solver for ThreadedSolver {
 		Err(format!("unknown option `{name}`"))
 	}
 
-	fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
+	fn run<M, F, G, H>(
+		&mut self,
+		model: &M,
+		on_solution: &mut F,
+		on_message: Option<&mut G>,
+		should_stop: Option<&H>,
+	) -> Status
 	where
 		M: Model + Sync,
 		F: for<'s> FnMut(&'s Self::Solution<'s>) + Send,
 		G: FnMut(&str, Value<'_>) + Send,
+		H: Fn() -> bool + Send + Sync,
 	{
 		// A scoped thread, so the borrowed model and callbacks need no `'static`.
 		// Reading the model here is what requires `M: Sync`; reporting from here
 		// is what requires the callbacks to be `Send`.
 		std::thread::scope(|scope| {
-			let worker = scope.spawn(|| {
+			let mut on_message = on_message;
+			let stopped = || should_stop.is_some_and(|poll| poll());
+			let worker = scope.spawn(move || {
+				if stopped() {
+					return Status::Incomplete;
+				}
 				let decisions = i64::try_from(model.decision_len()).unwrap_or(-1);
-				let note = format!("read {decisions} decision(s) from a worker thread");
-				on_message("log", (&note).into());
+				// Only formatted when someone is listening.
+				if let Some(emit) = &mut on_message {
+					let note = format!("read {decisions} decision(s) from a worker thread");
+					emit("log", (&note).into());
+				}
 				on_solution(&ThreadedSolution { decisions });
+				if stopped() {
+					return Status::Incomplete;
+				}
+				Status::Complete
 			});
-			match worker.join() {
-				Ok(()) => Status::Complete,
-				Err(_) => Status::Error("the worker thread panicked".to_owned()),
-			}
+			worker
+				.join()
+				.unwrap_or_else(|_| Status::Error("the worker thread panicked".to_owned()))
 		})
 	}
 }

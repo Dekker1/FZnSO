@@ -26,11 +26,20 @@
 ///     type Solution<'s> = MySolution where MySolver: 's;
 ///     fn option_get(&self, _: &str) -> Value<'_> { todo!() }
 ///     fn option_set(&mut self, _: &str, _: Value<'_>) -> Result<(), String> { todo!() }
-///     fn run<M, F, G>(&mut self, _: &M, _: &mut F, _: &mut G) -> Status
+///     fn run<M, F, G, H>(
+///         &mut self,
+///         _model: &M,
+///         _on_solution: &mut F,
+///         // `None` means nobody is listening, so skip building diagnostics.
+///         _on_message: Option<&mut G>,
+///         // `None` means the caller never cancels, so skip polling.
+///         _should_stop: Option<&H>,
+///     ) -> Status
 ///     where
-///         M: Model,
-///         F: for<'s> FnMut(&'s MySolution),
-///         G: FnMut(&str, Value<'_>),
+///         M: Model + Sync,
+///         F: for<'s> FnMut(&'s MySolution) + Send,
+///         G: FnMut(&str, Value<'_>) + Send,
+///         H: Fn() -> bool + Send + Sync,
 ///     { todo!() }
 /// }
 ///
@@ -177,11 +186,14 @@ macro_rules! fznso_export {
 				*mut ::core::ffi::c_void,
 				$crate::fznso_types::FznsoSolutionRef<'_>,
 			),
-			on_message: extern "C" fn(
-				*mut ::core::ffi::c_void,
-				$crate::fznso_types::FznsoStr<'_>,
-				$crate::Value<'_>,
-			),
+			on_message: ::core::option::Option<
+				extern "C" fn(
+					*mut ::core::ffi::c_void,
+					$crate::fznso_types::FznsoStr<'_>,
+					$crate::Value<'_>,
+				),
+			>,
+			should_stop: ::core::option::Option<extern "C" fn(*mut ::core::ffi::c_void) -> bool>,
 		) -> $crate::fznso_types::FznsoStatus {
 			// SAFETY: the handle was produced by fznso_solver_create.
 			let state: &mut ($T, ::std::string::String) = unsafe { &mut *solver.cast() };
@@ -195,7 +207,29 @@ macro_rules! fznso_export {
 			struct SendCtx(*mut ::core::ffi::c_void);
 			// SAFETY: upheld by the `Solver::run` threading contract, as above.
 			unsafe impl ::core::marker::Send for SendCtx {}
+			// SAFETY: `should_stop` is the one callback the ABI allows to be polled
+			// concurrently, so the consumer guarantees its `context` tolerates being
+			// read from several threads at once — which is what `Sync` asserts here.
+			unsafe impl ::core::marker::Sync for SendCtx {}
 			let context = SendCtx(context);
+			// Both optional callbacks stay absent if the consumer passed null, so the
+			// solver sees `None` and can skip the work rather than calling a sink
+			// that discards. `stop` is `Fn`, not `FnMut`: the solver may poll it from
+			// several threads at once.
+			let mut message = on_message.map(|emit| {
+				// Both parameters are annotated so the closure is higher-ranked over
+				// the value's lifetime, which `Solver::run`'s bound requires.
+				move |scope: &str, value: $crate::Value<'_>| {
+					let context = context;
+					emit(context.0, scope.into(), value)
+				}
+			});
+			let stop = should_stop.map(|poll| {
+				move || {
+					let context = context;
+					poll(context.0)
+				}
+			});
 			let status = <$T as $crate::Solver>::run(
 				&mut state.0,
 				&adapter,
@@ -206,10 +240,8 @@ macro_rules! fznso_export {
 					let context = context;
 					on_solution(context.0, $crate::solution_ref(sol))
 				},
-				&mut move |scope: &str, value| {
-					let context = context;
-					on_message(context.0, scope.into(), value)
-				},
+				message.as_mut(),
+				stop.as_ref(),
 			);
 			match status {
 				$crate::Status::Complete => $crate::fznso_types::FznsoStatus::FznsoComplete,
@@ -246,7 +278,10 @@ pub use crate::{
 		layered::{LayeredModel, OwnedAnnotation, OwnedValue},
 	},
 	solution::{DynSolution, Solution},
-	solver::{DynSolver, Solver, SolverType},
+	solver::{
+		DynSolver, IgnoredMessages, NoInterrupt, Solver, SolverType, dont_interrupt,
+		ignore_messages,
+	},
 	value::{FloatRanges, IntRanges, ValueExt, ValueList, ValueView},
 };
 #[doc(hidden)]
@@ -392,13 +427,26 @@ mod tests {
 			}
 		}
 
-		fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
+		fn run<M, F, G, H>(
+			&mut self,
+			model: &M,
+			on_solution: &mut F,
+			on_message: Option<&mut G>,
+			should_stop: Option<&H>,
+		) -> Status
 		where
 			M: Model + Sync,
 			F: for<'s> FnMut(&'s Self::Solution<'s>) + Send,
 			G: FnMut(&str, Value<'_>) + Send,
+			H: Fn() -> bool + Send + Sync,
 		{
-			on_message("warn", (&String::from("ignoring all constraints")).into());
+			if should_stop.is_some_and(|poll| poll()) {
+				return Status::Incomplete;
+			}
+			let mut on_message = on_message;
+			if let Some(emit) = &mut on_message {
+				emit("warn", (&String::from("ignoring all constraints")).into());
+			}
 			// Read back through the model vtable, so the model handle is exercised.
 			assert_eq!(model.constraint_len(), 1);
 			assert_eq!(model.constraint_ident(FznsoConstraintIdx(0)), "int_le");
@@ -441,6 +489,11 @@ mod tests {
 		let scope = unsafe { scope.as_str() }.unwrap_or_default();
 		out.messages
 			.push((scope.to_owned(), value.get_string().to_owned()));
+	}
+
+	/// The `should_stop` thunk for a run that is never interrupted.
+	extern "C" fn keep_going(_ctx: *mut ffi::c_void) -> bool {
+		false
 	}
 
 	/// Collects the values passed to the `on_solution` callback.
@@ -502,7 +555,8 @@ mod tests {
 				model_ref(&m),
 				(&raw mut out) as *mut ffi::c_void,
 				collect,
-				collect_messages,
+				Some(collect_messages),
+				Some(keep_going),
 			)
 		};
 

@@ -152,6 +152,33 @@ pub unsafe extern "C" fn fznso_NAME_solver_read_error(
 /// signalled by returning [`FznsoError`] and retrieved with
 /// [`fznso_NAME_solver_read_error`].
 ///
+/// `on_message` may be **null**, meaning nobody is listening. A solver should
+/// then skip *building* diagnostics rather than formatting them and handing
+/// them to a sink that discards them — that is the point of making it nullable.
+///
+/// # Stopping early
+///
+///
+/// `should_stop` lets the caller abandon the search: the solver polls it, and a
+/// `true` answer means stop as soon as convenient and return
+/// [`FznsoIncomplete`]. It may be [`None`], which means the caller will never
+/// ask to stop: a solver then skips polling entirely rather than calling a
+/// predicate that always answers `false`.
+///
+/// A solver is expected to:
+///
+/// - poll it **once before starting**, so that a caller which has already asked
+///   to stop gets no search at all;
+/// - poll it **at least once after each `on_solution` returns**, so that a
+///   caller can stop from inside the callback — this is what makes "stop after
+///   this solution" reliable;
+/// - otherwise poll it as often as it reasonably can, so that a cancel is acted
+///   on promptly rather than at the end of the search.
+///
+/// To set a deadline, solvers should prefer the `time_limit` option over
+/// polling a clock here, because a solver that knows its deadline up front can
+/// plan its search around it.
+///
 /// # Threading
 ///
 /// A solver may search on several threads. The contract for the callbacks and
@@ -167,6 +194,10 @@ pub unsafe extern "C" fn fznso_NAME_solver_read_error(
 /// - `model` may be queried **concurrently**: it is a read-only view for the
 ///   duration of the call, so a parallel solver may read it from many threads
 ///   at once. A caller must therefore make the model safe for concurrent reads.
+/// - `should_stop` may be called **concurrently**, from any thread, including
+///   while `on_solution` or `on_message` is running, i.e. every worker may poll
+///   it independently. It is the one callback a caller must make thread-safe,
+///   which for the usual implementation (reading an atomic flag) it already is.
 ///
 /// # Safety
 ///
@@ -177,13 +208,17 @@ pub unsafe extern "C" fn fznso_NAME_solver_run(
 	model: FznsoModelRef,
 	context: *mut ffi::c_void,
 	on_solution: extern "C" fn(context: *mut ffi::c_void, solution: FznsoSolutionRef),
-	on_message: extern "C" fn(context: *mut ffi::c_void, scope: FznsoStr, value: FznsoValueRef),
+	on_message: Option<
+		extern "C" fn(context: *mut ffi::c_void, scope: FznsoStr, value: FznsoValueRef),
+	>,
+	should_stop: Option<extern "C" fn(context: *mut ffi::c_void) -> bool>,
 ) -> FznsoStatus {
 	let _ = solver;
 	let _ = model;
 	let _ = context;
 	let _ = on_solution;
 	let _ = on_message;
+	let _ = should_stop;
 	unimplemented!()
 }
 

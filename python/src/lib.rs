@@ -6,12 +6,12 @@
 use std::{ffi::c_char, sync::Arc};
 
 use fznso_core::{
-	AnnotationRef, ConstraintIdx, DecisionIdx, OwnedValue, Solver as _, Status as CoreStatus,
-	Value, ValueExt as _,
 	fznso_types::{
 		FznsoConstraintIdx, FznsoDecisionIdx, FznsoFloatRange, FznsoIntRange, FznsoPtr, FznsoValue,
 		FznsoValueKind, FznsoValueMethods, FznsoValueRef,
 	},
+	AnnotationRef, ConstraintIdx, DecisionIdx, OwnedValue, Solver as _, Status as CoreStatus,
+	Value, ValueExt as _,
 };
 use pyo3::{
 	exceptions::{PyRuntimeError, PyValueError},
@@ -884,7 +884,13 @@ impl DynSolver {
 	///
 	/// `model` may be a [`LayeredModel`] built with the builder, or any object
 	/// implementing the [`Model`] protocol.
-	#[pyo3(signature = (model, on_solution=None, on_message=None))]
+	///
+	/// `should_stop`, if given, is polled by the solver and ends the search
+	/// when it returns a truthy value; the run then reports
+	/// `Status.Incomplete`. Use it to cancel from a watchdog thread. It may be
+	/// called from several solver threads at once, so keep it cheap and
+	/// thread-safe.
+	#[pyo3(signature = (model, on_solution=None, on_message=None, should_stop=None))]
 	fn run(
 		&mut self,
 		// The GIL is *released* for the duration of the search, so that a solver
@@ -894,6 +900,7 @@ impl DynSolver {
 		model: &Bound<'_, PyAny>,
 		on_solution: Option<PyObject>,
 		on_message: Option<PyObject>,
+		should_stop: Option<PyObject>,
 	) -> PyResult<Status> {
 		// A callback error is stashed and re-raised once `run` returns, since the
 		// solver's callbacks cannot themselves fail. A `Mutex` rather than a
@@ -945,22 +952,57 @@ impl DynSolver {
 			});
 		};
 
-		let mut on_msg = |scope: &str, value: Value<'_>| {
-			if failed() {
-				return;
-			}
-			let Some(handler) = &on_message else {
-				return;
-			};
-			Python::with_gil(|py| match value_to_py(py, &value) {
-				Ok(obj) => {
-					if let Err(err) = handler.call1(py, (scope, obj)) {
-						stash(err);
-					}
+		// Built only when a handler was supplied, so a solver that asks "is anyone
+		// listening?" gets a truthful no and can skip formatting diagnostics.
+		let mut on_msg = on_message.map(|handler| {
+			move |scope: &str, value: Value<'_>| {
+				if failed() {
+					return;
 				}
-				Err(err) => stash(err),
-			});
+				Python::with_gil(|py| match value_to_py(py, &value) {
+					Ok(obj) => {
+						if let Err(err) = handler.call1(py, (scope, obj)) {
+							stash(err);
+						}
+					}
+					Err(err) => stash(err),
+				});
+			}
+		});
+
+		// Polled by the solver to ask whether to keep searching. Unlike the two
+		// handlers this may be called from several solver threads at once, so it is
+		// `Fn` and takes the GIL per poll. A callback that has already raised also
+		// answers "stop", so a Python exception ends the search promptly instead of
+		// being held until the solver finishes on its own.
+		let stop = || {
+			if failed() {
+				return true;
+			}
+			let Some(handler) = &should_stop else {
+				return false;
+			};
+			Python::with_gil(|py| match handler.call0(py) {
+				Ok(answer) => match answer.bind(py).is_truthy() {
+					Ok(stop) => stop,
+					Err(err) => {
+						stash(err);
+						true
+					}
+				},
+				Err(err) => {
+					stash(err);
+					true
+				}
+			})
 		};
+
+		// The predicate is supplied whenever it could answer "stop": either the
+		// caller gave one, or a callback exists that might raise and should cut the
+		// search short. With neither, the solver is told nothing will cancel.
+		let wants_stop = should_stop.is_some() || on_solution.is_some() || on_msg.is_some();
+		let message_sink = on_msg.as_mut();
+		let stop_poll = if wants_stop { Some(&stop) } else { None };
 
 		// A native `LayeredModel` runs directly; anything else is driven through the
 		// adapter, which may itself record a Python error.
@@ -979,7 +1021,11 @@ impl DynSolver {
 			// it while the solver reads it.
 			let model_ref: &fznso_core::LayeredModel = &native.inner;
 			let solver = SendSolver(&mut self.inner);
-			py.allow_threads(move || solver.into_inner().run(model_ref, &mut on_sol, &mut on_msg))
+			py.allow_threads(move || {
+				solver
+					.into_inner()
+					.run(model_ref, &mut on_sol, message_sink, stop_poll)
+			})
 		} else {
 			let adapter = PyModelAdapter::new(model.clone().unbind());
 			let status = {
@@ -988,7 +1034,7 @@ impl DynSolver {
 				py.allow_threads(move || {
 					solver
 						.into_inner()
-						.run(adapter_ref, &mut on_sol, &mut on_msg)
+						.run(adapter_ref, &mut on_sol, message_sink, stop_poll)
 				})
 			};
 			model_error = adapter

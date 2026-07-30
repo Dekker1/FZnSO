@@ -19,7 +19,8 @@ public:
 		throw std::runtime_error("option boom");
 	}
 
-	fznso::Status run(const fznso::Model&, fznso::SolutionSink&, fznso::MessageSink&) override {
+	fznso::Status run(const fznso::Model&, fznso::SolutionSink&, fznso::MessageSink&,
+	                  const fznso::StopSignal&) override {
 		throw std::runtime_error("run boom");
 	}
 };

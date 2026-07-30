@@ -131,16 +131,7 @@ pub struct Library {
 		),
 	>,
 	/// Symbol for `fznso_<name>_solver_run`.
-	solver_run: Symbol<
-		'static,
-		unsafe extern "C" fn(
-			*mut FznsoSolver,
-			FznsoModelRef,
-			*mut ffi::c_void,
-			extern "C" fn(*mut ffi::c_void, FznsoSolutionRef),
-			extern "C" fn(*mut ffi::c_void, FznsoStr<'_>, FznsoValueRef<'_>),
-		) -> FznsoStatus,
-	>,
+	solver_run: Symbol<'static, RunFn>,
 	/// Symbol for `fznso_<name>_solver_statistic`.
 	solver_statistic: Symbol<
 		'static,
@@ -153,55 +144,115 @@ pub struct Library {
 	statistic_list: Symbol<'static, unsafe extern "C" fn() -> FznsoStatisticList<'static>>,
 }
 
-/// ABI callback passed to `fznso_solver_run`; wraps a [`FznsoSolutionRef`] in
-/// a [`DynSolution`] and forwards it to the Rust closure stored behind `ctx`.
-/// The two Rust callbacks `fznso_solver_run` needs, behind the single `context`
+/// The ABI type of the `on_message` thunk, spelled out so that the
+/// higher-ranked lifetimes match the loaded symbol exactly.
+type MessageThunk = for<'a, 'b> extern "C" fn(*mut ffi::c_void, FznsoStr<'a>, FznsoValueRef<'b>);
+
+/// The ABI type of the `should_stop` thunk.
+type StopThunk = extern "C" fn(*mut ffi::c_void) -> bool;
+
+/// The ABI type of the `on_solution` thunk.
+type SolutionThunk = for<'a> extern "C" fn(*mut ffi::c_void, FznsoSolutionRef<'a>);
+
+/// The ABI type of `fznso_solver_run` itself.
+///
+/// `on_message` and `should_stop` are nullable, which is what tells a solver
+/// nobody is listening and nothing will cancel, so it can skip that work.
+type RunFn = for<'m> unsafe extern "C" fn(
+	*mut FznsoSolver,
+	FznsoModelRef<'m>,
+	*mut ffi::c_void,
+	SolutionThunk,
+	Option<MessageThunk>,
+	Option<StopThunk>,
+) -> FznsoStatus;
+
+/// The Rust callbacks `fznso_solver_run` needs, behind the single `context`
 /// pointer the ABI provides.
-struct RunCallbacks<'c, F, G> {
+///
+/// The fields are raw pointers rather than references on purpose. `should_stop`
+/// may be polled *concurrently* with `on_solution`/`on_message`, so no `&mut`
+/// may ever cover this struct — the trampolines share it (`&*ctx`) and only
+/// then form an exclusive reference to the individual closure they invoke,
+/// which the serial-callback contract makes sound.
+struct RunCallbacks<F, G, H> {
 	/// Invoked for each solution the solver reports.
-	on_solution: &'c mut F,
-	/// Invoked for each diagnostic the solver reports.
-	on_message: &'c mut G,
+	on_solution: *mut F,
+	/// Invoked for each diagnostic the solver reports, if any listener wants
+	/// them. `None` is passed through to the solver as a null thunk, so it can
+	/// skip building diagnostics entirely.
+	on_message: Option<*mut G>,
+	/// Polled to ask whether the search should be abandoned, if the caller has
+	/// anything to cancel.
+	should_stop: Option<*const H>,
 }
 
 /// ABI callback passed to `fznso_solver_run`; forwards a diagnostic to the Rust
 /// closure stored behind `ctx`.
-extern "C" fn wrap_on_message_cb<F, G>(
+extern "C" fn wrap_on_message_cb<F, G, H>(
 	ctx: *mut ffi::c_void,
 	scope: FznsoStr<'_>,
 	value: FznsoValueRef<'_>,
 ) where
 	F: for<'s> FnMut(&'s DynSolution<'s>) + Send,
 	G: FnMut(&str, FznsoValueRef<'_>) + Send,
+	H: Fn() -> bool + Send + Sync,
 {
-	let ctx = ctx as *mut RunCallbacks<'_, F, G>;
-	// SAFETY: ctx was created from &mut RunCallbacks in solver_run; the callback
-	// is only invoked during that call, so it is still live. The solver may
-	// invoke it from a different thread, but never concurrently (see the
-	// `Solver::run` threading contract), so the &mut is exclusive; `F: Send` and
-	// `G: Send` make `RunCallbacks` sound to touch from that thread.
-	let cbs = unsafe { &mut *ctx };
+	let ctx = ctx as *const RunCallbacks<F, G, H>;
+	// SAFETY: ctx points at the RunCallbacks built in solver_run, live for the
+	// whole call. Shared, never exclusive: `should_stop` may be polled from
+	// another thread at this very moment.
+	let cbs = unsafe { &*ctx };
+	// This thunk is only handed to the solver when a listener exists, so the
+	// option is always `Some` here.
+	let Some(on_message) = cbs.on_message else {
+		return;
+	};
+	// SAFETY: `on_message` points at the caller's live sink, exclusive by the
+	// serial-callback contract; the `Send` bound covers the calling thread.
+	let on_message = unsafe { &mut *on_message };
 	// SAFETY: the solver guarantees `scope` is valid UTF-8 for this call.
 	let scope = unsafe { scope.as_str() }.unwrap_or_default();
-	(cbs.on_message)(scope, value);
+	on_message(scope, value);
+}
+
+/// ABI callback passed to `fznso_solver_run`; answers whether the search should
+/// be abandoned, by polling the Rust predicate stored behind `ctx`.
+extern "C" fn wrap_should_stop_cb<F, G, H>(ctx: *mut ffi::c_void) -> bool
+where
+	F: for<'s> FnMut(&'s DynSolution<'s>) + Send,
+	G: FnMut(&str, FznsoValueRef<'_>) + Send,
+	H: Fn() -> bool + Send + Sync,
+{
+	let ctx = ctx as *const RunCallbacks<F, G, H>;
+	// SAFETY: as in the other trampolines — shared only.
+	let cbs = unsafe { &*ctx };
+	// Only handed over when the caller has a predicate, so always `Some` here.
+	let Some(should_stop) = cbs.should_stop else {
+		return false;
+	};
+	// SAFETY: `should_stop` points at the caller's live predicate. It is only
+	// ever borrowed shared, and the `Sync` bound makes concurrent polls sound.
+	let should_stop = unsafe { &*should_stop };
+	should_stop()
 }
 
 /// ABI callback passed to `fznso_solver_run`; wraps a [`FznsoSolutionRef`] in
 /// a [`DynSolution`] and forwards it to the Rust closure stored behind `ctx`.
-extern "C" fn wrap_on_solution_cb<F, G>(ctx: *mut ffi::c_void, sol: FznsoSolutionRef<'_>)
+extern "C" fn wrap_on_solution_cb<F, G, H>(ctx: *mut ffi::c_void, sol: FznsoSolutionRef<'_>)
 where
 	F: for<'s> FnMut(&'s DynSolution<'s>) + Send,
 	G: FnMut(&str, FznsoValueRef<'_>) + Send,
+	H: Fn() -> bool + Send + Sync,
 {
-	let ctx = ctx as *mut RunCallbacks<'_, F, G>;
-	// SAFETY: ctx was created from &mut RunCallbacks in solver_run; the callback
-	// is only invoked during that call, so it is still live. The solver may
-	// invoke it from a different thread, but never concurrently (see the
-	// `Solver::run` threading contract), so the &mut is exclusive; `F: Send` and
-	// `G: Send` make `RunCallbacks` sound to touch from that thread.
-	let cbs = unsafe { &mut *ctx };
+	let ctx = ctx as *const RunCallbacks<F, G, H>;
+	// SAFETY: see `wrap_on_message_cb` — shared borrow of the struct only.
+	let cbs = unsafe { &*ctx };
+	// SAFETY: `on_solution` points at the caller's live closure, exclusive by the
+	// serial-callback contract; `F: Send` covers the calling thread.
+	let on_solution = unsafe { &mut *cbs.on_solution };
 	let sol = DynSolution { inner: sol };
-	(cbs.on_solution)(&sol);
+	on_solution(&sol);
 }
 
 /// ABI callback passed to `fznso_solver_read_error`; receives a C string and
@@ -478,24 +529,41 @@ impl Library {
 	///
 	/// On [`FznsoStatus::FznsoError`] the error string is read via
 	/// `fznso_solver_read_error` and stored in [`Status::Error`].
-	pub(crate) fn solver_run<M, F, G>(
+	pub(crate) fn solver_run<M, F, G, H>(
 		&self,
 		solver: *mut FznsoSolver,
 		model: &M,
 		on_solution: &mut F,
-		on_message: &mut G,
+		on_message: Option<&mut G>,
+		should_stop: Option<&H>,
 	) -> Status
 	where
 		M: Model + Sync,
 		F: for<'s> FnMut(&'s DynSolution<'s>) + Send,
 		G: FnMut(&str, FznsoValueRef<'_>) + Send,
+		H: Fn() -> bool + Send + Sync,
 	{
 		let model = crate::model::model_ref(model);
-		let mut callbacks = RunCallbacks {
-			on_solution,
-			on_message,
+		// Raw pointers, and a *shared* context: `should_stop` may be polled while
+		// a solution callback is running, so nothing may hold this exclusively.
+		let callbacks = RunCallbacks {
+			on_solution: std::ptr::from_mut(on_solution),
+			on_message: on_message.map(std::ptr::from_mut),
+			should_stop: should_stop.map(std::ptr::from_ref),
 		};
-		let ctx: *mut RunCallbacks<'_, F, G> = &mut callbacks;
+		// A thunk is only handed over when there is something behind it, so a
+		// solver sees a null pointer and can skip the work altogether.
+		let message_thunk: Option<MessageThunk> = if callbacks.on_message.is_some() {
+			Some(wrap_on_message_cb::<F, G, H>)
+		} else {
+			None
+		};
+		let stop_thunk: Option<StopThunk> = if callbacks.should_stop.is_some() {
+			Some(wrap_should_stop_cb::<F, G, H>)
+		} else {
+			None
+		};
+		let ctx: *const RunCallbacks<F, G, H> = &callbacks;
 		// SAFETY: ctx points to live callbacks on the stack; the trampolines cast
 		// it back in the callbacks, which are only called during this function.
 		// model is a valid FznsoModelRef for the duration of the call.
@@ -503,9 +571,10 @@ impl Library {
 			(*self.solver_run)(
 				solver,
 				model,
-				ctx as *mut ffi::c_void,
-				wrap_on_solution_cb::<F, G>,
-				wrap_on_message_cb::<F, G>,
+				ctx.cast_mut().cast(),
+				wrap_on_solution_cb::<F, G, H>,
+				message_thunk,
+				stop_thunk,
 			)
 		};
 

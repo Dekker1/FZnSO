@@ -2,22 +2,28 @@
 
 ## Introduction
 
+## Stopping a search
+
+If you want to set a time limit, set the `time_limit` option.
+A solver told its budget up front can *plan* around it: sizing restart schedules, deciding when to stop diversifying and dive for a feasible solution, budgeting time between portfolio strategies.
+
+For other scenarios, `fznso_solver_run` takes a `should_stop` predicate alongside the solution and message callbacks; the solver polls it, and a `true` answer means give up as soon as convenient and return `FznsoIncomplete`.
+Use `should_stop` for what a deadline cannot express: a user pressing cancel, “five solutions are enough”, or a condition that depends on the answers received so far.
+
+A solver is expected to poll it once before starting (so a caller that has already asked to stop gets no search at all), at least once after each `on_solution` returns (which is what makes "stop after this solution" reliable), and otherwise as often as is reasonable.
+`should_stop` may be **null**, which tells the solver the caller will never ask to stop, so it can drop the check from its search loop entirely.
+
 ## Threading
 
-A solver may search on several threads (see the `threads` option). The protocol
-fixes how that interacts with the callbacks and the model passed to
-`fznso_solver_run`:
+A solver may search on several threads (see the `threads` option).
+The protocol fixes how that interacts with the callbacks and the model passed to `fznso_solver_run`:
 
-- The `on_solution` and `on_message` callbacks are invoked **serially** — never
-  two at once, and never one while the other runs — but may be called from any
-  thread, as long as each call happens-before the next. A consumer therefore
-  never has to make its callbacks safe to call concurrently; if it wants to
-  process solutions in parallel it does so behind a serial callback (e.g. by
-  pushing to a queue). Serial reporting also keeps solutions in the improving
-  order that `intermediate` and `progress.bound` rely on.
-- The model is a **read-only** view for the duration of the call and may be
-  queried **concurrently** from any number of threads, so a consumer must make
-  its model safe for concurrent reads.
+- The `on_solution` and `on_message` callbacks are invoked **serially** — never two at once, and never one while the other runs — but may be called from any thread, as long as each call happens-before the next.
+  A consumer therefore never has to make its callbacks safe to call concurrently; if it wants to process solutions in parallel it does so behind a serial callback (e.g. by pushing to a queue).
+  Serial reporting also keeps solutions in the improving order that `intermediate` and `progress.bound` rely on.
+- The model is a **read-only** view for the duration of the call and may be queried **concurrently** from any number of threads, so a consumer must make its model safe for concurrent reads.
+- `should_stop` may likewise be called **concurrently**, from any thread, and even while `on_solution` or `on_message` is running — every worker may poll it independently.
+  It is the one callback a consumer must make thread-safe, which the usual implementation (reading an atomic flag) already is.
 
 ## Common Functionality
 
@@ -30,13 +36,13 @@ Even if a solver does not implement all of these functions, we recommend that th
 A solver will expose its available options through `fznso_option_list`.
 We recommend that solvers eagerly implement the following options:
 
-- `all_optimal` (`bool`, default: `false`): If set to `true`, the solver will after finding an optimal solution, continue to search for other solutions with the same objective value.
+- `all_solutions` (`bool`, default: `false`): If set to `true`, the solver will after finding an (optimal) solution, continue to search for other solutions with the same objective value.
 - `fixed_search` (`bool`, default: `false`): If set to `true`, the solver will strictly follow the search order defined by the user.
 - `intermediate` (`bool`, default: `false`): If set to `true` for a problem with an objective strategy set, the solver will trigger its `on_solution` callback when it finds an intermediate solution.
   Afterward, the solver will continue the search until it finds the next solution, or it proves that no better solutions exist (returning the `FznsoComplete` status).
 - `threads` (`int`, default: `1`): For multithreaded solvers, this option will set the number of threads to use.
-- `time_limit` (`int`, default: `-1`): If set to a positive integer, the solver will abandon the search after the specified number of milliseconds.
-- `random_seed` (`opt int`, default: `<>`): If set to a positive integer, the solver will use the given value as the seed for its random number generator.
+- `time_limit` (`opt 1..`, default: `<>`): If set to a positive integer, the solver will abandon the search after the specified number of milliseconds.
+- `random_seed` (`opt 1..`, default: `<>`): If set to a positive integer, the solver will use the given value as the seed for its random number generator.
   Solvers are encouraged to use a variable seed for the default value.
 - `verbose` (`bool`, default: `false`): If set to `true`, the solver will output additional information about its process using the `on_message` `"log"` scope.
 

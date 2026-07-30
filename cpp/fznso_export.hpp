@@ -82,19 +82,64 @@ private:
 };
 
 /// Receives the non-fatal diagnostics a solver reports during a run.
+///
+/// The sink may be *absent*, meaning nobody is listening. Check `wanted()` before
+/// doing any work to produce a message: the point of the absent case is that a
+/// solver skips formatting diagnostics rather than handing them to something that
+/// discards them.
 class MessageSink {
 public:
 	MessageSink(void* context, void (*on_message)(void*, FznsoStr, FznsoValueRef))
 		: context_(context), on_message_(on_message) {}
 
-	/// Report a message. `value` must outlive this call.
+	/// Whether anything is listening. When false, `message` does nothing.
+	bool wanted() const { return on_message_ != nullptr; }
+
+	/// Report a message. `value` must outlive this call. Does nothing when no
+	/// listener is attached, so guard the *construction* with `wanted()`.
 	void message(std::string_view scope, Value value) {
-		on_message_(context_, detail::from_view(scope), value.raw());
+		if (on_message_ != nullptr) {
+			on_message_(context_, detail::from_view(scope), value.raw());
+		}
 	}
 
 private:
 	void* context_;
 	void (*on_message_)(void*, FznsoStr, FznsoValueRef);
+};
+
+/// Polled by a solver to ask whether the caller wants the search abandoned.
+///
+/// Answering `true` means stop as soon as convenient and return
+/// `Status::Kind::Incomplete`. A solver is expected to poll once before starting,
+/// again after each reported solution (so a caller can stop from inside its own
+/// callback), and otherwise as often as is reasonable so that a cancel is acted
+/// on promptly. The answer is monotone — once `true` it stays `true` — so it may
+/// be cached.
+///
+/// It is cheap and never blocks, but it *is* an indirect call, so polling every
+/// node is wasteful; once per restart or node batch is the intent. It is safe to
+/// call from any thread, including concurrently from several at once.
+///
+/// The signal may be *absent*, meaning the caller will never ask to stop;
+/// `requested()` is then constantly false and `pollable()` says so, letting a
+/// solver drop the check from its loop entirely. A caller that only wants a
+/// deadline should set the `time_limit` option instead of polling a clock here,
+/// since a solver told its deadline up front can plan its search around it.
+class StopSignal {
+public:
+	StopSignal(void* context, bool (*should_stop)(void*))
+		: context_(context), should_stop_(should_stop) {}
+
+	/// Whether there is anything to poll at all.
+	bool pollable() const { return should_stop_ != nullptr; }
+
+	/// Whether the caller has asked the search to stop.
+	bool requested() const { return should_stop_ != nullptr && should_stop_(context_); }
+
+private:
+	void* context_;
+	bool (*should_stop_)(void*);
 };
 
 // ---------------------------------------------------------------------------
@@ -138,8 +183,10 @@ public:
 	/// once and never one while the other runs (funnel them through the thread
 	/// that updates the incumbent, or a dedicated reporting thread). `model` is a
 	/// read-only view for the duration of the call and may be queried
-	/// concurrently from any number of threads.
-	virtual Status run(const Model& model, SolutionSink& solutions, MessageSink& messages) = 0;
+	/// concurrently from any number of threads. `stop` may be polled from any
+	/// thread too, including several at once.
+	virtual Status run(const Model& model, SolutionSink& solutions, MessageSink& messages,
+	                   const StopSignal& stop) = 0;
 
 	/// The constraints this solver accepts. Empty by default.
 	static FznsoConstraintList constraint_list() { return {0, nullptr}; }
@@ -218,12 +265,14 @@ struct Export {
 
 	static FznsoStatus run(FznsoSolver* p, FznsoModelRef model, void* context,
 	                       void (*on_solution)(void*, FznsoSolutionRef),
-	                       void (*on_message)(void*, FznsoStr, FznsoValueRef)) {
+	                       void (*on_message)(void*, FznsoStr, FznsoValueRef),
+	                       bool (*should_stop)(void*)) {
 		try {
 			ModelRefAdapter adapter{model};
 			SolutionSink solutions{context, on_solution};
 			MessageSink messages{context, on_message};
-			Status status = at(p).S::run(adapter, solutions, messages);
+			StopSignal stop{context, should_stop};
+			Status status = at(p).S::run(adapter, solutions, messages, stop);
 			switch (status.kind) {
 			case Status::Kind::Complete:
 				return FznsoComplete;
@@ -319,9 +368,10 @@ struct Export {
 	FZNSO_EXPORTED FznsoStatus FZNSO_SYMBOL(Name, _solver_run)(                                    \
 		FznsoSolver* solver, FznsoModelRef model, void* context,                                   \
 		void (*on_solution)(void*, FznsoSolutionRef),                                              \
-		void (*on_message)(void*, FznsoStr, FznsoValueRef)) noexcept {                             \
+		void (*on_message)(void*, FznsoStr, FznsoValueRef),                                        \
+		bool (*should_stop)(void*)) noexcept {                                                     \
 		return ::fznso::detail::Export<SolverType>::run(solver, model, context, on_solution,       \
-		                                                on_message);                               \
+		                                                on_message, should_stop);                  \
 	}                                                                                              \
 	static_assert(true, "require a trailing semicolon")
 

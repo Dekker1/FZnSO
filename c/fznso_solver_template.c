@@ -86,6 +86,33 @@ void fznso_NAME_solver_read_error(FznsoSolver *solver,
 // signalled by returning [`FznsoError`] and retrieved with
 // [`fznso_NAME_solver_read_error`].
 //
+// `on_message` may be **null**, meaning nobody is listening. A solver should
+// then skip *building* diagnostics rather than formatting them and handing
+// them to a sink that discards them — that is the point of making it nullable.
+//
+// # Stopping early
+//
+//
+// `should_stop` lets the caller abandon the search: the solver polls it, and a
+// `true` answer means stop as soon as convenient and return
+// [`FznsoIncomplete`]. It may be [`None`], which means the caller will never
+// ask to stop: a solver then skips polling entirely rather than calling a
+// predicate that always answers `false`.
+//
+// A solver is expected to:
+//
+// - poll it **once before starting**, so that a caller which has already asked
+//   to stop gets no search at all;
+// - poll it **at least once after each `on_solution` returns**, so that a
+//   caller can stop from inside the callback — this is what makes "stop after
+//   this solution" reliable;
+// - otherwise poll it as often as it reasonably can, so that a cancel is acted
+//   on promptly rather than at the end of the search.
+//
+// To set a deadline, solvers should prefer the `time_limit` option over
+// polling a clock here, because a solver that knows its deadline up front can
+// plan its search around it.
+//
 // # Threading
 //
 // A solver may search on several threads. The contract for the callbacks and
@@ -93,13 +120,18 @@ void fznso_NAME_solver_read_error(FznsoSolver *solver,
 //
 // - `on_solution` and `on_message` must be invoked **serially**: never two at
 //   once, and never one while the other runs. They may be called from any
-//   thread (for example the worker that found a solution), as long as each call
-//   happens-before the next. A caller therefore need not make its callbacks
-//   safe to call concurrently. (Serial reporting also keeps solutions in the
-//   improving order that intermediate/bound reporting relies on.)
+//   thread (for example the worker that found a solution), as long as each
+//   call happens-before the next. A caller therefore need not make its
+//   callbacks safe to call concurrently. (Serial reporting also keeps
+//   solutions in the improving order that intermediate/bound reporting relies
+//   on.)
 // - `model` may be queried **concurrently**: it is a read-only view for the
-//   duration of the call, so a parallel solver may read it from many threads at
-//   once. A caller must therefore make the model safe for concurrent reads.
+//   duration of the call, so a parallel solver may read it from many threads
+//   at once. A caller must therefore make the model safe for concurrent reads.
+// - `should_stop` may be called **concurrently**, from any thread, including
+//   while `on_solution` or `on_message` is running, i.e. every worker may poll
+//   it independently. It is the one callback a caller must make thread-safe,
+//   which for the usual implementation (reading an atomic flag) it already is.
 //
 // # Safety
 //
@@ -111,7 +143,8 @@ FznsoStatus fznso_NAME_solver_run(FznsoSolver *solver,
                                   void (*on_solution)(void *context, FznsoSolutionRef solution),
                                   void (*on_message)(void *context,
                                                      FznsoStr scope,
-                                                     FznsoValueRef value));
+                                                     FznsoValueRef value),
+                                  bool (*should_stop)(void *context));
 
 // Get the current value of a statistic from the solver instance.
 //

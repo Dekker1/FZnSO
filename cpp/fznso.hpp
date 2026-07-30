@@ -120,6 +120,10 @@ struct Iterable {
 	}
 };
 
+/// Marks an optional `run` callback the caller is not supplying, so that a null
+/// thunk reaches the solver rather than one that does nothing.
+struct Absent {};
+
 /// Views a `FznsoStr` as a `string_view`; a null pointer becomes empty.
 inline std::string_view to_view(FznsoStr s) {
 	return s.ptr == nullptr ? std::string_view{} : std::string_view{s.ptr, s.len};
@@ -1585,19 +1589,41 @@ public:
 	/// [`Solution`] instead.
 	Value statistic(std::string_view name) const;
 
-	/// Run the solver over `model`, reporting solutions and messages.
+	/// Run the solver over `model`, reporting solutions and messages, and polling
+	/// `should_stop` to decide whether to keep going.
 	///
 	/// `model` may be any [`Model`]; passing a concrete type lets `ref()` be
 	/// resolved statically. The handlers are called directly, not through a
 	/// `std::function`.
-	template <class M, class OnSolution, class OnMessage>
-	Status run(const M& model, OnSolution&& on_solution, OnMessage&& on_message);
+	///
+	/// `should_stop` returns `true` to abandon the search, which yields
+	/// `Status::Kind::Incomplete`. It is how a caller ends a run it has already
+	/// started: return `true` from inside `on_solution` for "one solution is
+	/// enough", or flip an atomic from another thread to cancel a long search.
+	/// Unlike the handlers it may be polled **concurrently from several
+	/// threads**, so it must be thread-safe — reading a `std::atomic<bool>`, the
+	/// usual implementation, already is.
+	template <class M, class OnSolution, class OnMessage, class ShouldStop>
+	Status run(const M& model, OnSolution&& on_solution, OnMessage&& on_message,
+	           ShouldStop&& should_stop);
 
-	/// Run the solver, ignoring any messages.
+	/// Run the solver to completion, reporting solutions and messages.
+	///
+	/// Passes no stop predicate, so the solver is told it will never be cancelled.
+	template <class M, class OnSolution, class OnMessage>
+	Status run(const M& model, OnSolution&& on_solution, OnMessage&& on_message) {
+		return run(model, std::forward<OnSolution>(on_solution),
+		           std::forward<OnMessage>(on_message), detail::Absent{});
+	}
+
+	/// Run the solver to completion, ignoring any messages.
+	///
+	/// Passes neither a message sink nor a stop predicate, so the solver knows to
+	/// skip building diagnostics and to skip polling.
 	template <class M, class OnSolution>
 	Status run(const M& model, OnSolution&& on_solution) {
-		return run(model, std::forward<OnSolution>(on_solution),
-		           [](std::string_view, const Value&) {});
+		return run(model, std::forward<OnSolution>(on_solution), detail::Absent{},
+		           detail::Absent{});
 	}
 
 private:
@@ -1813,9 +1839,12 @@ private:
 	using StatisticFn = FznsoValueRef (*)(const FznsoSolver*, FznsoStr);
 	using OptionSetFn = bool (*)(FznsoSolver*, FznsoStr, FznsoValueRef);
 	using ReadErrorFn = void (*)(FznsoSolver*, void*, void (*)(void*, FznsoStr));
+	// `on_message` and `should_stop` may be null, which tells the solver nobody is
+	// listening / nothing will cancel, so it can skip that work entirely.
 	using RunFn = FznsoStatus (*)(FznsoSolver*, FznsoModelRef, void*,
 	                              void (*)(void*, FznsoSolutionRef),
-	                              void (*)(void*, FznsoStr, FznsoValueRef));
+	                              void (*)(void*, FznsoStr, FznsoValueRef),
+	                              bool (*)(void*));
 
 	/// Open `path` and resolve every entry point, each named `fznso_<name>_...`.
 	void load(const char* path, std::string_view name) {
@@ -1931,27 +1960,43 @@ inline std::optional<std::string> DynSolver::option_set(std::string_view name, c
 	return lib_->read_error(handle_);
 }
 
-template <class M, class OnSolution, class OnMessage>
-Status DynSolver::run(const M& model, OnSolution&& on_solution, OnMessage&& on_message) {
+template <class M, class OnSolution, class OnMessage, class ShouldStop>
+Status DynSolver::run(const M& model, OnSolution&& on_solution, OnMessage&& on_message,
+                      ShouldStop&& should_stop) {
 	static_assert(std::is_base_of<Model, M>::value, "model must derive from fznso::Model");
 
-	// Both callbacks share the single `context` pointer the interface provides,
-	// so they are held together. References suffice: run is synchronous, so the
-	// handlers outlive it.
+	// All three callbacks share the single `context` pointer the interface
+	// provides, so they are held together. References suffice: run is
+	// synchronous, so the handlers outlive it. Note `should_stop` is only ever
+	// read through a const reference, since it may be polled concurrently.
 	struct Callbacks {
 		OnSolution& on_solution;
 		OnMessage& on_message;
+		const ShouldStop& should_stop;
 	};
-	Callbacks callbacks{on_solution, on_message};
+	Callbacks callbacks{on_solution, on_message, should_stop};
+
+	// A thunk is handed over only when there is something behind it; otherwise the
+	// solver receives null and can skip the work.
+	void (*message_thunk)(void*, FznsoStr, FznsoValueRef) = nullptr;
+	if constexpr (!std::is_same_v<std::decay_t<OnMessage>, detail::Absent>) {
+		message_thunk = [](void* ctx, FznsoStr scope, FznsoValueRef value) {
+			static_cast<Callbacks*>(ctx)->on_message(detail::to_view(scope), Value{value});
+		};
+	}
+	bool (*stop_thunk)(void*) = nullptr;
+	if constexpr (!std::is_same_v<std::decay_t<ShouldStop>, detail::Absent>) {
+		stop_thunk = [](void* ctx) -> bool {
+			return static_cast<const Callbacks*>(ctx)->should_stop();
+		};
+	}
 
 	FznsoStatus status = lib_->solver_run_(
 		handle_, model_ref(model), &callbacks,
 		[](void* ctx, FznsoSolutionRef sol) {
 			static_cast<Callbacks*>(ctx)->on_solution(Solution{sol});
 		},
-		[](void* ctx, FznsoStr scope, FznsoValueRef value) {
-			static_cast<Callbacks*>(ctx)->on_message(detail::to_view(scope), Value{value});
-		});
+		message_thunk, stop_thunk);
 
 	switch (status) {
 	case FznsoComplete:

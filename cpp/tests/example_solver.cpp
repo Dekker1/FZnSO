@@ -66,12 +66,21 @@ public:
 	}
 
 	fznso::Status run(const fznso::Model& model, fznso::SolutionSink& solutions,
-	                  fznso::MessageSink& messages) override {
+	                  fznso::MessageSink& messages, const fznso::StopSignal& stop) override {
 		++runs_;
+		// Polled before starting, and again after each solution is reported, so a
+		// caller can stop from inside its own callback.
+		if (stop.requested()) {
+			return fznso::Status{fznso::Status::Kind::Incomplete, {}};
+		}
 
-		// This fixture ignores the constraints, which is worth saying out loud.
-		std::string warning = "ignoring " + std::to_string(model.constraint_count()) + " constraint(s)";
-		messages.message("warn", fznso::Value{warning});
+		// This fixture ignores the constraints, which is worth saying out loud — but
+		// only builds the message if someone is listening for it.
+		if (messages.wanted()) {
+			std::string warning =
+				"ignoring " + std::to_string(model.constraint_count()) + " constraint(s)";
+			messages.message("warn", fznso::Value{warning});
+		}
 
 		// Lower bound of each decision's domain, or 0 when it has none.
 		std::vector<std::int64_t> base;
@@ -88,6 +97,9 @@ public:
 				values[0] += i;
 			}
 			solutions.solution(ExampleSolution{std::move(values), i});
+			if (stop.requested()) {
+				return fznso::Status{fznso::Status::Kind::Incomplete, {}};
+			}
 		}
 		return fznso::Status{fznso::Status::Kind::Complete, {}};
 	}

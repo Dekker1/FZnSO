@@ -172,9 +172,10 @@ fn load_and_run_a_dynamic_solver() {
 				sol.statistic("solutions").get_int(),
 			));
 		},
-		&mut |scope: &str, value: fznso::Value<'_>| {
+		Some(&mut |scope: &str, value: fznso::Value<'_>| {
 			messages.push((scope.to_owned(), value.get_string().to_owned()));
-		},
+		}),
+		fznso::dont_interrupt(),
 	);
 
 	assert!(matches!(status, Status::Complete), "got {status:?}");
@@ -242,6 +243,100 @@ fn find_loads_a_solver_from_the_search_path() {
 	let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A caller can abandon a run it has already started, by way of `should_stop`.
+#[test]
+#[cfg_attr(miri, ignore = "miri cannot dynamically load a library")]
+fn a_run_can_be_stopped_early() {
+	use std::sync::atomic::{AtomicBool, Ordering};
+
+	let path = example_path("example_solver");
+	// SAFETY: the library is this workspace's own example solver.
+	let lib = unsafe { Library::new(&path) }.expect("load example solver");
+	let mut solver = lib.create_solver();
+	solver
+		.option_set("solution_limit", (&5_i64).into())
+		.expect("set solution_limit");
+	let m = model();
+
+	// "One solution is enough": tripped from inside the callback, which the
+	// contract covers by requiring a poll after each `on_solution` returns.
+	let stop = AtomicBool::new(false);
+	let mut seen = 0_usize;
+	let status = solver.run(
+		&m,
+		&mut |_sol: &fznso::DynSolution<'_>| {
+			seen += 1;
+			stop.store(true, Ordering::Relaxed);
+		},
+		fznso::ignore_messages(),
+		Some(&|| stop.load(Ordering::Relaxed)),
+	);
+	assert_eq!(seen, 1, "the solver kept going after being asked to stop");
+	assert!(
+		matches!(status, Status::Incomplete),
+		"a stopped run is incomplete, got {status:?}"
+	);
+
+	// Already asked to stop before the run begins: no search at all.
+	let mut seen = 0_usize;
+	let status = solver.run(
+		&m,
+		&mut |_sol: &fznso::DynSolution<'_>| seen += 1,
+		fznso::ignore_messages(),
+		Some(&|| true),
+	);
+	assert_eq!(seen, 0, "a pre-stopped run must not search");
+	assert!(matches!(status, Status::Incomplete), "got {status:?}");
+}
+
+/// The predicate may be tripped from *another* thread, which is what lets a
+/// caller cancel a long search that has not produced anything yet.
+#[test]
+#[cfg_attr(miri, ignore = "miri cannot dynamically load a library")]
+fn a_watchdog_thread_can_stop_a_run() {
+	use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+	let path = example_path("example_solver");
+	// SAFETY: the library is this workspace's own example solver.
+	let lib = unsafe { Library::new(&path) }.expect("load example solver");
+	let mut solver = lib.create_solver();
+	// Far more solutions than the watchdog will allow, so that finishing the loop
+	// (rather than being stopped) fails the assertion instead of hanging.
+	let limit = 100_000_i64;
+	solver
+		.option_set("solution_limit", (&limit).into())
+		.expect("set solution_limit");
+	let m = model();
+
+	let stop = AtomicBool::new(false);
+	let seen = AtomicUsize::new(0);
+	let status = std::thread::scope(|scope| {
+		let watchdog = scope.spawn(|| {
+			while seen.load(Ordering::Relaxed) < 3 {
+				std::thread::yield_now();
+			}
+			stop.store(true, Ordering::Relaxed);
+		});
+		let status = solver.run(
+			&m,
+			&mut |_sol: &fznso::DynSolution<'_>| {
+				let _ = seen.fetch_add(1, Ordering::Relaxed);
+			},
+			fznso::ignore_messages(),
+			Some(&|| stop.load(Ordering::Relaxed)),
+		);
+		watchdog.join().expect("watchdog thread panicked");
+		status
+	});
+
+	assert!(matches!(status, Status::Incomplete), "got {status:?}");
+	let count = seen.load(Ordering::Relaxed);
+	assert!(
+		(3..usize::try_from(limit).unwrap()).contains(&count),
+		"expected the watchdog to stop the run early, but it emitted {count}"
+	);
+}
+
 /// A solver may read the model and report from its own threads, which is what
 /// the [`fznso::Solver::run`] contract permits.
 ///
@@ -263,9 +358,10 @@ fn a_solver_may_report_from_a_worker_thread() {
 	let status = solver.run(
 		&m,
 		&mut |sol: &fznso::DynSolution<'_>| values.push(sol.value(0).get_int()),
-		&mut |scope: &str, value: fznso::Value<'_>| {
+		Some(&mut |scope: &str, value: fznso::Value<'_>| {
 			messages.push((scope.to_owned(), value.get_string().to_owned()));
-		},
+		}),
+		fznso::dont_interrupt(),
 	);
 
 	assert!(matches!(status, Status::Complete), "got {status:?}");

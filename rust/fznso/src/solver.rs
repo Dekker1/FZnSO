@@ -9,6 +9,39 @@ use crate::{
 	StatisticList, Status, TypeList, Value,
 };
 
+/// A stand-in message-sink type, for callers that want no diagnostics.
+///
+/// Never called; it exists only to give [`ignore_messages`] a concrete type,
+/// since a bare `None` leaves [`Solver::run`]'s sink parameter unconstrained.
+pub type IgnoredMessages = fn(&str, Value<'_>);
+
+/// A stand-in stop-predicate type, for callers that never interrupt a run. See
+/// [`dont_interrupt`].
+pub type NoInterrupt = fn() -> bool;
+
+/// Pass as [`Solver::run`]'s `on_message` when the caller wants no diagnostics.
+///
+/// Nothing is merely discarded: the solver is told the sink is absent, so it
+/// can skip *building* the messages in the first place.
+#[must_use]
+pub fn ignore_messages<'a>() -> Option<&'a mut IgnoredMessages> {
+	None
+}
+
+/// Pass as [`Solver::run`]'s `should_stop` when the caller will never interrupt
+/// the run, so a solver can drop the check from its search loop.
+///
+/// This says nothing about whether the *solver* stops — it will still finish,
+/// or hit its `time_limit`. It only promises that no interruption arrives from
+/// this side.
+///
+/// For a plain deadline prefer the `time_limit` option over a predicate that
+/// watches a clock: a solver told its budget up front can plan around it.
+#[must_use]
+pub fn dont_interrupt<'a>() -> Option<&'a NoInterrupt> {
+	None
+}
+
 /// A solver instance from a dynamically loaded library, via [`Library`].
 ///
 /// Created by [`Library::create_solver`].
@@ -88,11 +121,55 @@ pub trait Solver {
 	/// A consumer that wants to handle solutions in parallel does so *behind* a
 	/// serial callback (push to a channel, fan out downstream); it never has to
 	/// make the callback itself thread-safe.
-	fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
+	///
+	/// `should_stop` is the exception: the solver may poll it from *several*
+	/// threads at once, so it is `Fn + Sync` rather than `FnMut`. Reading an
+	/// atomic — the usual implementation — already satisfies that.
+	///
+	/// # Optional callbacks
+	///
+	/// `on_message` and `should_stop` are both [`Option`]s, and `None` is a
+	/// signal a solver should act on rather than paper over. Absent ones are
+	/// spelled [`ignore_messages()`] and [`dont_interrupt()`], which supply the
+	/// concrete type a bare `None` cannot infer:
+	///
+	/// - `on_message: None` means nobody is listening to diagnostics, so a
+	///   solver should skip *building* them — not format a message and hand it
+	///   to a sink that discards it.
+	/// - `should_stop: None` means the caller will never ask to stop, so a
+	///   solver need not poll at all.
+	///
+	/// A caller that wants only a deadline should set the `time_limit` option
+	/// rather than polling a clock through `should_stop`: a solver told its
+	/// deadline up front can plan its search around it.
+	///
+	/// `on_solution` has no `None` case — reporting solutions is what a run is
+	/// for.
+	///
+	/// # Stopping early
+	///
+	/// `should_stop` is how a caller abandons a run it has already started, and
+	/// the only way to stop one: return `true` and the solver gives up as soon
+	/// as it can, yielding [`Status::Incomplete`]. It covers both "one
+	/// solution is enough" — trip it from inside `on_solution` — and
+	/// cancelling a long search that has produced nothing, by tripping it from
+	/// another thread.
+	///
+	/// An implementation must poll it before starting and at least once after
+	/// each `on_solution` returns, and should otherwise poll as often as is
+	/// reasonable. The answer is monotone, so it may be cached once `true`.
+	fn run<M, F, G, H>(
+		&mut self,
+		model: &M,
+		on_solution: &mut F,
+		on_message: Option<&mut G>,
+		should_stop: Option<&H>,
+	) -> Status
 	where
 		M: Model + Sync,
 		F: for<'s> FnMut(&'s Self::Solution<'s>) + Send,
-		G: FnMut(&str, Value<'_>) + Send;
+		G: FnMut(&str, Value<'_>) + Send,
+		H: Fn() -> bool + Send + Sync;
 }
 
 /// What a solver implementation declares about itself, independently of any
@@ -179,13 +256,20 @@ impl Solver for DynSolver {
 		self.lib.solver_statistic(self.solver, name)
 	}
 
-	fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
+	fn run<M, F, G, H>(
+		&mut self,
+		model: &M,
+		on_solution: &mut F,
+		on_message: Option<&mut G>,
+		should_stop: Option<&H>,
+	) -> Status
 	where
 		M: Model + Sync,
 		F: for<'s> FnMut(&'s Self::Solution<'s>) + Send,
 		G: FnMut(&str, Value<'_>) + Send,
+		H: Fn() -> bool + Send + Sync,
 	{
 		self.lib
-			.solver_run(self.solver, model, on_solution, on_message)
+			.solver_run(self.solver, model, on_solution, on_message, should_stop)
 	}
 }

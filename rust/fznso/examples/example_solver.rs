@@ -111,26 +111,39 @@ impl Solver for ExampleSolver {
 		}
 	}
 
-	fn run<M, F, G>(&mut self, model: &M, on_solution: &mut F, on_message: &mut G) -> Status
+	fn run<M, F, G, H>(
+		&mut self,
+		model: &M,
+		on_solution: &mut F,
+		on_message: Option<&mut G>,
+		should_stop: Option<&H>,
+	) -> Status
 	where
 		M: Model + Sync,
 		F: for<'s> FnMut(&'s Self::Solution<'s>) + Send,
 		G: FnMut(&str, Value<'_>) + Send,
+		H: Fn() -> bool + Send + Sync,
 	{
 		self.runs += 1;
 
-		// This fixture ignores the constraints, which is worth saying out loud.
-		let warning = format!("ignoring {} constraint(s)", model.constraint_len());
-		on_message("warn", (&warning).into());
+		// This fixture ignores the constraints, which is worth saying out loud —
+		// but only builds the message if someone is listening for it.
+		let mut on_message = on_message;
+		if let Some(emit) = &mut on_message {
+			let warning = format!("ignoring {} constraint(s)", model.constraint_len());
+			emit("warn", (&warning).into());
+		}
 
 		// Report the per-layer decision counts when the model has more than one
 		// layer, so tests can observe that the layer structure came through.
-		if model.layer_len() > 1 {
+		if model.layer_len() > 1 && on_message.is_some() {
 			let counts: Vec<String> = model
 				.layers()
 				.map(|layer| layer.decisions().count().to_string())
 				.collect();
-			on_message("layers", (&counts.join(",")).into());
+			if let Some(emit) = &mut on_message {
+				emit("layers", (&counts.join(",")).into());
+			}
 
 			// Also read back the model's strings and a constraint argument, so
 			// tests can observe those cross the interface too.
@@ -143,7 +156,9 @@ impl Solver for ExampleSolver {
 				let con = model.constraint(fznso::ConstraintIdx::from(0));
 				summary += &format!(";con0={}({})", con.ident(), con.argument(0).get_int());
 			}
-			on_message("model", (&summary).into());
+			if let Some(emit) = &mut on_message {
+				emit("model", (&summary).into());
+			}
 		}
 
 		// Lower bound of each decision's domain, or 0 when it has none.
@@ -155,6 +170,13 @@ impl Solver for ExampleSolver {
 			})
 			.collect();
 
+		// Absent means "never asks to stop", so there is nothing to poll.
+		let stopped = || should_stop.is_some_and(|poll| poll());
+		// Polled before starting, and again after each solution is reported, so a
+		// caller can stop from inside its own callback.
+		if stopped() {
+			return Status::Incomplete;
+		}
 		for i in 0..self.solution_limit {
 			// Shift the first variable each round so successive solutions differ.
 			let mut values = base.clone();
@@ -162,6 +184,9 @@ impl Solver for ExampleSolver {
 				*first += i;
 			}
 			on_solution(&ExampleSolution { values, index: i });
+			if stopped() {
+				return Status::Incomplete;
+			}
 		}
 		Status::Complete
 	}

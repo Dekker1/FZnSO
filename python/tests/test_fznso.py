@@ -165,6 +165,71 @@ def test_custom_python_model(solver):
     assert messages == [("warn", "ignoring 2 constraint(s)")]
 
 
+def test_run_can_be_stopped_early(solver):
+    """`should_stop` ends a run the caller has already started."""
+    solver.option_set("solution_limit", 5)
+    m, a, _ = build_model()
+
+    # "One solution is enough", decided from inside the callback.
+    solutions = []
+    status = solver.run(
+        m,
+        on_solution=lambda s: solutions.append(s[a]),
+        should_stop=lambda: len(solutions) >= 1,
+    )
+    assert len(solutions) == 1, "the solver kept going after being asked to stop"
+    assert status == fznso.Status.Incomplete
+
+    # Already asked to stop before the run begins: no search at all.
+    solutions = []
+    status = solver.run(
+        m, on_solution=lambda s: solutions.append(s[a]), should_stop=lambda: True
+    )
+    assert solutions == []
+    assert status == fznso.Status.Incomplete
+
+
+def test_stop_predicate_error_propagates(solver):
+    """An exception from should_stop surfaces once the run unwinds."""
+    m, _, _ = build_model()
+
+    def boom():
+        raise KeyError("from should_stop")
+
+    with pytest.raises(KeyError, match="from should_stop"):
+        solver.run(m, should_stop=boom)
+
+
+def test_watchdog_thread_can_stop_a_run(solver):
+    """Another Python thread can cancel a long run.
+
+    This works only because ``run`` releases the GIL: the watchdog needs it to
+    execute at all while the solver is searching.
+    """
+    import threading
+
+    solver.option_set("solution_limit", 100_000)
+    m, a, _ = build_model()
+
+    seen = []
+    stop = threading.Event()
+
+    def watchdog():
+        while len(seen) < 3:
+            pass
+        stop.set()
+
+    thread = threading.Thread(target=watchdog)
+    thread.start()
+    status = solver.run(
+        m, on_solution=lambda s: seen.append(s[a]), should_stop=stop.is_set
+    )
+    thread.join()
+
+    assert status == fznso.Status.Incomplete
+    assert 3 <= len(seen) < 100_000, f"expected an early stop, saw {len(seen)}"
+
+
 def test_threaded_solver_does_not_deadlock(threaded_solver):
     """A solver reporting from its own thread must not hang.
 
