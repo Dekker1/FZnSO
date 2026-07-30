@@ -371,27 +371,38 @@ impl Library {
 	///    from the first `.` is ignored, so `<name>` must not contain a `.`.
 	///
 	/// The name is recovered from the file name by stripping a leading `lib`
-	/// and everything from the first `.`, so `libgecode.so.6`,
-	/// `libgecode.6.2.1.dylib` and `gecode.dll` all load a solver whose entry
-	/// points are prefixed `fznso_gecode_`. This is the only supported naming,
-	/// so the file name and the exported symbols must agree. A file name that
-	/// yields something unusable is rejected with [`LoadError::InvalidName`]
-	/// rather than failing later as a missing symbol.
+	/// and everything from the first `.`, so `libgecode.6.2.1.so`,
+	/// `libgecode.6.2.1.dylib` and `gecode.6.2.1.dll` all load a solver whose
+	/// entry points are prefixed `fznso_gecode_`. This is the only supported
+	/// naming, so the file name and the exported symbols must agree. A file
+	/// name that yields something unusable is rejected with
+	/// [`LoadError::InvalidName`] rather than failing later as a missing
+	/// symbol.
 	///
 	/// # Versioning
 	///
-	/// Because everything from the first `.` is ignored, the platform's usual
-	/// versioning schemes all work unchanged, and several versions of one
-	/// solver can sit side by side — `libgecode.so.6` and `libgecode.so.7`
-	/// both name `gecode`. They export the same `fznso_gecode_*` symbols, but
-	/// the library is opened with `RTLD_LOCAL` (and Windows resolves per
-	/// module), so more than one can be loaded in a single process without
-	/// colliding. Which one is used is the caller's choice: pass the exact
-	/// path.
+	/// The version goes **between the name and the extension on every
+	/// platform** — `libgecode.6.2.1.so`, `libgecode.6.2.1.dylib`,
+	/// `gecode.6.2.1.dll` — rather than following each platform's native
+	/// library convention, so that one rule covers all three and Windows is not
+	/// a special case.
 	///
-	/// Windows has no file-name versioning convention, and `gecode-6.dll` is
-	/// not a legal name (rule 1), so on Windows put the version in the
-	/// directory rather than the file name.
+	/// Nothing ever links against a solver: it is opened by path from a
+	/// directory that is deliberately off the linker search path, so no soname
+	/// is resolved and `ldconfig` never sees it. The ELF `libfoo.so.MAJOR`
+	/// scheme therefore buys nothing here, and putting the version first is
+	/// what Python does for extension modules
+	/// (`foo.cpython-312-x86_64-linux-gnu.so`) for the same reason. The native
+	/// form is still parsed, so a distribution-packaged `libgecode.so.6` also
+	/// loads.
+	///
+	/// Several versions of one solver can sit side by side — `libgecode.6.so`
+	/// and `libgecode.7.so` both name `gecode`. They export the same
+	/// `fznso_gecode_*` symbols, but the library is opened with `RTLD_LOCAL`
+	/// (and Windows resolves per module), so more than one can be loaded in a
+	/// single process without colliding. Which one is used is the caller's
+	/// choice: pass the exact path, or select by version with
+	/// [`find_version`](Library::find_version).
 	///
 	/// The solver's `fznso_<name>_abi_version` is checked first: loading fails
 	/// with [`LoadError::AbiMismatch`] if it does not equal
@@ -622,15 +633,18 @@ mod tests {
 			name_from_filename(std::ffi::OsStr::new(f))
 		}
 
-		// The platform's library and versioning schemes all name `gecode`, which
-		// is what lets several versions sit side by side.
+		// The convention — version between the name and the extension — names
+		// `gecode` on every platform, and so do the platforms' native forms,
+		// which is what lets several versions sit side by side.
 		for file in [
 			"libgecode.so",
-			"libgecode.so.6",
-			"libgecode.so.6.2.1",
+			"libgecode.6.2.1.so",
 			"libgecode.dylib",
 			"libgecode.6.2.1.dylib",
 			"gecode.dll",
+			"gecode.6.2.1.dll",
+			"libgecode.so.6",
+			"libgecode.so.6.2.1",
 			"/usr/lib/fznso/libgecode.so.6",
 		] {
 			assert_eq!(derive(file), "gecode", "deriving from {file}");
@@ -732,6 +746,18 @@ mod tests {
 	fn versions_are_parsed_from_file_names() {
 		// Only the marker for the current platform is recognised, so test that one.
 		let marker = super::LIB_MARKER;
+		// The convention: the version sits between the name and the extension on
+		// every platform.
+		assert_eq!(
+			version_from_filename(&format!("libgecode.6.2.1{marker}")),
+			"6.2.1"
+		);
+		assert_eq!(
+			version_from_filename(&format!("gecode.6.2.1{marker}")),
+			"6.2.1"
+		);
+		// A platform's native form is still parsed, so a distribution-packaged
+		// library loads too.
 		assert_eq!(
 			version_from_filename(&format!("libgecode{marker}.6.2.1")),
 			"6.2.1"

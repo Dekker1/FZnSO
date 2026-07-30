@@ -7,6 +7,7 @@ solution index, and warns that it ignores the constraints.
 
 import ctypes.util
 import pathlib
+import shutil
 import sys
 
 import pytest
@@ -339,3 +340,32 @@ def test_custom_model_method_error_propagates(solver):
 
     with pytest.raises(ValueError, match="bad domain"):
         solver.run(Broken(), on_solution=lambda s: None)
+
+
+def test_find_loads_a_solver_from_the_search_path(tmp_path, monkeypatch):
+    # Stage the built example in a directory on the search path, under the file
+    # name it will be found by: `libexample_solver.*` names `example_solver`.
+    built = pathlib.Path(solver_path())
+    shutil.copy(built, tmp_path / built.name)
+    monkeypatch.setenv("FZNSO_SOLVER_PATH", str(tmp_path))
+
+    # The staged directory takes precedence over the user and system ones.
+    assert fznso.Library.search_paths()[0] == str(tmp_path)
+
+    # It is listed without being loaded, carrying no version in its file name.
+    found = [d for d in fznso.Library.discover() if d.name == "example_solver"]
+    assert found, f"discover() did not list it: {fznso.Library.discover()}"
+    assert found[0].version == ""
+    assert found[0].path == str(tmp_path / built.name)
+
+    # Loading by name works just like loading by path.
+    solver = fznso.Library.find("example_solver").create_solver()
+    assert solver.option_get("solution_limit") == 1
+
+    # The staged example carries no version, so a specific request misses.
+    with pytest.raises(RuntimeError, match="no solver named"):
+        fznso.Library.find("example_solver", "9")
+
+    # An unknown name reports where it looked.
+    with pytest.raises(RuntimeError, match=str(tmp_path)):
+        fznso.Library.find("definitely_absent")

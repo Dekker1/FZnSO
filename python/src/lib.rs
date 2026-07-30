@@ -1061,6 +1061,41 @@ impl DynSolver {
 	}
 }
 
+/// A solver library found on the search path, reported without loading it.
+#[pyclass(frozen)]
+struct Discovered {
+	/// The solver's name, derived from the file name.
+	#[pyo3(get)]
+	name: String,
+	/// The version parsed from the file name, or empty if it carries none.
+	/// Compared component-wise, so `10` is newer than `9`.
+	#[pyo3(get)]
+	version: String,
+	/// The full path to the library.
+	#[pyo3(get)]
+	path: String,
+}
+
+#[pymethods]
+impl Discovered {
+	fn __repr__(&self) -> String {
+		format!(
+			"Discovered(name={:?}, version={:?}, path={:?})",
+			self.name, self.version, self.path
+		)
+	}
+}
+
+impl From<fznso_core::Discovered> for Discovered {
+	fn from(found: fznso_core::Discovered) -> Self {
+		Self {
+			name: found.name,
+			version: found.version,
+			path: found.path.to_string_lossy().into_owned(),
+		}
+	}
+}
+
 /// A loaded solver library.
 #[pyclass]
 struct Library {
@@ -1078,6 +1113,56 @@ impl Library {
 		Ok(Self { inner })
 	}
 
+	/// The directories searched for solver libraries, in search order.
+	///
+	/// Solvers live in a directory of their own rather than on the normal
+	/// library path. The order is `$FZNSO_SOLVER_PATH`, then the per-user
+	/// directory, then the system directories.
+	#[staticmethod]
+	fn search_paths() -> Vec<String> {
+		fznso_core::Library::search_paths()
+			.iter()
+			.map(|path| path.to_string_lossy().into_owned())
+			.collect()
+	}
+
+	/// List the solver libraries on the search path, without loading any.
+	///
+	/// Directories are visited in `search_paths` order and, within one
+	/// directory, the highest version of a solver comes first. Nothing is
+	/// opened, so the ABI version is not checked here; `find` skips solvers
+	/// built for another ABI.
+	#[staticmethod]
+	fn discover() -> Vec<Discovered> {
+		fznso_core::Library::discover()
+			.into_iter()
+			.map(Discovered::from)
+			.collect()
+	}
+
+	/// Load a solver by name from the search path.
+	///
+	/// Without a `version` the newest is chosen, preferring earlier
+	/// directories. A `version` selects by whole dotted components, so `"6"`
+	/// matches `6.2.1` and `"6.2"` matches `6.2.1` but not `6.1.0`.
+	///
+	/// Raises `RuntimeError` if no matching solver is installed, naming the
+	/// directories that were searched.
+	#[staticmethod]
+	#[pyo3(signature = (name, version=None))]
+	fn find(name: &str, version: Option<&str>) -> PyResult<Self> {
+		// SAFETY: the libraries on the search path are valid FZnSO solvers.
+		let found = unsafe {
+			match version {
+				Some(version) => fznso_core::Library::find_version(name, version),
+				None => fznso_core::Library::find(name),
+			}
+		};
+		let inner =
+			found.map_err(|e| PyRuntimeError::new_err(format!("could not load solver: {e}")))?;
+		Ok(Self { inner })
+	}
+
 	/// Create a solver instance.
 	fn create_solver(&self) -> DynSolver {
 		DynSolver {
@@ -1089,6 +1174,7 @@ impl Library {
 #[pymodule]
 fn fznso(m: &Bound<'_, PyModule>) -> PyResult<()> {
 	m.add_class::<Library>()?;
+	m.add_class::<Discovered>()?;
 	m.add_class::<DynSolver>()?;
 	m.add_class::<LayeredModel>()?;
 	m.add_class::<Model>()?;

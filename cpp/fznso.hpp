@@ -12,6 +12,7 @@
 
 #include "fznso_types.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -1785,14 +1786,19 @@ public:
 	///    followed by any version and extension components. Everything from the
 	///    first `.` is ignored, so `<name>` must not contain a `.`.
 	///
-	/// Because everything from the first `.` is ignored, the platform's usual
-	/// versioning schemes work unchanged and several versions of one solver can
-	/// sit side by side (`libgecode.so.6`, `libgecode.so.7`). They export the
-	/// same symbols, but libraries are opened privately (`RTLD_LOCAL`, and
-	/// Windows resolves per module), so several can be loaded at once; pass the
-	/// exact path to choose one. Windows has no file-name versioning convention,
-	/// and `gecode-6.dll` is not a legal name, so there put the version in the
-	/// directory instead.
+	/// The version goes between the name and the extension on every platform
+	/// (`libgecode.6.2.1.so`, `libgecode.6.2.1.dylib`, `gecode.6.2.1.dll`),
+	/// rather than following each platform's native library convention, so one
+	/// rule covers all three. Nothing links against a solver — it is opened by
+	/// path from a directory off the linker search path — so the ELF
+	/// `libfoo.so.MAJOR` soname scheme buys nothing here; the native form is
+	/// still parsed, so a distribution-packaged `libgecode.so.6` also loads.
+	///
+	/// Several versions of one solver can sit side by side (`libgecode.6.so`,
+	/// `libgecode.7.so`). They export the same symbols, but libraries are opened
+	/// privately (`RTLD_LOCAL`, and Windows resolves per module), so several can
+	/// be loaded at once; pass the exact path, or use `find_version`, to choose
+	/// one.
 	///
 	/// Throws `std::runtime_error` if the file name yields an unusable name, or
 	/// if the library cannot be opened or is missing a symbol.

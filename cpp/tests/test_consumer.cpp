@@ -24,6 +24,27 @@ void check(bool condition, const char* what) {
 	}
 }
 
+/// Every decision in these fixtures is an integer variable.
+constexpr FznsoType INT_VAR = fznso::decision_type(FznsoTypeBaseInt);
+
+/// Set an environment variable. `setenv` is POSIX; Windows spells it `_putenv_s`.
+void set_env(const char* name, const char* value) {
+#if defined(_WIN32)
+	(void)::_putenv_s(name, value);
+#else
+	(void)::setenv(name, value, 1);
+#endif
+}
+
+/// Remove an environment variable; on Windows an empty value unsets it.
+void unset_env(const char* name) {
+#if defined(_WIN32)
+	(void)::_putenv_s(name, "");
+#else
+	(void)::unsetenv(name);
+#endif
+}
+
 /// A model with two integer decisions whose domains start at 3 and 10.
 void build(fznso::LayeredModel& model) {
 	fznso::Decision a = model.add_decision(fznso::OwnedValue::int_range(3, 20), "a");
@@ -179,7 +200,7 @@ int main(int argc, char** argv) {
 		fs::create_directories(dir);
 		fs::copy_file(argv[1], dir / fs::path{argv[1]}.filename(),
 		              fs::copy_options::overwrite_existing);
-		::setenv("FZNSO_SOLVER_PATH", dir.string().c_str(), 1);
+		set_env("FZNSO_SOLVER_PATH", dir.string().c_str());
 
 		bool listed = false;
 		for (const fznso::Library::Discovered& d : fznso::Library::discover()) {
@@ -210,7 +231,7 @@ int main(int argc, char** argv) {
 		}
 		check(threw, "an absent solver name throws");
 
-		::unsetenv("FZNSO_SOLVER_PATH");
+		unset_env("FZNSO_SOLVER_PATH");
 		fs::remove_all(dir);
 	}
 

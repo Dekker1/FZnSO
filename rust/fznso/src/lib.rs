@@ -272,7 +272,7 @@ use fznso_types::{
 pub use rangelist::RangeList;
 
 pub use crate::{
-	library::{Library, LoadError},
+	library::{Discovered, Library, LoadError},
 	model::{
 		Annotation, ConstraintView, DecisionView, LayerView, Model, ObjectiveView, ann_ref,
 		layered::{LayeredModel, OwnedAnnotation, OwnedValue},

@@ -25,6 +25,24 @@ void check(bool condition, const char* what) {
 	}
 }
 
+/// Set an environment variable. `setenv` is POSIX; Windows spells it `_putenv_s`.
+void set_env(const char* name, const char* value) {
+#if defined(_WIN32)
+	(void)::_putenv_s(name, value);
+#else
+	(void)::setenv(name, value, 1);
+#endif
+}
+
+/// Remove an environment variable; on Windows an empty value unsets it.
+void unset_env(const char* name) {
+#if defined(_WIN32)
+	(void)::_putenv_s(name, "");
+#else
+	(void)::unsetenv(name);
+#endif
+}
+
 /// A tagged-union expression that presents itself as a value, borrowing its own
 /// storage rather than copying into a `OwnedValue`.
 struct Expression final : fznso::ValueSource {
@@ -279,22 +297,24 @@ int main() {
 		fs::remove_all(dir);
 		fs::create_directories(dir);
 		std::string marker{fznso::detail::lib_marker()};
-		for (const std::string& f : {"libgecode" + marker + ".6", "libgecode" + marker + ".10",
+		// `gecode` uses the convention (version before the extension); `chuffed`
+		// carries none, and the native form is included to show it still parses.
+		for (const std::string& f : {"libgecode.6" + marker, "libgecode.10" + marker,
 		                             "libchuffed" + marker, std::string{"README.txt"},
 		                             "lib2fast" + marker}) {
 			std::ofstream{dir / f};
 		}
 		std::string saved = fznso::detail::env("FZNSO_SOLVER_PATH");
-		::setenv("FZNSO_SOLVER_PATH", dir.string().c_str(), 1);
+		set_env("FZNSO_SOLVER_PATH", dir.string().c_str());
 		std::vector<fznso::Library::Discovered> found = fznso::Library::discover();
 		check(found.size() == 3, "three usable libraries discovered");
 		check(found[0].name == "chuffed" && found[0].version.empty(), "chuffed sorts first");
 		check(found[1].name == "gecode" && found[1].version == "10", "gecode 10 comes first");
 		check(found[2].name == "gecode" && found[2].version == "6", "then gecode 6");
 		if (saved.empty()) {
-			::unsetenv("FZNSO_SOLVER_PATH");
+			unset_env("FZNSO_SOLVER_PATH");
 		} else {
-			::setenv("FZNSO_SOLVER_PATH", saved.c_str(), 1);
+			set_env("FZNSO_SOLVER_PATH", saved.c_str());
 		}
 		fs::remove_all(dir);
 	}
