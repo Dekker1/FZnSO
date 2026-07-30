@@ -87,8 +87,8 @@ use std::{ffi, fmt, marker::PhantomData, ptr};
 
 use crate::{
 	FznsoAnnotationRef, FznsoConstraintIdx, FznsoConstraintList, FznsoDecisionIdx,
-	FznsoObjectiveList, FznsoOptionList, FznsoPtr, FznsoStatisticList, FznsoStr, FznsoTypeList,
-	FznsoValue, FznsoValueKind, FznsoValueMethods, FznsoValueRef,
+	FznsoObjectiveList, FznsoOptionList, FznsoPtr, FznsoStatisticList, FznsoStr, FznsoType,
+	FznsoTypeBase, FznsoTypeList, FznsoValue, FznsoValueKind, FznsoValueMethods, FznsoValueRef,
 };
 
 impl<T> Clone for FznsoPtr<'_, T> {
@@ -228,6 +228,96 @@ impl FznsoStatisticList<'static> {
 			stats: ptr::null(),
 			lifetime: PhantomData,
 		}
+	}
+}
+
+impl FznsoType {
+	/// A plain parameter type of the given base: not a list, not a set, not a
+	/// decision variable and not optional.
+	///
+	/// Each qualifier is a builder method taking the value to give it, so a
+	/// type only ever carries the flags it was actually told about, and a flag
+	/// that depends on something can be passed straight through:
+	///
+	/// ```rust
+	/// # use fznso_types::{FznsoType, FznsoTypeBase};
+	/// // `list of var int`
+	/// let arg = FznsoType::new(FznsoTypeBase::FznsoTypeBaseInt)
+	///     .list(true)
+	///     .decision(true);
+	/// // `var set of int`, or plain `var int`, depending on `of_sets`
+	/// let of_sets = true;
+	/// let var = FznsoType::new(FznsoTypeBase::FznsoTypeBaseInt)
+	///     .decision(true)
+	///     .set(of_sets);
+	/// ```
+	pub const fn new(base: FznsoTypeBase) -> Self {
+		Self {
+			list_of: false,
+			decision: false,
+			set_of: false,
+			opt: false,
+			base,
+		}
+	}
+
+	/// Whether this type is a list of its element type.
+	pub const fn list(self, list_of: bool) -> Self {
+		Self { list_of, ..self }
+	}
+
+	/// Whether this type is a decision variable rather than a parameter.
+	pub const fn decision(self, decision: bool) -> Self {
+		Self { decision, ..self }
+	}
+
+	/// Whether this type is over sets of its base type rather than single
+	/// values.
+	pub const fn set(self, set_of: bool) -> Self {
+		Self { set_of, ..self }
+	}
+
+	/// Whether this type also permits the absent value.
+	pub const fn opt(self, opt: bool) -> Self {
+		Self { opt, ..self }
+	}
+}
+
+/// Writes the type the way the protocol spells one: MiniZinc's `var`, `opt` and
+/// `set of` qualifiers, in that order, over `list of` for a list — the name the
+/// field itself carries, and what the README uses.
+///
+/// A diagnostic can therefore name a type as a model would declare it.
+///
+/// ```rust
+/// # use fznso_types::{FznsoType, FznsoTypeBase};
+/// let ty = FznsoType::new(FznsoTypeBase::FznsoTypeBaseInt)
+///     .list(true)
+///     .decision(true)
+///     .set(true);
+/// assert_eq!(ty.to_string(), "list of var set of int");
+/// ```
+impl fmt::Display for FznsoType {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		// Qualifiers go outermost first: `list of var opt set of int`.
+		if self.list_of {
+			f.write_str("list of ")?;
+		}
+		if self.decision {
+			f.write_str("var ")?;
+		}
+		if self.opt {
+			f.write_str("opt ")?;
+		}
+		if self.set_of {
+			f.write_str("set of ")?;
+		}
+		f.write_str(match self.base {
+			FznsoTypeBase::FznsoTypeBaseBool => "bool",
+			FznsoTypeBase::FznsoTypeBaseInt => "int",
+			FznsoTypeBase::FznsoTypeBaseFloat => "float",
+			FznsoTypeBase::FznsoTypeBaseString => "string",
+		})
 	}
 }
 

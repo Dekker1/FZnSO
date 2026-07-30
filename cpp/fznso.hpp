@@ -21,6 +21,8 @@
 #include <filesystem>
 #include <iterator>
 #include <optional>
+#include <ostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -42,6 +44,39 @@
 #else
 #include <dlfcn.h>
 #endif
+
+/// Write a type to a stream, as `list of var opt set of int`.
+///
+/// At global scope rather than in `fznso` because `FznsoType` is a C struct
+/// declared there: the global namespace is its only associated one, so this is
+/// where argument-dependent lookup goes looking. A `fznso::Type` streams too,
+/// converting to `FznsoType` on the way in.
+inline std::ostream& operator<<(std::ostream& out, const FznsoType& type) {
+	// Qualifiers go outermost first.
+	if (type.list_of) {
+		out << "list of ";
+	}
+	if (type.decision) {
+		out << "var ";
+	}
+	if (type.opt) {
+		out << "opt ";
+	}
+	if (type.set_of) {
+		out << "set of ";
+	}
+	switch (type.base) {
+	case FznsoTypeBaseBool:
+		return out << "bool";
+	case FznsoTypeBaseInt:
+		return out << "int";
+	case FznsoTypeBaseFloat:
+		return out << "float";
+	case FznsoTypeBaseString:
+		return out << "string";
+	}
+	return out << "?";
+}
 
 namespace fznso {
 
@@ -74,6 +109,64 @@ struct Range {
 		return a.min == b.min && a.max == b.max;
 	}
 };
+
+/// Builds a [`FznsoType`] from a base type and the qualifiers you name.
+///
+/// `FznsoType` is a C struct, so it cannot carry the builder methods itself;
+/// this holds one and converts back implicitly, so it can be used anywhere a
+/// `FznsoType` is expected, including the `constexpr` capability tables a
+/// solver declares. Every flag starts clear and is only set by the method that
+/// names it, which is what keeps positional `bool`s out of the call:
+///
+/// ```
+/// // `list of var int`
+/// FznsoType arg = fznso::Type{FznsoTypeBaseInt}.list(true).decision(true);
+/// // `var set of int`, or plain `var int`, depending on `of_sets`
+/// FznsoType var = fznso::Type{FznsoTypeBaseInt}.decision(true).set(of_sets);
+/// ```
+class Type {
+public:
+	constexpr explicit Type(FznsoTypeBase base)
+		: raw_{false, false, false, false, base} {}
+
+	/// Whether this type is a list of its element type.
+	constexpr Type list(bool list_of) const {
+		Type t = *this;
+		t.raw_.list_of = list_of;
+		return t;
+	}
+	/// Whether this type is a decision variable rather than a parameter.
+	constexpr Type decision(bool decision) const {
+		Type t = *this;
+		t.raw_.decision = decision;
+		return t;
+	}
+	/// Whether this type is over sets of its base type rather than single values.
+	constexpr Type set(bool set_of) const {
+		Type t = *this;
+		t.raw_.set_of = set_of;
+		return t;
+	}
+	/// Whether this type also permits the absent value.
+	constexpr Type opt(bool opt) const {
+		Type t = *this;
+		t.raw_.opt = opt;
+		return t;
+	}
+
+	constexpr operator FznsoType() const { return raw_; }
+
+private:
+	FznsoType raw_;
+};
+
+/// The type as `<<` writes it, for when a `std::string` is what you actually
+/// need — building a message by concatenation, say. Prefer streaming.
+inline std::string to_string(const FznsoType& type) {
+	std::ostringstream out;
+	out << type;
+	return out.str();
+}
 
 /// Borrow a string as the interface's string handle.
 ///
@@ -838,6 +931,14 @@ public:
 	virtual std::size_t decision_count() const = 0;
 	/// One past the last decision index belonging to layers `0..=layer`.
 	virtual std::size_t decision_layer_end(std::size_t layer) const = 0;
+	/// The type of a decision variable.
+	///
+	/// What the variable *is*, as opposed to `decision_domain`, which says
+	/// which values it may take: an absent domain is equally a `var bool` and
+	/// an unbounded `var int`, and an integer range list is equally a `var int`
+	/// and the upper bound of a `var set of int`. Build one with
+	/// [`decision_type`].
+	virtual FznsoType decision_type(Decision decision) const = 0;
 	/// The domain of a decision variable.
 	virtual Value decision_domain(Decision decision) const = 0;
 	/// The name of a decision variable, if it has one.
@@ -924,6 +1025,9 @@ public:
 	std::size_t decision_layer_end(std::size_t layer) const override {
 		return raw_.methods->decision_layer_end(raw_.data, layer);
 	}
+	FznsoType decision_type(Decision d) const override {
+		return raw_.methods->decision_type(raw_.data, d.index);
+	}
 	Value decision_domain(Decision d) const override {
 		return Value{raw_.methods->decision_domain(raw_.data, d.index)};
 	}
@@ -999,11 +1103,15 @@ public:
 	LayeredModel& operator=(const LayeredModel&) = delete;
 
 	/// Add a decision variable to the top layer.
-	Decision add_decision(OwnedValue domain, std::optional<std::string> name = std::nullopt,
-	                      bool defined = false, std::vector<OwnedAnnotation> annotations = {}) {
+	///
+	/// `type` says what the variable is — build one with [`decision_type`] —
+	/// and `domain` which values it may take, which may be absent.
+	Decision add_decision(FznsoType type, OwnedValue domain,
+	                      std::optional<std::string> name = std::nullopt, bool defined = false,
+	                      std::vector<OwnedAnnotation> annotations = {}) {
 		Decision idx{decision_count()};
-		layers_.back().decisions.push_back(
-			DecisionData{std::move(domain), std::move(name), defined, std::move(annotations)});
+		layers_.back().decisions.push_back(DecisionData{
+			type, std::move(domain), std::move(name), defined, std::move(annotations)});
 		return idx;
 	}
 
@@ -1077,6 +1185,7 @@ public:
 		}
 		return total;
 	}
+	FznsoType decision_type(Decision d) const override { return decision_at(d.index).type; }
 	Value decision_domain(Decision d) const override {
 		return Value{decision_at(d.index).domain};
 	}
@@ -1143,6 +1252,7 @@ public:
 
 private:
 	struct DecisionData {
+		FznsoType type;
 		OwnedValue domain;
 		std::optional<std::string> name;
 		bool defined;
@@ -1480,6 +1590,9 @@ const FznsoModelMethods& model_methods() {
 		[](const FznsoModel* m, std::size_t n) noexcept { return model_as<M>(m).M::layer_redundant_index(n); },
 		[](const FznsoModel* m) noexcept { return model_as<M>(m).M::decision_count(); },
 		[](const FznsoModel* m, std::size_t l) noexcept { return model_as<M>(m).M::decision_layer_end(l); },
+		[](const FznsoModel* m, FznsoDecisionIdx d) noexcept {
+			return model_as<M>(m).M::decision_type(Decision{d});
+		},
 		[](const FznsoModel* m, FznsoDecisionIdx d) noexcept {
 			return model_as<M>(m).M::decision_domain(Decision{d}).raw();
 		},

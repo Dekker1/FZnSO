@@ -16,6 +16,9 @@ import fznso
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
+# The type every decision in these fixtures has.
+VAR_INT = fznso.Type("int", decision=True)
+
 
 def solver_path() -> str:
     prefix, suffix = ("lib", ".dylib") if sys.platform == "darwin" else ("lib", ".so")
@@ -46,8 +49,8 @@ def threaded_solver():
 
 def build_model():
     m = fznso.LayeredModel()
-    a = m.add_decision(range(3, 21), name="a")  # inclusive [3, 20]
-    b = m.add_decision(fznso.int_set(10, 20), name="b")
+    a = m.add_decision(VAR_INT, range(3, 21), name="a")  # inclusive [3, 20]
+    b = m.add_decision(VAR_INT, fznso.int_set(10, 20), name="b")
     m.add_constraint("int_le", [0, a])
     m.set_objective("minimize", a)
     return m, a, b
@@ -113,7 +116,7 @@ def test_value_kinds_round_trip():
     # elsewhere; here we check the Python value conversions directly via the
     # domain a solution reports.
     m = fznso.LayeredModel()
-    x = m.add_decision(fznso.int_set(-5, 5), name="x")
+    x = m.add_decision(VAR_INT, fznso.int_set(-5, 5), name="x")
     assert isinstance(x, fznso.Decision)
     assert int(x) == 0
 
@@ -134,6 +137,9 @@ class DomainModel(fznso.Model):
 
     def decision_count(self):
         return len(self._domains)
+
+    def decision_type(self, i):
+        return VAR_INT
 
     def decision_domain(self, i):
         return self._domains[i]
@@ -285,6 +291,9 @@ class TwoLayerModel(fznso.Model):
     def decision_count(self):
         return len(self._domains)
 
+    def decision_type(self, i):
+        return VAR_INT
+
     def decision_domain(self, i):
         return self._domains[i]
 
@@ -328,6 +337,79 @@ def test_custom_layered_model(solver):
     # It also reads back the model's strings (objective, decision name, constraint
     # identifier) and a constraint argument, all borrowing native Python objects.
     assert ("model", "obj=minimize;name0=x0;con0=int_le(7)") in messages
+
+
+def test_types():
+    # A decision's type is what it is; its domain is what it may take. Only the
+    # type tells `var bool` from an unbounded `var int`, since both have no
+    # domain to report.
+    assert VAR_INT.base == "int"
+    assert VAR_INT.decision
+    assert not VAR_INT.set_of
+    assert fznso.Type("int") != VAR_INT, "a parameter is not a decision variable"
+    with pytest.raises(ValueError, match="unknown base type"):
+        fznso.Type("complex")
+    with pytest.raises(TypeError):
+        fznso.Type("int", True)  # the qualifiers are keyword-only
+
+    # Every shape the interface can carry is expressible, including the ones no
+    # decision variable uses, and every qualifier reads back under the name it
+    # was given — so a type can be taken apart and rebuilt.
+    every = fznso.Type("string", list_of=True, decision=True, set_of=True, opt=True)
+    assert (every.base, every.list_of, every.decision, every.set_of, every.opt) == (
+        "string",
+        True,
+        True,
+        True,
+        True,
+    )
+    assert (
+        fznso.Type(
+            every.base,
+            list_of=every.list_of,
+            decision=every.decision,
+            set_of=every.set_of,
+            opt=every.opt,
+        )
+        == every
+    )
+
+    # `str` spells the type the way the protocol does, in every binding.
+    assert str(VAR_INT) == "var int"
+    assert str(fznso.Type("bool", decision=True)) == "var bool"
+    assert str(fznso.Type("int", decision=True, set_of=True)) == "var set of int"
+    assert str(fznso.Type("float", decision=True, opt=True)) == "var opt float"
+    assert str(fznso.Type("int", list_of=True)) == "list of int"
+    assert str(every) == "list of var opt set of string"
+
+    # `repr` stays the expression that rebuilds it.
+    assert repr(fznso.Type("int")) == 'Type("int")'
+    assert repr(VAR_INT) == 'Type("int", decision=True)'
+    assert (
+        repr(every)
+        == 'Type("string", list_of=True, decision=True, set_of=True, opt=True)'
+    )
+    assert eval(repr(every), {"Type": fznso.Type}) == every
+
+    m = fznso.LayeredModel()
+    b = m.add_decision(fznso.Type("bool", decision=True), name="b")
+    assert int(b) == 0
+
+
+def test_decision_type_has_no_default(solver):
+    """A model that declares decisions has to say what they are.
+
+    Every other accessor has a sensible default — no domain, no name, not
+    defined — but a type cannot be guessed from anything else the model reports,
+    so the base class refuses rather than inventing one.
+    """
+
+    class NoType(fznso.Model):
+        def decision_count(self):
+            return 1
+
+    with pytest.raises(NotImplementedError, match="decision_type"):
+        NoType().decision_type(0)
 
 
 def test_custom_model_method_error_propagates(solver):

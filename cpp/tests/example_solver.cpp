@@ -49,7 +49,7 @@ public:
 	/// One statistic of each scope: `solutions` is read from a solution, `runs`
 	/// from the solver instance. A statistic may also set both flags.
 	static FznsoStatisticList statistic_list() {
-		static const FznsoType int_stat{false, false, false, false, FznsoTypeBaseInt};
+		static const FznsoType int_stat = fznso::Type{FznsoTypeBaseInt};
 		static const FznsoStatistic stats[] = {
 			{fznso::str("solutions"), int_stat, true, false},
 			{fznso::str("runs"), int_stat, false, true},

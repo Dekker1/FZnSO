@@ -3,8 +3,8 @@ use flatzinc_serde::{
 	Literal, Method, RangeList, Type,
 };
 use fznso_types::{
-	FznsoDecisionIdx, FznsoFloatRange, FznsoIntRange, FznsoPtr, FznsoValue, FznsoValueKind,
-	FznsoValueMethods, FznsoValueRef,
+	FznsoDecisionIdx, FznsoFloatRange, FznsoIntRange, FznsoPtr, FznsoType, FznsoTypeBase,
+	FznsoValue, FznsoValueKind, FznsoValueMethods, FznsoValueRef,
 };
 
 use crate::{
@@ -295,6 +295,17 @@ impl Model for FlatZincModel {
 			Type::Int(Some(set)) | Type::IntSet(Some(set)) => int_set_value(set),
 			Type::Float(Some(set)) => float_set_value(set),
 			Type::Bool | Type::Int(None) | Type::Float(None) | Type::IntSet(None) => (&()).into(),
+		}
+	}
+
+	fn decision_type(&self, decision: DecisionIdx) -> FznsoType {
+		match &self.variables[decision.0].ty {
+			Type::Bool => FznsoType::new(FznsoTypeBase::FznsoTypeBaseBool).decision(true),
+			Type::Int(_) => FznsoType::new(FznsoTypeBase::FznsoTypeBaseInt).decision(true),
+			Type::Float(_) => FznsoType::new(FznsoTypeBase::FznsoTypeBaseFloat).decision(true),
+			Type::IntSet(_) => FznsoType::new(FznsoTypeBase::FznsoTypeBaseInt)
+				.decision(true)
+				.set(true),
 		}
 	}
 

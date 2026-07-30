@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <string>
+#include <sstream>
 #include <string_view>
 #include <filesystem>
 #include <vector>
@@ -113,6 +114,9 @@ public:
 
 	std::size_t decision_count() const override { return 0; }
 	std::size_t decision_layer_end(std::size_t) const override { return 0; }
+	FznsoType decision_type(fznso::Decision) const override {
+		return fznso::Type{FznsoTypeBaseInt}.decision(true);
+	}
 	fznso::Value decision_domain(fznso::Decision) const override { return fznso::Value{}; }
 	std::optional<std::string_view> decision_name(fznso::Decision) const override {
 		return std::nullopt;
@@ -158,6 +162,29 @@ private:
 } // namespace
 
 int main() {
+	// A type prints the way the protocol spells one, matching what the Rust and
+	// Python bindings produce for the same type.
+	check(fznso::to_string(fznso::Type{FznsoTypeBaseInt}) == "int", "par int prints");
+	check(fznso::to_string(fznso::Type{FznsoTypeBaseBool}.decision(true)) == "var bool",
+	      "var bool prints");
+	check(fznso::to_string(fznso::Type{FznsoTypeBaseInt}.decision(true).set(true)) ==
+	          "var set of int",
+	      "var set of int prints");
+	check(fznso::to_string(fznso::Type{FznsoTypeBaseFloat}.decision(true).opt(true)) ==
+	          "var opt float",
+	      "var opt float prints");
+	check(fznso::to_string(
+			  fznso::Type{FznsoTypeBaseInt}.list(true).decision(true).set(true)) ==
+	          "list of var set of int",
+	      "every qualifier prints, outermost first");
+
+	// Streaming is the usual way to print one; a `fznso::Type` converts on the
+	// way in, so both spellings reach the same operator.
+	std::ostringstream stream;
+	FznsoType streamed = fznso::Type{FznsoTypeBaseInt}.decision(true).opt(true);
+	stream << streamed << " and " << fznso::Type{FznsoTypeBaseBool}.list(true);
+	check(stream.str() == "var opt int and list of bool", "types stream");
+
 	// Direct conversion of each kind, borrowing the expression's own storage.
 	Expression ei = Expression::integer(-9000000000LL);
 	check(fznso::Value{ei}.as_int() == -9000000000LL, "int expression");

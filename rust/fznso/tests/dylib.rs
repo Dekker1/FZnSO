@@ -20,7 +20,9 @@ use std::{
 	process::Command,
 };
 
-use fznso::{LayeredModel, Library, LoadError, OwnedValue, Solution, Solver, Status};
+use fznso::{
+	LayeredModel, Library, LoadError, OwnedValue, Solution, Solver, Status, Type, TypeBase,
+};
 
 /// Build the named `cdylib` example and return the path to it.
 ///
@@ -70,12 +72,14 @@ fn example_path(name: &str) -> PathBuf {
 fn model() -> LayeredModel {
 	let mut m = LayeredModel::default();
 	let a = m.add_decision(
+		Type::new(TypeBase::FznsoTypeBaseInt).decision(true),
 		OwnedValue::IntSet(fznso::RangeList::from(3_i64..=20)),
 		Some("a".into()),
 		false,
 		vec![],
 	);
 	let _b = m.add_decision(
+		Type::new(TypeBase::FznsoTypeBaseInt).decision(true),
 		OwnedValue::IntSet(fznso::RangeList::from(10_i64..=20)),
 		Some("b".into()),
 		false,

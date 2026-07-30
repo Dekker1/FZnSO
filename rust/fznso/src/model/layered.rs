@@ -2,7 +2,7 @@
 
 use fznso_types::{
 	FznsoAnnotation, FznsoAnnotationMethods, FznsoAnnotationRef, FznsoConstraintIdx,
-	FznsoDecisionIdx, FznsoFloatRange, FznsoIntRange, FznsoPtr, FznsoStr, FznsoValue,
+	FznsoDecisionIdx, FznsoFloatRange, FznsoIntRange, FznsoPtr, FznsoStr, FznsoType, FznsoValue,
 	FznsoValueKind, FznsoValueMethods, FznsoValueRef,
 };
 use rangelist::RangeList;
@@ -26,8 +26,10 @@ struct ConstraintData {
 }
 
 /// Stores the data for a single decision variable within a layer.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct DecisionData {
+	/// The type of the decision variable.
+	ty: FznsoType,
 	/// The domain of the decision variable.
 	domain: OwnedValue,
 	/// Optional name of the decision variable.
@@ -63,11 +65,12 @@ struct LayerData {
 /// # Example
 ///
 /// ```rust
-/// use fznso::{LayeredModel, OwnedValue};
+/// use fznso::{LayeredModel, OwnedValue, Type, TypeBase};
 /// use rangelist::RangeList;
 ///
 /// let mut m = LayeredModel::default();
 /// let d = m.add_decision(
+///     Type::new(TypeBase::FznsoTypeBaseInt).decision(true),
 ///     OwnedValue::IntSet(RangeList::from(-10i64..=10)),
 ///     Some("x".into()),
 ///     false,
@@ -279,11 +282,17 @@ impl LayeredModel {
 
 	/// Add a decision variable to the current (top) layer.
 	///
+	/// `ty` says what the variable is (see
+	/// [`decision_type`](Model::decision_type)); `domain` says which values it
+	/// may take, and may be [`OwnedValue::Absent`] for a variable with no
+	/// explicit domain.
+	///
 	/// # Panics
 	///
 	/// Panics if there are no layers.
 	pub fn add_decision(
 		&mut self,
+		ty: FznsoType,
 		domain: OwnedValue,
 		name: Option<String>,
 		defined: bool,
@@ -296,6 +305,7 @@ impl LayeredModel {
 			.unwrap()
 			.decisions
 			.push(DecisionData {
+				ty,
 				domain,
 				name,
 				defined,
@@ -476,6 +486,11 @@ impl Model for LayeredModel {
 	fn decision_name(&self, decision: DecisionIdx) -> Option<&str> {
 		let (data, _) = self.decision_location(decision);
 		data.name.as_deref()
+	}
+
+	fn decision_type(&self, decision: DecisionIdx) -> FznsoType {
+		let (data, _) = self.decision_location(decision);
+		data.ty
 	}
 
 	fn layer_len(&self) -> usize {

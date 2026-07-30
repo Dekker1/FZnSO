@@ -25,7 +25,7 @@ void check(bool condition, const char* what) {
 }
 
 /// Every decision in these fixtures is an integer variable.
-constexpr FznsoType INT_VAR = fznso::decision_type(FznsoTypeBaseInt);
+constexpr FznsoType INT_VAR = fznso::Type{FznsoTypeBaseInt}.decision(true);
 
 /// Set an environment variable. `setenv` is POSIX; Windows spells it `_putenv_s`.
 void set_env(const char* name, const char* value) {
@@ -47,8 +47,8 @@ void unset_env(const char* name) {
 
 /// A model with two integer decisions whose domains start at 3 and 10.
 void build(fznso::LayeredModel& model) {
-	fznso::Decision a = model.add_decision(fznso::OwnedValue::int_range(3, 20), "a");
-	model.add_decision(fznso::OwnedValue::int_range(10, 20), "b");
+	fznso::Decision a = model.add_decision(INT_VAR, fznso::OwnedValue::int_range(3, 20), "a");
+	model.add_decision(INT_VAR, fznso::OwnedValue::int_range(10, 20), "b");
 	model.add_constraint("int_le", {fznso::OwnedValue{std::int64_t{0}}, fznso::OwnedValue{a}});
 	model.set_objective("minimize", fznso::OwnedValue{a});
 }
@@ -114,7 +114,7 @@ int main(int argc, char** argv) {
 	// A model published across the interface and read back must agree with the
 	// original, including the `defines` link that is carried in the handle word.
 	fznso::LayeredModel linked;
-	fznso::Decision y = linked.add_decision(fznso::OwnedValue::int_range(0, 9), "y");
+	fznso::Decision y = linked.add_decision(INT_VAR, fznso::OwnedValue::int_range(0, 9), "y");
 	fznso::Constraint c =
 		linked.add_constraint("defines_y", {fznso::OwnedValue{y}}, y,
 	                          {fznso::OwnedAnnotation{"defines_var", {fznso::OwnedValue{y}}}});
@@ -130,14 +130,14 @@ int main(int argc, char** argv) {
 
 	// A model with no `defines` reports absent rather than a bogus decision.
 	fznso::LayeredModel plain;
-	plain.add_decision(fznso::OwnedValue::int_range(0, 1), "z");
+	plain.add_decision(INT_VAR, fznso::OwnedValue::int_range(0, 1), "z");
 	fznso::Constraint pc = plain.add_constraint("bool_eq", {});
 	fznso::ModelRefAdapter plain_back{fznso::model_ref(plain)};
 	check(!plain_back.constraint_defines(pc).has_value(), "absent defines round trips");
 
 	// The variant resolves kind and payload together.
 	fznso::LayeredModel domain_model;
-	fznso::Decision d = domain_model.add_decision(fznso::OwnedValue::int_range(-5, 5), "x");
+	fznso::Decision d = domain_model.add_decision(INT_VAR, fznso::OwnedValue::int_range(-5, 5), "x");
 	FznsoModelRef raw = fznso::model_ref(domain_model);
 	fznso::Value dom = fznso::ModelRefAdapter{raw}.decision_domain(d);
 	fznso::ValueVariant domain = dom.variant();

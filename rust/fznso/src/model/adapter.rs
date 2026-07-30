@@ -1,6 +1,6 @@
 //! [`ModelRefAdapter`]: wraps an ABI [`FznsoModelRef`] as a [`Model`] for use in Rust solvers.
 
-use fznso_types::FznsoModelRef;
+use fznso_types::{FznsoModelRef, FznsoType};
 
 use crate::{AnnotationRef, ConstraintIdx, DecisionIdx, Value, model::Model};
 
@@ -90,6 +90,10 @@ impl<'a> Model for ModelRefAdapter<'a> {
 
 	fn decision_layer_end(&self, layer: usize) -> usize {
 		(self.0.methods.decision_layer_end)(self.0.data, layer)
+	}
+
+	fn decision_type(&self, decision: DecisionIdx) -> FznsoType {
+		(self.0.methods.decision_type)(self.0.data, decision)
 	}
 
 	fn decision_len(&self) -> usize {

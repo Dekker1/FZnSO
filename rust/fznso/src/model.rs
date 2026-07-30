@@ -13,7 +13,8 @@ use std::{fmt, mem};
 
 use fznso_types::{
 	FznsoAnnotation, FznsoAnnotationMethods, FznsoAnnotationRef, FznsoConstraintIdx,
-	FznsoDecisionIdx, FznsoModelMethods, FznsoModelRef, FznsoPtr, FznsoStr, FznsoValueRef,
+	FznsoDecisionIdx, FznsoModelMethods, FznsoModelRef, FznsoPtr, FznsoStr, FznsoType,
+	FznsoValueRef,
 };
 
 use crate::{AnnotationRef, ConstraintIdx, DecisionIdx, Value};
@@ -181,6 +182,10 @@ impl<'m, M: Model + ?Sized> DecisionView<'m, M> {
 	/// The domain of this decision variable.
 	pub fn domain(&self) -> Value<'m> {
 		self.model.decision_domain(self.idx)
+	}
+	/// The type of this decision variable.
+	pub fn ty(&self) -> FznsoType {
+		self.model.decision_type(self.idx)
 	}
 	/// The optional name of this decision variable.
 	pub fn name(&self) -> Option<&'m str> {
@@ -374,6 +379,12 @@ pub trait Model {
 	fn decision_len(&self) -> usize;
 	/// The optional name of the given decision variable.
 	fn decision_name(&self, decision: DecisionIdx) -> Option<&str>;
+	/// The type of the given decision variable.
+	///
+	/// What the variable *is*, as opposed to [`Model::decision_domain`], which
+	/// says which values it may take. `list_of` is always clear and `decision`
+	/// always set, so only `base`, `set_of` and `opt` carry information.
+	fn decision_type(&self, decision: DecisionIdx) -> FznsoType;
 
 	// --- Layer primitives ---
 	/// Total number of layers currently in the model.
@@ -646,6 +657,16 @@ extern "C" fn wrap_decision_domain<M: Model>(
 	unsafe { mem::transmute(model.decision_domain(index)) }
 }
 
+/// Vtable thunk: delegates to [`Model::decision_type`].
+extern "C" fn wrap_decision_type<M: Model>(
+	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
+	index: FznsoDecisionIdx,
+) -> FznsoType {
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	let model: &M = unsafe { &*ptr.cast::<M>() };
+	model.decision_type(index)
+}
+
 /// Vtable thunk: delegates to [`Model::decision_layer_end`].
 extern "C" fn wrap_decision_layer_end<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
@@ -805,6 +826,7 @@ impl<'a, M: Model> ModelWrapper<'a, M> {
 			layer_redundant_index: wrap_layer_redundant_index::<M>,
 			decision_len: wrap_decision_len::<M>,
 			decision_layer_end: wrap_decision_layer_end::<M>,
+			decision_type: wrap_decision_type::<M>,
 			decision_domain: as_borrowing_thunk::<
 				extern "C" fn(
 					*const fznso_types::FznsoModel,
@@ -886,7 +908,7 @@ mod tests {
 	use rangelist::RangeList;
 
 	use crate::{
-		LayeredModel, Model, OwnedAnnotation, OwnedValue,
+		LayeredModel, Model, OwnedAnnotation, OwnedValue, Type, TypeBase,
 		model::{ModelWrapper, adapter::ModelRefAdapter},
 	};
 
@@ -895,12 +917,14 @@ mod tests {
 	fn sample() -> LayeredModel {
 		let mut m = LayeredModel::default();
 		let x = m.add_decision(
+			Type::new(TypeBase::FznsoTypeBaseInt).decision(true),
 			OwnedValue::IntSet(RangeList::from(-10_i64..=10)),
 			Some("x".into()),
 			false,
 			vec![OwnedAnnotation::new("output_var", vec![])],
 		);
 		let y = m.add_decision(
+			Type::new(TypeBase::FznsoTypeBaseFloat).decision(true),
 			OwnedValue::FloatSet(RangeList::from(0.5_f64..=2.5)),
 			None,
 			true,
@@ -952,6 +976,7 @@ mod tests {
 			assert_eq!(abi.decision_name(d), m.decision_name(d));
 			assert_eq!(abi.decision_defined(d), m.decision_defined(d));
 			assert_eq!(abi.decision_domain(d).kind(), m.decision_domain(d).kind());
+			assert_eq!(abi.decision_type(d), m.decision_type(d));
 			assert_eq!(abi.decision_annotation_len(d), m.decision_annotation_len(d));
 			for i in 0..m.decision_annotation_len(d) {
 				assert_eq!(

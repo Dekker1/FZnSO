@@ -196,6 +196,9 @@ typedef struct FznsoIntRange {
 // [`FznsoModelRef`], which pairs it with the callbacks that can.
 typedef void FznsoModel;
 
+// Wrapper type for the indexes that represent decision variables in the model.
+typedef size_t FznsoDecisionIdx;
+
 // The handle of a value: a constraint argument, a variable domain, a solution
 // assignment, an option or a statistic.
 //
@@ -208,9 +211,6 @@ typedef void FznsoModel;
 // [`FznsoValueMethods::kind`] and use the accessor it permits; never
 // dereference the handle itself.
 typedef void FznsoValue;
-
-// Wrapper type for the indexes that represent decision variables in the model.
-typedef size_t FznsoDecisionIdx;
 
 // Wrapper type for the indexes that represent constraints in the model.
 typedef size_t FznsoConstraintIdx;
@@ -390,6 +390,11 @@ typedef struct FznsoModelMethods {
   // This can be equivalent to `decision_layer_end` of `layer-1` if the layer
   // does not add any new decisions.
   size_t (*decision_layer_end)(const FznsoModel * model, size_t layer);
+  // Retrieve the type of the given decision variable.
+  //
+  // This is what the type of value the decision must take, as opposed to
+  // [`decision_domain`], which says which specific values it may take.
+  struct FznsoType (*decision_type)(const FznsoModel * model, FznsoDecisionIdx decision);
   // Retrieve the domain of the given decision.
   //
   // Note that the the value might have [`FznsoValueKind::FznsoValueAbsent`]

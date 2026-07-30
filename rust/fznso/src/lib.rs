@@ -376,8 +376,8 @@ mod tests {
 	};
 
 	use crate::{
-		LayeredModel, Model, OwnedValue, Solution, Solver, SolverType, Status, Value,
-		model::model_ref,
+		LayeredModel, Model, OwnedValue, Solution, Solver, SolverType, Status, Type, TypeBase,
+		Value, model::model_ref,
 	};
 
 	/// A solution that reports a fixed assignment and one statistic.
@@ -509,6 +509,7 @@ mod tests {
 	fn model() -> LayeredModel {
 		let mut m = LayeredModel::default();
 		let x = m.add_decision(
+			Type::new(TypeBase::FznsoTypeBaseInt).decision(true),
 			OwnedValue::IntSet(crate::RangeList::from(0_i64..=10)),
 			Some("x".into()),
 			false,

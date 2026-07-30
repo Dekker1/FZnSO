@@ -9,12 +9,12 @@ use fznso_core::{
 	AnnotationRef, ConstraintIdx, DecisionIdx, OwnedValue, Solver as _, Status as CoreStatus,
 	Value, ValueExt as _,
 	fznso_types::{
-		FznsoConstraintIdx, FznsoDecisionIdx, FznsoFloatRange, FznsoIntRange, FznsoPtr, FznsoValue,
-		FznsoValueKind, FznsoValueMethods, FznsoValueRef,
+		FznsoConstraintIdx, FznsoDecisionIdx, FznsoFloatRange, FznsoIntRange, FznsoPtr, FznsoType,
+		FznsoTypeBase, FznsoValue, FznsoValueKind, FznsoValueMethods, FznsoValueRef,
 	},
 };
 use pyo3::{
-	exceptions::{PyRuntimeError, PyValueError},
+	exceptions::{PyNotImplementedError, PyRuntimeError, PyValueError},
 	ffi,
 	prelude::*,
 	types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple},
@@ -74,6 +74,109 @@ struct IntSet {
 #[derive(Clone)]
 struct FloatSet {
 	ranges: Vec<(f64, f64)>,
+}
+
+/// A value type: a base type plus the qualifiers that apply to it.
+///
+/// Any type the interface can carry is expressible. Name the qualifiers you
+/// want as keyword arguments:
+///
+/// ```python
+/// fznso.Type("int", decision=True)                # var int
+/// fznso.Type("int", decision=True, set_of=True)   # var set of int
+/// fznso.Type("bool", list_of=True)                # list of bool
+/// ```
+///
+/// The Rust and C++ bindings spell this as a builder, because neither has
+/// keyword arguments. Each qualifier is readable back under the name it was
+/// given, so a type can be taken apart and rebuilt.
+#[pyclass(frozen, eq, hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct Type {
+	ty: FznsoType,
+}
+
+#[pymethods]
+impl Type {
+	/// A type of the given base, carrying only the qualifiers named.
+	///
+	/// The qualifiers are keyword-only: a bare `True` at a call site would say
+	/// nothing about which one it sets.
+	#[new]
+	#[pyo3(signature = (base, *, list_of=false, decision=false, set_of=false, opt=false))]
+	fn new(base: &str, list_of: bool, decision: bool, set_of: bool, opt: bool) -> PyResult<Self> {
+		let base = match base {
+			"bool" => FznsoTypeBase::FznsoTypeBaseBool,
+			"int" => FznsoTypeBase::FznsoTypeBaseInt,
+			"float" => FznsoTypeBase::FznsoTypeBaseFloat,
+			"string" => FznsoTypeBase::FznsoTypeBaseString,
+			other => {
+				return Err(PyValueError::new_err(format!(
+					"unknown base type `{other}` (expected bool, int, float or string)"
+				)));
+			}
+		};
+		Ok(Self {
+			ty: FznsoType::new(base)
+				.list(list_of)
+				.decision(decision)
+				.set(set_of)
+				.opt(opt),
+		})
+	}
+
+	/// The base type: `"bool"`, `"int"`, `"float"` or `"string"`.
+	#[getter]
+	fn base(&self) -> &'static str {
+		match self.ty.base {
+			FznsoTypeBase::FznsoTypeBaseBool => "bool",
+			FznsoTypeBase::FznsoTypeBaseInt => "int",
+			FznsoTypeBase::FznsoTypeBaseFloat => "float",
+			FznsoTypeBase::FznsoTypeBaseString => "string",
+		}
+	}
+	/// Whether this type is a list of its element type.
+	#[getter]
+	fn list_of(&self) -> bool {
+		self.ty.list_of
+	}
+	/// Whether this type is a decision variable rather than a parameter.
+	#[getter]
+	fn decision(&self) -> bool {
+		self.ty.decision
+	}
+	/// Whether this type is over sets of its base type.
+	#[getter]
+	fn set_of(&self) -> bool {
+		self.ty.set_of
+	}
+	/// Whether this type also permits the absent value.
+	#[getter]
+	fn opt(&self) -> bool {
+		self.ty.opt
+	}
+
+	/// The type the way the protocol spells one, e.g. `var set of int`.
+	fn __str__(&self) -> String {
+		self.ty.to_string()
+	}
+
+	/// The expression that builds this type, so a type round-trips through
+	/// `eval`.
+	fn __repr__(&self) -> String {
+		let mut out = format!("Type({:?}", self.base());
+		for (name, set) in [
+			("list_of", self.ty.list_of),
+			("decision", self.ty.decision),
+			("set_of", self.ty.set_of),
+			("opt", self.ty.opt),
+		] {
+			if set {
+				out += &format!(", {name}=True");
+			}
+		}
+		out + ")"
+	}
 }
 
 /// Convert a Python object into an owned model value.
@@ -209,6 +312,18 @@ impl Model {
 	/// The number of decision variables.
 	fn decision_count(&self) -> usize {
 		0
+	}
+	/// The type of the decision at `index`.
+	///
+	/// Unlike the other accessors this has no sensible default: a decision's
+	/// type is exactly what cannot be worked out from anything else it reports,
+	/// so a model that declares decisions has to say what they are.
+	fn decision_type(&self, index: usize) -> PyResult<Type> {
+		let _ = index;
+		Err(PyNotImplementedError::new_err(
+			"decision_type must be implemented by a model that has decisions: \
+			 a decision's type cannot be inferred from its domain",
+		))
 	}
 	/// The domain of the decision at `index`, or `None` for no explicit domain.
 	fn decision_domain(&self, index: usize) -> Option<PyObject> {
@@ -552,6 +667,21 @@ impl fznso_core::Model for PyModelAdapter {
 	fn decision_len(&self) -> usize {
 		self.call_usize("decision_count", None, 0)
 	}
+	fn decision_type(&self, decision: DecisionIdx) -> FznsoType {
+		// A model that cannot answer records the exception, which is raised once
+		// the run unwinds; the type returned here only keeps the traversal going
+		// until then.
+		Python::with_gil(|py| {
+			self.object
+				.call_method1(py, "decision_type", (decision.0,))
+				.and_then(|r| r.extract::<Type>(py))
+				.map(|t| t.ty)
+				.unwrap_or_else(|err| {
+					self.record(err);
+					FznsoType::new(FznsoTypeBase::FznsoTypeBaseInt).decision(true)
+				})
+		})
+	}
 	fn decision_domain(&self, decision: DecisionIdx) -> Value<'_> {
 		self.borrow_value(self.call_object("decision_domain", Some(decision.0)))
 	}
@@ -706,17 +836,23 @@ impl LayeredModel {
 		}
 	}
 
-	/// Add a decision variable with the given domain, returning its handle.
-	#[pyo3(signature = (domain, name=None, defined=false))]
+	/// Add a decision variable of the given type and domain, returning its
+	/// handle.
+	#[pyo3(signature = (ty, domain=None, name=None, defined=false))]
 	fn add_decision(
 		&mut self,
-		domain: &Bound<'_, PyAny>,
+		ty: &Type,
+		domain: Option<&Bound<'_, PyAny>>,
 		name: Option<String>,
 		defined: bool,
 	) -> PyResult<Decision> {
+		let domain = match domain {
+			Some(d) => py_to_value(d)?,
+			None => OwnedValue::Absent,
+		};
 		let idx = self
 			.inner
-			.add_decision(py_to_value(domain)?, name, defined, Vec::new());
+			.add_decision(ty.ty, domain, name, defined, Vec::new());
 		Ok(Decision { index: idx.0 })
 	}
 
@@ -1183,6 +1319,7 @@ fn fznso(m: &Bound<'_, PyModule>) -> PyResult<()> {
 	m.add_class::<Constraint>()?;
 	m.add_class::<IntSet>()?;
 	m.add_class::<FloatSet>()?;
+	m.add_class::<Type>()?;
 	m.add_class::<Status>()?;
 	m.add_function(wrap_pyfunction!(int_set, m)?)?;
 	m.add_function(wrap_pyfunction!(float_set, m)?)?;

@@ -205,6 +205,12 @@ pub struct FznsoModelMethods {
 	/// This can be equivalent to `decision_layer_end` of `layer-1` if the layer
 	/// does not add any new decisions.
 	pub decision_layer_end: extern "C" fn(model: FznsoPtr<'_, FznsoModel>, layer: usize) -> usize,
+	/// Retrieve the type of the given decision variable.
+	///
+	/// This is what the type of value the decision must take, as opposed to
+	/// [`decision_domain`], which says which specific values it may take.
+	pub decision_type:
+		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, decision: FznsoDecisionIdx) -> FznsoType,
 	/// Retrieve the domain of the given decision.
 	///
 	/// Note that the the value might have [`FznsoValueKind::FznsoValueAbsent`]
