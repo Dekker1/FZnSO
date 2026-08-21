@@ -62,34 +62,34 @@ typedef enum FznsoTypeBase {
   FznsoTypeBaseString,
 } FznsoTypeBase;
 
-// Enumerated type used to mark the kind of [`FznsoValue`]. This is used to
-// determine which "get" method in [`FznsoValueMethods`] is safe to call.
+// Enumerated type used to mark the kind of FznsoValue. This is used to
+// determine which "get" method in FznsoValueMethods is safe to call.
 typedef enum FznsoValueKind {
   // No value is available.
   FznsoValueAbsent,
-  // The value is available using [`FznsoValueMethods::get_decision`].
+  // The value is available using FznsoValueMethods::as_decision.
   FznsoValueDecision,
-  // The value is available using [`FznsoValueMethods::get_constraint`].
+  // The value is available using FznsoValueMethods::as_constraint.
   FznsoValueConstraint,
-  // The value is available using [`FznsoValueMethods::get_bool`].
+  // The value is available using FznsoValueMethods::as_bool.
   FznsoValueBool,
-  // The value is available using [`FznsoValueMethods::get_int`].
+  // The value is available using FznsoValueMethods::as_int.
   FznsoValueInt,
-  // The value is available using [`FznsoValueMethods::get_float`].
+  // The value is available using FznsoValueMethods::as_float.
   FznsoValueFloat,
-  // The value is available using [`FznsoValueMethods::get_string`].
+  // The value is available using FznsoValueMethods::as_string.
   FznsoValueString,
   // Sets of integers are represented using a range list. The number of
-  // ranges is available using [`FznsoValueMethods::len`], and the ranges can
-  // be accessed using [`FznsoValueMethods::get_range_int`].
+  // ranges is available using FznsoValueMethods::len, and the ranges can
+  // be accessed using FznsoValueMethods::get_range_int.
   FznsoValueSetInt,
   // Sets of floats are represented using a range list. The number of
-  // ranges is available using [`FznsoValueMethods::len`], and the ranges can
-  // be accessed using [`FznsoValueMethods::get_range_float`].
+  // ranges is available using FznsoValueMethods::len, and the ranges can
+  // be accessed using FznsoValueMethods::get_range_float.
   FznsoValueSetFloat,
   // The length of the list can be accessed using
-  // [`FznsoValueMethods::len`], and elements in the list can be
-  // accessed using [`FznsoValueMethods::get_element`]
+  // FznsoValueMethods::len, and elements in the list can be
+  // accessed using FznsoValueMethods::get_element
   FznsoValueList,
 } FznsoValueKind;
 
@@ -105,14 +105,15 @@ typedef enum FznsoStatus {
   FznsoIncomplete,
   // An error occurred during the solver's execution.
   //
-  // [`fznso_solver_read_error`] can be used to retrieve the error message.
+  // `fznso_<name>_solver_read_error` can be used to retrieve the error
+  // message.
   FznsoError,
 } FznsoStatus;
 
 // The handle of an annotation on a decision, constraint or objective.
 //
 // Opaque: only the side that created it may interpret it. Read it through
-// [`FznsoAnnotationRef`], which pairs it with the callbacks that can.
+// FznsoAnnotationRef, which pairs it with the callbacks that can.
 typedef void FznsoAnnotation;
 
 // A borrowed UTF-8 string, passed across the interface as a pointer/length
@@ -120,12 +121,12 @@ typedef void FznsoAnnotation;
 //
 // The bytes are **not** required to be null-terminated; consumers must use
 // `len` to determine the string extent. This matches the convention used by
-// [`FznsoValueMethods::as_string`], and allows implementations to hand out
+// FznsoValueMethods::as_string, and allows implementations to hand out
 // slices of strings they already hold without copying them into a
 // null-terminated buffer.
 //
 // A null `ptr` signals the absence of a string, which is used where a name or
-// identifier is optional (e.g. [`FznsoModelMethods::decision_name`]).
+// identifier is optional (e.g. FznsoModelMethods::decision_name).
 typedef struct FznsoStr {
   // Pointer to the first UTF-8 byte of the string, or null if absent.
   const char *ptr;
@@ -145,7 +146,7 @@ typedef struct FznsoType {
   // Whether expected type is an set of values of the base type.
   bool set_of;
   // Whether the expected type is optional (and can take the value of
-  // [`FznsoValueKind::FznsoValueAbsent`]).
+  // FznsoValueKind::FznsoValueAbsent).
   bool opt;
   // The expected base type of the argument.
   enum FznsoTypeBase base;
@@ -162,9 +163,9 @@ typedef struct FznsoConstraintType {
   const struct FznsoType *arg_types;
 } FznsoConstraintType;
 
-// A list of [`FznsoConstraintType`]s.
+// A list of FznsoConstraintTypes.
 //
-// This type is for example used to return from [`fznso_constraint_list`].
+// This type is for example used to return from `fznso_<name>_constraint_list`.
 typedef struct FznsoConstraintList {
   // The number of elements in the `constraints` array.
   size_t len;
@@ -173,7 +174,7 @@ typedef struct FznsoConstraintList {
 } FznsoConstraintList;
 
 // An inclusive `[min, max]` float range, returned by
-// [`FznsoValueMethods::get_range_float`].
+// FznsoValueMethods::get_range_float.
 typedef struct FznsoFloatRange {
   // The inclusive lower bound.
   double min;
@@ -182,7 +183,7 @@ typedef struct FznsoFloatRange {
 } FznsoFloatRange;
 
 // An inclusive `[min, max]` integer range, returned by
-// [`FznsoValueMethods::get_range_int`].
+// FznsoValueMethods::get_range_int.
 typedef struct FznsoIntRange {
   // The inclusive lower bound.
   int64_t min;
@@ -193,7 +194,7 @@ typedef struct FznsoIntRange {
 // The handle of a model instance.
 //
 // Opaque: only the side that created it may interpret it. Read it through
-// [`FznsoModelRef`], which pairs it with the callbacks that can.
+// FznsoModelRef, which pairs it with the callbacks that can.
 typedef void FznsoModel;
 
 // Wrapper type for the indexes that represent decision variables in the model.
@@ -203,21 +204,21 @@ typedef size_t FznsoDecisionIdx;
 // assignment, an option or a statistic.
 //
 // Opaque: only the side that created it may interpret it. Read it through
-// [`FznsoValueRef`], which pairs it with the callbacks that can.
+// FznsoValueRef, which pairs it with the callbacks that can.
 //
 // This is the handle least likely to be a pointer at all: a small payload such
 // as a decision index is normally stored *in* the pointer word rather than
 // behind it, and the absent value carries a null. Dispatch on
-// [`FznsoValueMethods::kind`] and use the accessor it permits; never
+// FznsoValueMethods::kind and use the accessor it permits; never
 // dereference the handle itself.
 typedef void FznsoValue;
 
 // Wrapper type for the indexes that represent constraints in the model.
 typedef size_t FznsoConstraintIdx;
 
-// The callbacks that read a [`FznsoValue`].
+// The callbacks that read a FznsoValue.
 //
-// [`FznsoValueMethods::kind`] decides which of the others are meaningful; each
+// FznsoValueMethods::kind decides which of the others are meaningful; each
 // states the precondition it needs. A nested value or string that these return
 // borrows from the value it came from.
 typedef struct FznsoValueMethods {
@@ -225,85 +226,85 @@ typedef struct FznsoValueMethods {
   enum FznsoValueKind (*kind)(const FznsoValue *);
   // Function callback that returns the length of the value.
   //
-  // In case [`FznsoValueMethods::kind`] returns
-  // [`FznsoValueKind::FznsoValueString`], the length is the number of bytes
+  // In case FznsoValueMethods::kind returns
+  // FznsoValueKind::FznsoValueString, the length is the number of bytes
   // in the string **not** counting any trailing null byte.  The pointer
-  // returned by [`FznsoValueMethods::as_string`] is not required to be null-
+  // returned by FznsoValueMethods::as_string is not required to be null-
   // terminated; callers must use this length to determine the string extent.
   //
-  // In case [`FznsoValueMethods::kind`] returns
-  // [`FznsoValueKind::FznsoValueList`], the length is the number of elements
-  // in the list, accessible using [`FznsoValueMethods::get_element`].
+  // In case FznsoValueMethods::kind returns
+  // FznsoValueKind::FznsoValueList, the length is the number of elements
+  // in the list, accessible using FznsoValueMethods::get_element.
   //
-  // In case [`FznsoValueMethods::kind`] returns
-  // [`FznsoValueKind::FznsoValueSetInt`] or
-  // [`FznsoValueKind::FznsoValueSetFloat`], the length is the number of
+  // In case FznsoValueMethods::kind returns
+  // FznsoValueKind::FznsoValueSetInt or
+  // FznsoValueKind::FznsoValueSetFloat, the length is the number of
   // ranges in the set, accessible using
-  // [`FznsoValueMethods::get_range_int`] or
-  // [`FznsoValueMethods::get_range_float`].
+  // FznsoValueMethods::get_range_int or
+  // FznsoValueMethods::get_range_float.
   //
-  // Requires [`FznsoValueMethods::kind`] to return one of
-  // [`FznsoValueKind::FznsoValueString`],
-  // [`FznsoValueKind::FznsoValueList`],
-  // [`FznsoValueKind::FznsoValueSetInt`], or
-  // [`FznsoValueKind::FznsoValueSetFloat`].
+  // Requires FznsoValueMethods::kind to return one of
+  // FznsoValueKind::FznsoValueString,
+  // FznsoValueKind::FznsoValueList,
+  // FznsoValueKind::FznsoValueSetInt, or
+  // FznsoValueKind::FznsoValueSetFloat.
   size_t (*len)(const FznsoValue *);
   // Function callback that returns the decision variable index contained in
   // the value.
   //
-  // Requires [`FznsoValueMethods::kind`] to return
-  // [`FznsoValueKind::FznsoValueDecision`].
+  // Requires FznsoValueMethods::kind to return
+  // FznsoValueKind::FznsoValueDecision.
   FznsoDecisionIdx (*as_decision)(const FznsoValue *);
   // Function callback that returns the constraint index contained in the
   // value.
   //
-  // Requires [`FznsoValueMethods::kind`] to return
-  // [`FznsoValueKind::FznsoValueConstraint`].
+  // Requires FznsoValueMethods::kind to return
+  // FznsoValueKind::FznsoValueConstraint.
   FznsoConstraintIdx (*as_constraint)(const FznsoValue *);
   // Function callback that returns the integer value contained in the value.
   //
-  // Requires [`FznsoValueMethods::kind`] to return
-  // [`FznsoValueKind::FznsoValueInt`].
+  // Requires FznsoValueMethods::kind to return
+  // FznsoValueKind::FznsoValueInt.
   int64_t (*as_int)(const FznsoValue *);
   // Function callback that returns the floating point value contained in the
   // value.
   //
-  // Requires [`FznsoValueMethods::kind`] to return
-  // [`FznsoValueKind::FznsoValueFloat`].
+  // Requires FznsoValueMethods::kind to return
+  // FznsoValueKind::FznsoValueFloat.
   double (*as_float)(const FznsoValue *);
   // Function callback that returns a pointer to the UTF-8 bytes of a string
-  // value.  The pointer is valid for [`FznsoValueMethods::len`] bytes and is
+  // value.  The pointer is valid for FznsoValueMethods::len bytes and is
   // **not** required to be null-terminated (a trailing null byte may or may
   // not be present).
   //
-  // Requires [`FznsoValueMethods::kind`] to return
-  // [`FznsoValueKind::FznsoValueString`].
+  // Requires FznsoValueMethods::kind to return
+  // FznsoValueKind::FznsoValueString.
   const char *(*as_string)(const FznsoValue *);
   // Function callback that returns the Boolean value contained in the value.
   //
-  // Requires [`FznsoValueMethods::kind`] to return
-  // [`FznsoValueKind::FznsoValueBool`].
+  // Requires FznsoValueMethods::kind to return
+  // FznsoValueKind::FznsoValueBool.
   bool (*as_bool)(const FznsoValue *);
   // Function callback that returns a range from a range list representing
   // the integer set contained in the value.
   //
-  // Requires [`FznsoValueMethods::kind`] to return
-  // [`FznsoValueKind::FznsoValueSetInt`], and `index` to be below
-  // [`FznsoValueMethods::len`].
+  // Requires FznsoValueMethods::kind to return
+  // FznsoValueKind::FznsoValueSetInt, and `index` to be below
+  // FznsoValueMethods::len.
   struct FznsoIntRange (*get_range_int)(const FznsoValue *, size_t index);
   // Function callback that returns a range from a range list representing
   // the floating point set contained in the value.
   //
-  // Requires [`FznsoValueMethods::kind`] to return
-  // [`FznsoValueKind::FznsoValueSetFloat`], and `index` to be below
-  // [`FznsoValueMethods::len`].
+  // Requires FznsoValueMethods::kind to return
+  // FznsoValueKind::FznsoValueSetFloat, and `index` to be below
+  // FznsoValueMethods::len.
   struct FznsoFloatRange (*get_range_float)(const FznsoValue *, size_t index);
   // Function callback that returns an element from the list contained in the
   // value.
   //
-  // Requires [`FznsoValueMethods::kind`] to return
-  // [`FznsoValueKind::FznsoValueList`], and `index` to be below
-  // [`FznsoValueMethods::len`].
+  // Requires FznsoValueMethods::kind to return
+  // FznsoValueKind::FznsoValueList, and `index` to be below
+  // FznsoValueMethods::len.
   struct FznsoValueRef (*get_element)(const FznsoValue *, size_t index);
 } FznsoValueMethods;
 
@@ -316,11 +317,11 @@ typedef struct FznsoValueRef {
   const struct FznsoValueMethods *methods;
 } FznsoValueRef;
 
-// The callbacks that read a [`FznsoAnnotation`].
+// The callbacks that read a FznsoAnnotation.
 typedef struct FznsoAnnotationMethods {
   // Retrieve the identifier of an annotation.
   //
-  // The returned string can be assumed to have the the same lifetime as the
+  // The returned string can be assumed to have the same lifetime as the
   // annotation reference and must be valid UTF8.
   struct FznsoStr (*ident)(const FznsoAnnotation * ann);
   // Retrieve the number of arguments of an annotation.
@@ -341,7 +342,7 @@ typedef struct FznsoAnnotationRef {
   const struct FznsoAnnotationMethods *methods;
 } FznsoAnnotationRef;
 
-// The callbacks that read a [`FznsoModel`].
+// The callbacks that read a FznsoModel.
 //
 // Every index argument has a matching length callback, and must be below it.
 // Everything these return (e.g. values, strings, and annotations) borrows from
@@ -351,11 +352,11 @@ typedef struct FznsoModelMethods {
   // model.
   //
   // Layers are how an application adds and retracts groups of decision
-  // variables and constraints between runs; see [`layer_permanent`] for the
-  // ones that can never be retracted.
+  // variables and constraints between runs; see Self::layer_permanent
+  // for the ones that can never be retracted.
   size_t (*layer_len)(const FznsoModel * model);
   // Returns the number of layers that have been unchanged since the last
-  // call to [`fznso_solver_run`].
+  // call to `fznso_<name>_solver_run`.
   //
   // Unchanged layers must be consecutive starting from layer 0.
   size_t (*layer_unchanged)(const FznsoModel * model);
@@ -366,8 +367,8 @@ typedef struct FznsoModelMethods {
   //
   // Permanent layers can, however, still be found to be redundant, allowing
   // the solver to remove the decision variables and constraints in these
-  // layers, if convenient. This is signaled using [`layer_redundant_len`]
-  // and [`layer_redundant_index`].
+  // layers, if convenient. This is signaled using
+  // Self::layer_redundant_len and Self::layer_redundant_index.
   size_t (*layer_permanent)(const FznsoModel * model);
   // Returns the number of permanent layers that have been marked as
   // redundant.
@@ -381,23 +382,27 @@ typedef struct FznsoModelMethods {
   // redundant.
   //
   // The `n` argument must be less than the value returned by
-  // [`layer_redundant_len`].
+  // Self::layer_redundant_len.
   size_t (*layer_redundant_index)(const FznsoModel * model, size_t n);
   // Retrieve the number of decisions currently contained in the model.
   size_t (*decision_len)(const FznsoModel * model);
-  // Retrieve the decision index of the last decision variable in the layer.
+  // Retrieve the exclusive upper bound on the decision indexes belonging to
+  // layers `0..=layer`.
   //
-  // This can be equivalent to `decision_layer_end` of `layer-1` if the layer
-  // does not add any new decisions.
+  // Layer `layer` therefore owns the decisions
+  // `decision_layer_end(layer-1)..decision_layer_end(layer)`, taking the
+  // bound below layer 0 to be 0. It equals `decision_layer_end(layer-1)`
+  // when the layer adds no decisions, and Self::decision_len for the
+  // last layer.
   size_t (*decision_layer_end)(const FznsoModel * model, size_t layer);
   // Retrieve the type of the given decision variable.
   //
   // This is what the type of value the decision must take, as opposed to
-  // [`decision_domain`], which says which specific values it may take.
+  // Self::decision_domain, which says which specific values it may take.
   struct FznsoType (*decision_type)(const FznsoModel * model, FznsoDecisionIdx decision);
   // Retrieve the domain of the given decision.
   //
-  // Note that the the value might have [`FznsoValueKind::FznsoValueAbsent`]
+  // Note that the value might have FznsoValueKind::FznsoValueAbsent
   // if the decision variable does not have an explicit domain.
   struct FznsoValueRef (*decision_domain)(const FznsoModel * model, FznsoDecisionIdx decision);
   // Retrieve the name of a decision variable, if it exists.
@@ -408,25 +413,37 @@ typedef struct FznsoModelMethods {
   struct FznsoStr (*decision_name)(const FznsoModel * model, FznsoDecisionIdx decision);
   // Check whether the decision variable is defined by a constraint.
   bool (*decision_defined)(const FznsoModel * model, FznsoDecisionIdx decision);
+  // Check whether the application may ask a solution for this decision
+  // variable's value.
+  //
+  // A solver must give every such variable a value in every solution it
+  // reports, and is free to leave the others open. Nothing else marks a
+  // variable as needed — in particular, whether it has a name does not,
+  // since names exist only for debugging.
+  bool (*decision_in_solution)(const FznsoModel * model, FznsoDecisionIdx decision);
   // Retrieve the number of annotations on a decision variable.
   size_t (*decision_annotation_len)(const FznsoModel * model, FznsoDecisionIdx decision);
   // Retrieve the annotation on a decision variable at the given index.
   //
-  // Requires `index` to be less than [`decision_annotation_len`] for that
-  // decision variable.
+  // Requires `index` to be less than Self::decision_annotation_len for
+  // that decision variable.
   struct FznsoAnnotationRef (*decision_annotation)(const FznsoModel * model,
                                                    FznsoDecisionIdx decision,
                                                    size_t index);
   // Retrieve the number of constraints currently contained in the model.
   size_t (*constraint_len)(const FznsoModel * model);
-  // Retrieve the constraint index of the first new constraint in the layer.
+  // Retrieve the exclusive upper bound on the constraint indexes belonging
+  // to layers `0..=layer`.
   //
-  // This can be equivalent to `constraint_len` if the layer does not add any
-  // new constraints.
+  // Layer `layer` therefore owns the constraints
+  // `constraint_layer_end(layer-1)..constraint_layer_end(layer)`, taking
+  // the bound below layer 0 to be 0. It equals
+  // `constraint_layer_end(layer-1)` when the layer adds no constraints, and
+  // Self::constraint_len for the last layer.
   size_t (*constraint_layer_end)(const FznsoModel * model, size_t layer);
   // Retrieve the identifier of a constraint.
   //
-  // The returned string can be assumed to have the the same lifetime as the
+  // The returned string can be assumed to have the same lifetime as the
   // model reference and must be valid UTF8.
   struct FznsoStr (*constraint_ident)(const FznsoModel * model, FznsoConstraintIdx constraint);
   // Retrieve the number of arguments of a constraint.
@@ -441,9 +458,9 @@ typedef struct FznsoModelMethods {
   // Check whether the decision variable is functionally defined by a
   // constraint.
   //
-  // This function returns a [`FznsoValue`] that is either
-  // [`FznsoValueKind::FznsoValueDecision`] if it defined a decision variable
-  // or [`FznsoValueKind::FznsoValueAbsent`] otherwise.
+  // This function returns a FznsoValue that is either
+  // FznsoValueKind::FznsoValueDecision if it defined a decision variable
+  // or FznsoValueKind::FznsoValueAbsent otherwise.
   struct FznsoValueRef (*constraint_defines)(const FznsoModel * model, FznsoConstraintIdx constraint);
   // Retrieve the number of annotations on a constraint.
   size_t (*constraint_annotation_len)(const FznsoModel * model, FznsoConstraintIdx constraint);
@@ -489,9 +506,10 @@ typedef struct FznsoObjective {
   struct FznsoType arg_type;
 } FznsoObjective;
 
-// A list of [`FznsoObjective`]s.
+// A list of FznsoObjectives.
 //
-// This type is, for example, used to return from [`fznso_objective_list`].
+// This type is, for example, used to return from
+// `fznso_<name>_objective_list`.
 typedef struct FznsoObjectiveList {
   // The number of elements in the `objectives` array.
   size_t len;
@@ -510,9 +528,9 @@ typedef struct FznsoOption {
   struct FznsoValueRef arg_def;
 } FznsoOption;
 
-// A list of [`FznsoOption`]s.
+// A list of FznsoOptions.
 //
-// This type is, for example, used to return from [`fznso_option_list`].
+// This type is, for example, used to return from `fznso_<name>_option_list`.
 typedef struct FznsoOptionList {
   // The number of elements in the `options` array.
   size_t len;
@@ -523,10 +541,10 @@ typedef struct FznsoOptionList {
 // The handle of a solution reported by a solver.
 //
 // Opaque: only the side that created it may interpret it. Read it through
-// [`FznsoSolutionRef`], which pairs it with the callbacks that can.
+// FznsoSolutionRef, which pairs it with the callbacks that can.
 typedef void FznsoSolution;
 
-// The callbacks that read a [`FznsoSolution`].
+// The callbacks that read a FznsoSolution.
 //
 // The values these return borrow from the solution, so they last only as long
 // as it does (i.e. for the duration of the `on_solution` callback that
@@ -571,16 +589,17 @@ typedef struct FznsoStatistic {
   // The type of value that is expected for this statistic.
   struct FznsoType ty;
   // Whether the statistic is available from a solution, read with
-  // [`FznsoSolutionMethods::statistic`].
+  // FznsoSolutionMethods::statistic.
   bool solution;
   // Whether the statistic is available from the solver instance, read with
   // `fznso_solver_statistic`.
   bool solver;
 } FznsoStatistic;
 
-// A list of [`FznsoStatistic`]s.
+// A list of FznsoStatistics.
 //
-// This type is, for example, used to return from [`fznso_statistic_list`].
+// This type is, for example, used to return from
+// `fznso_<name>_statistic_list`.
 typedef struct FznsoStatisticList {
   // The number of elements in the `stats` array.
   size_t len;
@@ -588,9 +607,9 @@ typedef struct FznsoStatisticList {
   const struct FznsoStatistic *stats;
 } FznsoStatisticList;
 
-// A list of [`FznsoType`]s.
+// A list of FznsoTypes.
 //
-// This type is for example used to return from [`fznso_decision_list`].
+// This type is for example used to return from `fznso_<name>_decision_list`.
 typedef struct FznsoTypeList {
   // The number of elements in the `types` array.
   size_t len;

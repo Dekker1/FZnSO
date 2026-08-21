@@ -1,7 +1,7 @@
 // FZnSO — header-only C++17 solver export.
 //
 // Implement a solver by subclassing `fznso::Solver`, then expand
-// `FZNSO_EXPORT_SOLVER(YourSolver, yoursolver)` once in a `cdylib`/shared-object
+// `FZNSO_EXPORT_SOLVER(YourSolver, yoursolver)` once in a `cdylib` / shared-library
 // build to expose it across the interface. The second argument is the library's
 // name, which prefixes every entry point (`fznso_yoursolver_solver_run`, …).
 // Everything except those thirteen entry points is done by templates, which the
@@ -294,7 +294,7 @@ struct Export {
 
 } // namespace fznso
 
-/// Marks the exported entry points for export from a shared object.
+/// Marks the exported entry points for export from a dynamically loadable library.
 #if defined(_WIN32)
 #define FZNSO_EXPORTED extern "C" __declspec(dllexport)
 #else
@@ -311,7 +311,7 @@ struct Export {
 
 /// Define the thirteen interface entry points for a `fznso::Solver` subclass.
 ///
-/// Expand this exactly once, at namespace scope, in the shared object that is
+/// Expand this exactly once, at namespace scope, in the dynamically loadable library that is
 /// the solver. `Name` is the library's name: every entry point is named
 /// `fznso_<Name>_solver_run` and so on, so that several solvers can be linked
 /// into one binary without their entry points colliding — with each other or

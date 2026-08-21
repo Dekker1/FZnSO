@@ -84,6 +84,10 @@ impl<'a> Model for ModelRefAdapter<'a> {
 		(self.0.methods.decision_defined)(self.0.data, decision)
 	}
 
+	fn decision_in_solution(&self, decision: DecisionIdx) -> bool {
+		(self.0.methods.decision_in_solution)(self.0.data, decision)
+	}
+
 	fn decision_domain(&self, decision: DecisionIdx) -> Value<'_> {
 		(self.0.methods.decision_domain)(self.0.data, decision)
 	}

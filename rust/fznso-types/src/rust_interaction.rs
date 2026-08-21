@@ -427,19 +427,19 @@ impl<'a> FznsoValueRef<'a> {
 		FznsoValueKind::FznsoValueAbsent
 	}
 
-	/// Rust call to [`FznsoValueMethods::get_bool`] with the
+	/// Rust call to [`FznsoValueMethods::as_bool`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_bool(&self) -> bool {
 		(self.methods.as_bool)(self.data)
 	}
 
-	/// Rust call to [`FznsoValueMethods::get_constraint`] with the
+	/// Rust call to [`FznsoValueMethods::as_constraint`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_constraint(&self) -> FznsoConstraintIdx {
 		(self.methods.as_constraint)(self.data)
 	}
 
-	/// Rust call to [`FznsoValueMethods::get_decision`] with the
+	/// Rust call to [`FznsoValueMethods::as_decision`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_decision(&self) -> FznsoDecisionIdx {
 		(self.methods.as_decision)(self.data)
@@ -451,13 +451,13 @@ impl<'a> FznsoValueRef<'a> {
 		(self.methods.get_element)(self.data, idx)
 	}
 
-	/// Rust call to [`FznsoValueMethods::get_float`] with the
+	/// Rust call to [`FznsoValueMethods::as_float`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_float(&self) -> f64 {
 		(self.methods.as_float)(self.data)
 	}
 
-	/// Rust call to [`FznsoValueMethods::get_int`] with the
+	/// Rust call to [`FznsoValueMethods::as_int`] with the
 	/// [`FznsoValueRef::data`] attribute.
 	pub fn get_int(&self) -> i64 {
 		(self.methods.as_int)(self.data)

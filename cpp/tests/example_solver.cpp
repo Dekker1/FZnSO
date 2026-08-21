@@ -1,4 +1,4 @@
-// A throwaway C++ solver, built as a shared object so the export path can be
+// A throwaway C++ solver, built as a dynamically loadable library so the export path can be
 // exercised end to end.
 //
 // It is behaviourally identical to the Rust example solver, so the same

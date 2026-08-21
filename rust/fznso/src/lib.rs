@@ -3,7 +3,7 @@
 //! This crate defines an interface for the FZnSO protocol, which allows the
 //! incremental usage of solvers that can solve decision and optimization
 //! problems. The goal of the interface is to easily use different solvers in a
-//! unified way, and to allow the dynamic loading of solver libraries (as DLLs).
+//! unified way, and to allow the dynamic loading of solver libraries.
 
 /// Generate all required C ABI functions for a [`Solver`] type.
 ///
@@ -55,14 +55,15 @@
 /// ```
 ///
 /// The second argument is the library's *name*: every exported symbol is named
-/// `fznso_<name>_...` (for example `fznso_mysolver_solver_run`) rather than a
-/// fixed prefix, so that several solvers can be statically linked into one
-/// binary without their entry points colliding — with each other or with the
-/// library each one wraps. The shared `fznso_` marker keeps them greppable and
-/// out of any wrapped library's namespace. The name must match the base name of
-/// the library file so that [`Library`] can recover it when loading — for a
-/// file `libmysolver.so` / `libmysolver.2.1.dylib` / `mysolver.dll`, the name
-/// is `mysolver`.
+/// `fznso_<name>_...` (for example `fznso_mysolver_solver_run`), so that
+/// several solvers can be linked into one binary without their entry points
+/// colliding.
+///
+/// **It must match the base name of the built library file** — `mysolver` for
+/// `libmysolver.so` / `libmysolver.2.1.dylib` / `mysolver.dll` — so that
+/// [`Library`] can recover it when loading. The rules a name must satisfy, and
+/// where the version goes, are specified at
+/// <https://fznso.minizinc.dev/spec/naming-and-versioning/>.
 ///
 /// A failing `option_set` or a `Status::Error` from `run` stores its message on
 /// the solver instance, and the generated `fznso_<name>_solver_read_error`
@@ -513,6 +514,7 @@ mod tests {
 			OwnedValue::IntSet(crate::RangeList::from(0_i64..=10)),
 			Some("x".into()),
 			false,
+			true,
 			vec![],
 		);
 		let _ = m.add_constraint(

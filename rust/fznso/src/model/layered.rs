@@ -36,6 +36,8 @@ struct DecisionData {
 	name: Option<String>,
 	/// Whether this variable is defined by some constraint.
 	defined: bool,
+	/// Whether a solution may be asked for this variable's value.
+	in_solution: bool,
 	/// Annotations attached to this decision variable.
 	annotations: Vec<OwnedAnnotation>,
 }
@@ -74,6 +76,7 @@ struct LayerData {
 ///     OwnedValue::IntSet(RangeList::from(-10i64..=10)),
 ///     Some("x".into()),
 ///     false,
+///     true,
 ///     vec![],
 /// );
 /// m.add_constraint("int_le", vec![OwnedValue::Int(-10), OwnedValue::Decision(d)], None, vec![]);
@@ -95,7 +98,7 @@ pub struct LayeredModel {
 	unchanged: usize,
 }
 
-/// An annotation for use with [`SimpleModel`].
+/// An annotation for use with [`LayeredModel`].
 #[derive(Clone, Debug)]
 pub struct OwnedAnnotation {
 	/// The annotation identifier (e.g. `"output_var"`).
@@ -104,7 +107,7 @@ pub struct OwnedAnnotation {
 	arguments: Vec<OwnedValue>,
 }
 
-/// An owned value for use with [`SimpleModel`].
+/// An owned value for use with [`LayeredModel`].
 ///
 /// Mirrors all variants of [`FznsoValueKind`] but owns the contained data.
 #[derive(Clone, Debug, Default)]
@@ -296,6 +299,7 @@ impl LayeredModel {
 		domain: OwnedValue,
 		name: Option<String>,
 		defined: bool,
+		in_solution: bool,
 		annotations: Vec<OwnedAnnotation>,
 	) -> DecisionIdx {
 		assert!(!self.layers.is_empty(), "no layers in model");
@@ -309,6 +313,7 @@ impl LayeredModel {
 				domain,
 				name,
 				defined,
+				in_solution,
 				annotations,
 			});
 		FznsoDecisionIdx(global_idx)
@@ -465,6 +470,11 @@ impl Model for LayeredModel {
 	fn decision_defined(&self, decision: DecisionIdx) -> bool {
 		let (data, _) = self.decision_location(decision);
 		data.defined
+	}
+
+	fn decision_in_solution(&self, decision: DecisionIdx) -> bool {
+		let (data, _) = self.decision_location(decision);
+		data.in_solution
 	}
 
 	fn decision_domain(&self, decision: DecisionIdx) -> Value<'_> {

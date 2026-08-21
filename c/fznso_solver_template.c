@@ -52,7 +52,7 @@ FznsoSolver *fznso_NAME_solver_create(void);
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
+// `solver` must be a pointer returned by fznso_NAME_solver_create that has
 // not yet been passed to this function.
 void fznso_NAME_solver_free(FznsoSolver *solver);
 
@@ -68,8 +68,8 @@ void fznso_NAME_solver_free(FznsoSolver *solver);
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
-// not yet been passed to [`fznso_NAME_solver_free`].
+// `solver` must be a pointer returned by fznso_NAME_solver_create that has
+// not yet been passed to fznso_NAME_solver_free.
 FznsoValueRef fznso_NAME_solver_option_get(const FznsoSolver * solver, FznsoStr ident);
 
 // Set the current value of an option for the solver.
@@ -81,23 +81,24 @@ FznsoValueRef fznso_NAME_solver_option_get(const FznsoSolver * solver, FznsoStr 
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
-// not yet been passed to [`fznso_NAME_solver_free`].
+// `solver` must be a pointer returned by fznso_NAME_solver_create that has
+// not yet been passed to fznso_NAME_solver_free.
 bool fznso_NAME_solver_option_set(FznsoSolver *solver, FznsoStr ident, FznsoValueRef value);
 
 // Read an error message from the solver.
 //
 // This function is expected to be called after solver interactions signal an
-// error has occurred. For example, if [`fznso_NAME_solver_run`] returns
-// [`FznsoError`] or [`fznso_NAME_solver_option_set`] returns `false`.
+// error has occurred. For example, if fznso_NAME_solver_run returns
+// FznsoStatus::FznsoError or fznso_NAME_solver_option_set returns
+// `false`.
 //
 // The message is handed to `read_error` rather than returned, so it need only
 // stay valid for the duration of that callback.
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
-// not yet been passed to [`fznso_NAME_solver_free`].
+// `solver` must be a pointer returned by fznso_NAME_solver_create that has
+// not yet been passed to fznso_NAME_solver_free.
 void fznso_NAME_solver_read_error(FznsoSolver *solver,
                                   void *context,
                                   void (*read_error)(void *context, FznsoStr error));
@@ -166,8 +167,8 @@ void fznso_NAME_solver_read_error(FznsoSolver *solver,
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
-// not yet been passed to [`fznso_NAME_solver_free`].
+// `solver` must be a pointer returned by fznso_NAME_solver_create that has
+// not yet been passed to fznso_NAME_solver_free.
 FznsoStatus fznso_NAME_solver_run(FznsoSolver *solver,
                                   FznsoModelRef model,
                                   void *context,
@@ -190,8 +191,8 @@ FznsoStatus fznso_NAME_solver_run(FznsoSolver *solver,
 //
 // # Safety
 //
-// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
-// not yet been passed to [`fznso_NAME_solver_free`].
+// `solver` must be a pointer returned by fznso_NAME_solver_create that has
+// not yet been passed to fznso_NAME_solver_free.
 FznsoValueRef fznso_NAME_solver_statistic(const FznsoSolver * solver, FznsoStr ident);
 
 // Returns the list of available statistical information that can be requested

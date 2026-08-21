@@ -945,6 +945,12 @@ public:
 	virtual std::optional<std::string_view> decision_name(Decision decision) const = 0;
 	/// Whether a decision variable is functionally defined by a constraint.
 	virtual bool decision_defined(Decision decision) const = 0;
+	/// Whether a solution may be asked for a decision variable's value.
+	///
+	/// A solver must give every such variable a value in every solution it
+	/// reports, and is free to leave the others open. Having a name does not
+	/// make a variable needed: names exist only for debugging.
+	virtual bool decision_in_solution(Decision decision) const = 0;
 	/// The number of annotations on a decision variable.
 	virtual std::size_t decision_annotation_count(Decision decision) const = 0;
 	/// The `index`-th annotation on a decision variable.
@@ -1041,6 +1047,9 @@ public:
 	bool decision_defined(Decision d) const override {
 		return raw_.methods->decision_defined(raw_.data, d.index);
 	}
+	bool decision_in_solution(Decision d) const override {
+		return raw_.methods->decision_in_solution(raw_.data, d.index);
+	}
 	std::size_t decision_annotation_count(Decision d) const override {
 		return raw_.methods->decision_annotation_len(raw_.data, d.index);
 	}
@@ -1108,10 +1117,12 @@ public:
 	/// and `domain` which values it may take, which may be absent.
 	Decision add_decision(FznsoType type, OwnedValue domain,
 	                      std::optional<std::string> name = std::nullopt, bool defined = false,
+	                      bool in_solution = true,
 	                      std::vector<OwnedAnnotation> annotations = {}) {
 		Decision idx{decision_count()};
-		layers_.back().decisions.push_back(DecisionData{
-			type, std::move(domain), std::move(name), defined, std::move(annotations)});
+		layers_.back().decisions.push_back(DecisionData{type, std::move(domain), std::move(name),
+		                                                defined, in_solution,
+		                                                std::move(annotations)});
 		return idx;
 	}
 
@@ -1197,6 +1208,9 @@ public:
 		return std::string_view{*name};
 	}
 	bool decision_defined(Decision d) const override { return decision_at(d.index).defined; }
+	bool decision_in_solution(Decision d) const override {
+		return decision_at(d.index).in_solution;
+	}
 	std::size_t decision_annotation_count(Decision d) const override {
 		return decision_at(d.index).annotations.size();
 	}
@@ -1256,6 +1270,7 @@ private:
 		OwnedValue domain;
 		std::optional<std::string> name;
 		bool defined;
+		bool in_solution;
 		std::vector<OwnedAnnotation> annotations;
 	};
 	struct ConstraintData {
@@ -1602,6 +1617,9 @@ const FznsoModelMethods& model_methods() {
 		},
 		[](const FznsoModel* m, FznsoDecisionIdx d) noexcept {
 			return model_as<M>(m).M::decision_defined(Decision{d});
+		},
+		[](const FznsoModel* m, FznsoDecisionIdx d) noexcept {
+			return model_as<M>(m).M::decision_in_solution(Decision{d});
 		},
 		[](const FznsoModel* m, FznsoDecisionIdx d) noexcept {
 			return model_as<M>(m).M::decision_annotation_count(Decision{d});

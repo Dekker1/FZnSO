@@ -143,7 +143,8 @@ pub unsafe extern "C" fn fznso_NAME_solver_option_set(
 ///
 /// This function is expected to be called after solver interactions signal an
 /// error has occurred. For example, if [`fznso_NAME_solver_run`] returns
-/// [`FznsoError`] or [`fznso_NAME_solver_option_set`] returns `false`.
+/// [`FznsoStatus::FznsoError`] or [`fznso_NAME_solver_option_set`] returns
+/// `false`.
 ///
 /// The message is handed to `read_error` rather than returned, so it need only
 /// stay valid for the duration of that callback.

@@ -196,6 +196,10 @@ impl<'m, M: Model + ?Sized> DecisionView<'m, M> {
 	pub fn defined(&self) -> bool {
 		self.model.decision_defined(self.idx)
 	}
+	/// Whether a solution may be asked for this decision variable's value.
+	pub fn in_solution(&self) -> bool {
+		self.model.decision_in_solution(self.idx)
+	}
 	/// Number of annotations on this decision variable.
 	pub fn annotation_len(&self) -> usize {
 		self.model.decision_annotation_len(self.idx)
@@ -370,6 +374,12 @@ pub trait Model {
 	fn decision_annotation_len(&self, decision: DecisionIdx) -> usize;
 	/// Whether the given decision variable is defined by some constraint.
 	fn decision_defined(&self, decision: DecisionIdx) -> bool;
+	/// Whether a solution may be asked for the given decision variable's value.
+	///
+	/// A solver must give every such variable a value in every solution it
+	/// reports, and is free to leave the others open. Having a name does not
+	/// make a variable needed: names exist only for debugging.
+	fn decision_in_solution(&self, decision: DecisionIdx) -> bool;
 	/// The domain of the given decision variable.
 	fn decision_domain(&self, decision: DecisionIdx) -> Value<'_>;
 	/// One-past-the-end global decision index for variables in layers
@@ -645,6 +655,16 @@ extern "C" fn wrap_decision_defined<M: Model>(
 	model.decision_defined(index)
 }
 
+/// Vtable thunk: delegates to [`Model::decision_in_solution`].
+extern "C" fn wrap_decision_in_solution<M: Model>(
+	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
+	index: FznsoDecisionIdx,
+) -> bool {
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	let model: &M = unsafe { &*ptr.cast::<M>() };
+	model.decision_in_solution(index)
+}
+
 /// Vtable thunk: delegates to [`Model::decision_domain`].
 extern "C" fn wrap_decision_domain<M: Model>(
 	ptr: *const fznso_types::FznsoModel,
@@ -842,6 +862,7 @@ impl<'a, M: Model> ModelWrapper<'a, M> {
 				_,
 			>(wrap_decision_name::<M>),
 			decision_defined: wrap_decision_defined::<M>,
+			decision_in_solution: wrap_decision_in_solution::<M>,
 			decision_annotation_len: wrap_decision_annotation_len::<M>,
 			decision_annotation: as_borrowing_thunk::<
 				extern "C" fn(
@@ -921,6 +942,7 @@ mod tests {
 			OwnedValue::IntSet(RangeList::from(-10_i64..=10)),
 			Some("x".into()),
 			false,
+			true,
 			vec![OwnedAnnotation::new("output_var", vec![])],
 		);
 		let y = m.add_decision(
@@ -928,6 +950,7 @@ mod tests {
 			OwnedValue::FloatSet(RangeList::from(0.5_f64..=2.5)),
 			None,
 			true,
+			false,
 			vec![],
 		);
 		let _ = m.add_constraint(
@@ -975,6 +998,7 @@ mod tests {
 		for d in m.decisions().map(|d| d.idx()) {
 			assert_eq!(abi.decision_name(d), m.decision_name(d));
 			assert_eq!(abi.decision_defined(d), m.decision_defined(d));
+			assert_eq!(abi.decision_in_solution(d), m.decision_in_solution(d));
 			assert_eq!(abi.decision_domain(d).kind(), m.decision_domain(d).kind());
 			assert_eq!(abi.decision_type(d), m.decision_type(d));
 			assert_eq!(abi.decision_annotation_len(d), m.decision_annotation_len(d));

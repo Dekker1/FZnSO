@@ -122,6 +122,7 @@ public:
 		return std::nullopt;
 	}
 	bool decision_defined(fznso::Decision) const override { return false; }
+	bool decision_in_solution(fznso::Decision) const override { return true; }
 	std::size_t decision_annotation_count(fznso::Decision) const override { return 0; }
 	fznso::AnnotationRef decision_annotation(fznso::Decision, std::size_t) const override {
 		std::abort();

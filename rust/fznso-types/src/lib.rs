@@ -3,7 +3,7 @@
 //! This crate defines the types of the FZnSO protocol, which allows the
 //! incremental usage of solvers that can solve decision and optimization
 //! problems. The goal of the interface is to easily use different solvers in a
-//! unified way, and to allow the dynamic loading of solver libraries (as DLLs).
+//! unified way, and to allow the dynamic loading of solver libraries.
 
 mod rust_interaction;
 
@@ -29,7 +29,7 @@ pub struct FznsoAnnotation(pub ffi::c_void);
 pub struct FznsoAnnotationMethods {
 	/// Retrieve the identifier of an annotation.
 	///
-	/// The returned string can be assumed to have the the same lifetime as the
+	/// The returned string can be assumed to have the same lifetime as the
 	/// annotation reference and must be valid UTF8.
 	pub ident: extern "C" fn(ann: FznsoPtr<'_, FznsoAnnotation>) -> FznsoStr<'_>,
 	/// Retrieve the number of arguments of an annotation.
@@ -62,7 +62,7 @@ pub struct FznsoConstraintIdx(pub usize);
 #[derive(Clone, Debug)]
 /// A list of [`FznsoConstraintType`]s.
 ///
-/// This type is for example used to return from [`fznso_constraint_list`].
+/// This type is for example used to return from `fznso_<name>_constraint_list`.
 pub struct FznsoConstraintList<'a> {
 	/// The number of elements in the `constraints` array.
 	pub len: usize,
@@ -165,11 +165,11 @@ pub struct FznsoModelMethods {
 	/// model.
 	///
 	/// Layers are how an application adds and retracts groups of decision
-	/// variables and constraints between runs; see [`layer_permanent`] for the
-	/// ones that can never be retracted.
+	/// variables and constraints between runs; see [`Self::layer_permanent`]
+	/// for the ones that can never be retracted.
 	pub layer_len: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Returns the number of layers that have been unchanged since the last
-	/// call to [`fznso_solver_run`].
+	/// call to `fznso_<name>_solver_run`.
 	///
 	/// Unchanged layers must be consecutive starting from layer 0.
 	pub layer_unchanged: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
@@ -180,8 +180,8 @@ pub struct FznsoModelMethods {
 	///
 	/// Permanent layers can, however, still be found to be redundant, allowing
 	/// the solver to remove the decision variables and constraints in these
-	/// layers, if convenient. This is signaled using [`layer_redundant_len`]
-	/// and [`layer_redundant_index`].
+	/// layers, if convenient. This is signaled using
+	/// [`Self::layer_redundant_len`] and [`Self::layer_redundant_index`].
 	pub layer_permanent: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Returns the number of permanent layers that have been marked as
 	/// redundant.
@@ -195,25 +195,29 @@ pub struct FznsoModelMethods {
 	/// redundant.
 	///
 	/// The `n` argument must be less than the value returned by
-	/// [`layer_redundant_len`].
+	/// [`Self::layer_redundant_len`].
 	pub layer_redundant_index: extern "C" fn(model: FznsoPtr<'_, FznsoModel>, n: usize) -> usize,
 
 	/// Retrieve the number of decisions currently contained in the model.
 	pub decision_len: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
-	/// Retrieve the decision index of the last decision variable in the layer.
+	/// Retrieve the exclusive upper bound on the decision indexes belonging to
+	/// layers `0..=layer`.
 	///
-	/// This can be equivalent to `decision_layer_end` of `layer-1` if the layer
-	/// does not add any new decisions.
+	/// Layer `layer` therefore owns the decisions
+	/// `decision_layer_end(layer-1)..decision_layer_end(layer)`, taking the
+	/// bound below layer 0 to be 0. It equals `decision_layer_end(layer-1)`
+	/// when the layer adds no decisions, and [`Self::decision_len`] for the
+	/// last layer.
 	pub decision_layer_end: extern "C" fn(model: FznsoPtr<'_, FznsoModel>, layer: usize) -> usize,
 	/// Retrieve the type of the given decision variable.
 	///
 	/// This is what the type of value the decision must take, as opposed to
-	/// [`decision_domain`], which says which specific values it may take.
+	/// [`Self::decision_domain`], which says which specific values it may take.
 	pub decision_type:
 		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, decision: FznsoDecisionIdx) -> FznsoType,
 	/// Retrieve the domain of the given decision.
 	///
-	/// Note that the the value might have [`FznsoValueKind::FznsoValueAbsent`]
+	/// Note that the value might have [`FznsoValueKind::FznsoValueAbsent`]
 	/// if the decision variable does not have an explicit domain.
 	pub decision_domain: extern "C" fn(
 		model: FznsoPtr<'_, FznsoModel>,
@@ -229,13 +233,22 @@ pub struct FznsoModelMethods {
 	/// Check whether the decision variable is defined by a constraint.
 	pub decision_defined:
 		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, decision: FznsoDecisionIdx) -> bool,
+	/// Check whether the application may ask a solution for this decision
+	/// variable's value.
+	///
+	/// A solver must give every such variable a value in every solution it
+	/// reports, and is free to leave the others open. Nothing else marks a
+	/// variable as needed — in particular, whether it has a name does not,
+	/// since names exist only for debugging.
+	pub decision_in_solution:
+		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, decision: FznsoDecisionIdx) -> bool,
 	/// Retrieve the number of annotations on a decision variable.
 	pub decision_annotation_len:
 		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, decision: FznsoDecisionIdx) -> usize,
 	/// Retrieve the annotation on a decision variable at the given index.
 	///
-	/// Requires `index` to be less than [`decision_annotation_len`] for that
-	/// decision variable.
+	/// Requires `index` to be less than [`Self::decision_annotation_len`] for
+	/// that decision variable.
 	pub decision_annotation: extern "C" fn(
 		model: FznsoPtr<'_, FznsoModel>,
 		decision: FznsoDecisionIdx,
@@ -244,14 +257,18 @@ pub struct FznsoModelMethods {
 
 	/// Retrieve the number of constraints currently contained in the model.
 	pub constraint_len: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
-	/// Retrieve the constraint index of the first new constraint in the layer.
+	/// Retrieve the exclusive upper bound on the constraint indexes belonging
+	/// to layers `0..=layer`.
 	///
-	/// This can be equivalent to `constraint_len` if the layer does not add any
-	/// new constraints.
+	/// Layer `layer` therefore owns the constraints
+	/// `constraint_layer_end(layer-1)..constraint_layer_end(layer)`, taking
+	/// the bound below layer 0 to be 0. It equals
+	/// `constraint_layer_end(layer-1)` when the layer adds no constraints, and
+	/// [`Self::constraint_len`] for the last layer.
 	pub constraint_layer_end: extern "C" fn(model: FznsoPtr<'_, FznsoModel>, layer: usize) -> usize,
 	/// Retrieve the identifier of a constraint.
 	///
-	/// The returned string can be assumed to have the the same lifetime as the
+	/// The returned string can be assumed to have the same lifetime as the
 	/// model reference and must be valid UTF8.
 	pub constraint_ident: extern "C" fn(
 		model: FznsoPtr<'_, FznsoModel>,
@@ -338,7 +355,8 @@ pub struct FznsoObjective<'a> {
 #[derive(Clone, Debug)]
 /// A list of [`FznsoObjective`]s.
 ///
-/// This type is, for example, used to return from [`fznso_objective_list`].
+/// This type is, for example, used to return from
+/// `fznso_<name>_objective_list`.
 pub struct FznsoObjectiveList<'a> {
 	/// The number of elements in the `objectives` array.
 	pub len: usize,
@@ -367,7 +385,7 @@ pub struct FznsoOption<'a> {
 #[derive(Clone, Debug)]
 /// A list of [`FznsoOption`]s.
 ///
-/// This type is, for example, used to return from [`fznso_option_list`].
+/// This type is, for example, used to return from `fznso_<name>_option_list`.
 pub struct FznsoOptionList<'a> {
 	/// The number of elements in the `options` array.
 	pub len: usize,
@@ -457,7 +475,8 @@ pub struct FznsoStatistic<'a> {
 #[derive(Clone, Debug)]
 /// A list of [`FznsoStatistic`]s.
 ///
-/// This type is, for example, used to return from [`fznso_statistic_list`].
+/// This type is, for example, used to return from
+/// `fznso_<name>_statistic_list`.
 pub struct FznsoStatisticList<'a> {
 	/// The number of elements in the `stats` array.
 	pub len: usize,
@@ -504,7 +523,8 @@ pub enum FznsoStatus {
 	FznsoIncomplete,
 	/// An error occurred during the solver's execution.
 	///
-	/// [`fznso_solver_read_error`] can be used to retrieve the error message.
+	/// `fznso_<name>_solver_read_error` can be used to retrieve the error
+	/// message.
 	FznsoError,
 }
 
@@ -545,7 +565,7 @@ pub enum FznsoTypeBase {
 #[derive(Clone, Debug)]
 /// A list of [`FznsoType`]s.
 ///
-/// This type is for example used to return from [`fznso_decision_list`].
+/// This type is for example used to return from `fznso_<name>_decision_list`.
 pub struct FznsoTypeList<'a> {
 	/// The number of elements in the `types` array.
 	pub len: usize,
@@ -577,17 +597,17 @@ pub struct FznsoValue(ffi::c_void);
 pub enum FznsoValueKind {
 	/// No value is available.
 	FznsoValueAbsent,
-	/// The value is available using [`FznsoValueMethods::get_decision`].
+	/// The value is available using [`FznsoValueMethods::as_decision`].
 	FznsoValueDecision,
-	/// The value is available using [`FznsoValueMethods::get_constraint`].
+	/// The value is available using [`FznsoValueMethods::as_constraint`].
 	FznsoValueConstraint,
-	/// The value is available using [`FznsoValueMethods::get_bool`].
+	/// The value is available using [`FznsoValueMethods::as_bool`].
 	FznsoValueBool,
-	/// The value is available using [`FznsoValueMethods::get_int`].
+	/// The value is available using [`FznsoValueMethods::as_int`].
 	FznsoValueInt,
-	/// The value is available using [`FznsoValueMethods::get_float`].
+	/// The value is available using [`FznsoValueMethods::as_float`].
 	FznsoValueFloat,
-	/// The value is available using [`FznsoValueMethods::get_string`].
+	/// The value is available using [`FznsoValueMethods::as_string`].
 	FznsoValueString,
 	/// Sets of integers are represented using a range list. The number of
 	/// ranges is available using [`FznsoValueMethods::len`], and the ranges can

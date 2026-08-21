@@ -21,7 +21,7 @@ use pyo3::{
 };
 
 /// A reference to a decision variable, returned by `LayeredModel.add_decision`.
-#[pyclass(frozen, eq, hash)]
+#[pyclass(frozen, eq, hash, module = "fznso")]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Decision {
 	index: usize,
@@ -42,7 +42,7 @@ impl Decision {
 }
 
 /// A reference to a constraint, returned by `LayeredModel.add_constraint`.
-#[pyclass(frozen, eq, hash)]
+#[pyclass(frozen, eq, hash, module = "fznso")]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct Constraint {
 	index: usize,
@@ -63,14 +63,14 @@ impl Constraint {
 }
 
 /// An integer set, an ordered union of inclusive `[min, max]` ranges.
-#[pyclass(frozen)]
+#[pyclass(frozen, module = "fznso")]
 #[derive(Clone)]
 struct IntSet {
 	ranges: Vec<(i64, i64)>,
 }
 
 /// A float set, an ordered union of inclusive `[min, max]` ranges.
-#[pyclass(frozen)]
+#[pyclass(frozen, module = "fznso")]
 #[derive(Clone)]
 struct FloatSet {
 	ranges: Vec<(f64, f64)>,
@@ -90,7 +90,7 @@ struct FloatSet {
 /// The Rust and C++ bindings spell this as a builder, because neither has
 /// keyword arguments. Each qualifier is readable back under the name it was
 /// given, so a type can be taken apart and rebuilt.
-#[pyclass(frozen, eq, hash)]
+#[pyclass(frozen, eq, hash, module = "fznso")]
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Type {
 	ty: FznsoType,
@@ -298,7 +298,7 @@ fn value_to_py(py: Python<'_>, value: &Value<'_>) -> PyResult<PyObject> {
 /// By default a custom model is a single permanent layer. Override the
 /// `layer_*` methods to expose several layers for incremental solving, or use
 /// [`LayeredModel`] to build one directly.
-#[pyclass(subclass)]
+#[pyclass(subclass, module = "fznso")]
 struct Model;
 
 #[pymethods]
@@ -339,6 +339,13 @@ impl Model {
 	fn decision_defined(&self, index: usize) -> bool {
 		let _ = index;
 		false
+	}
+	/// Whether a solution may be asked for the value of the decision at
+	/// `index`. A model that does not say assumes every decision may be, which
+	/// is the safe answer: a solver then assigns them all.
+	fn decision_in_solution(&self, index: usize) -> bool {
+		let _ = index;
+		true
 	}
 	/// The number of constraints.
 	fn constraint_count(&self) -> usize {
@@ -710,6 +717,18 @@ impl fznso_core::Model for PyModelAdapter {
 		})
 	}
 
+	fn decision_in_solution(&self, decision: DecisionIdx) -> bool {
+		Python::with_gil(|py| {
+			self.object
+				.call_method1(py, "decision_in_solution", (decision.0,))
+				.and_then(|r| r.extract::<bool>(py))
+				.unwrap_or_else(|err| {
+					self.record(err);
+					true
+				})
+		})
+	}
+
 	fn constraint_len(&self) -> usize {
 		self.call_usize("constraint_count", None, 0)
 	}
@@ -822,7 +841,7 @@ fn float_set(min: f64, max: f64) -> FloatSet {
 ///
 /// Decisions and constraints are added to the current layer. Layers can be
 /// pushed, popped and committed for incremental solving.
-#[pyclass]
+#[pyclass(module = "fznso")]
 struct LayeredModel {
 	inner: fznso_core::LayeredModel,
 }
@@ -838,13 +857,14 @@ impl LayeredModel {
 
 	/// Add a decision variable of the given type and domain, returning its
 	/// handle.
-	#[pyo3(signature = (ty, domain=None, name=None, defined=false))]
+	#[pyo3(signature = (ty, domain=None, name=None, defined=false, in_solution=true))]
 	fn add_decision(
 		&mut self,
 		ty: &Type,
 		domain: Option<&Bound<'_, PyAny>>,
 		name: Option<String>,
 		defined: bool,
+		in_solution: bool,
 	) -> PyResult<Decision> {
 		let domain = match domain {
 			Some(d) => py_to_value(d)?,
@@ -852,7 +872,7 @@ impl LayeredModel {
 		};
 		let idx = self
 			.inner
-			.add_decision(ty.ty, domain, name, defined, Vec::new());
+			.add_decision(ty.ty, domain, name, defined, in_solution, Vec::new());
 		Ok(Decision { index: idx.0 })
 	}
 
@@ -911,7 +931,7 @@ impl LayeredModel {
 /// A solution reported to the `on_solution` callback.
 ///
 /// Valid only during that callback; using it afterwards raises an error.
-#[pyclass(unsendable)]
+#[pyclass(unsendable, module = "fznso")]
 struct Solution {
 	// A raw pointer to the borrowed solution, valid only during the callback.
 	solution: *const fznso_core::DynSolution<'static>,
@@ -952,7 +972,7 @@ impl Solution {
 }
 
 /// The outcome of a run.
-#[pyclass(frozen, eq)]
+#[pyclass(frozen, eq, module = "fznso")]
 #[derive(Clone, PartialEq)]
 enum Status {
 	/// The solver explored the whole search space.
@@ -962,7 +982,7 @@ enum Status {
 }
 
 /// A solver instance created from a [`Library`].
-#[pyclass(unsendable)]
+#[pyclass(unsendable, module = "fznso")]
 struct DynSolver {
 	inner: fznso_core::DynSolver,
 }
@@ -1198,7 +1218,7 @@ impl DynSolver {
 }
 
 /// A solver library found on the search path, reported without loading it.
-#[pyclass(frozen)]
+#[pyclass(frozen, module = "fznso")]
 struct Discovered {
 	/// The solver's name, derived from the file name.
 	#[pyo3(get)]
@@ -1233,7 +1253,7 @@ impl From<fznso_core::Discovered> for Discovered {
 }
 
 /// A loaded solver library.
-#[pyclass]
+#[pyclass(module = "fznso")]
 struct Library {
 	inner: Arc<fznso_core::Library>,
 }

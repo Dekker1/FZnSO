@@ -427,7 +427,7 @@ impl Library {
 				derived: name.to_owned(),
 			});
 		}
-		// SAFETY: Caller guarantees the library is a valid FZnSO solver DLL.
+		// SAFETY: Caller guarantees the library is a valid FZnSO solver library.
 		let lib = unsafe {
 			let lib = libloading::Library::new(filename)?;
 			let sym = |suffix: &str| format!("fznso_{name}{suffix}\0");

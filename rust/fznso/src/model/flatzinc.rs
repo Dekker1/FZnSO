@@ -290,6 +290,12 @@ impl Model for FlatZincModel {
 		self.variables[decision.0].defined
 	}
 
+	fn decision_in_solution(&self, decision: DecisionIdx) -> bool {
+		// A FlatZinc variable the compiler introduced is scaffolding for the
+		// ones the model declared; only the latter can be asked for.
+		!self.variables[decision.0].introduced
+	}
+
 	fn decision_domain(&self, decision: DecisionIdx) -> Value<'_> {
 		match &self.variables[decision.0].ty {
 			Type::Int(Some(set)) | Type::IntSet(Some(set)) => int_set_value(set),

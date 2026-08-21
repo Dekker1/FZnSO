@@ -76,6 +76,7 @@ fn model() -> LayeredModel {
 		OwnedValue::IntSet(fznso::RangeList::from(3_i64..=20)),
 		Some("a".into()),
 		false,
+		true,
 		vec![],
 	);
 	let _b = m.add_decision(
@@ -83,6 +84,7 @@ fn model() -> LayeredModel {
 		OwnedValue::IntSet(fznso::RangeList::from(10_i64..=20)),
 		Some("b".into()),
 		false,
+		true,
 		vec![],
 	);
 	let _ = m.add_constraint(
