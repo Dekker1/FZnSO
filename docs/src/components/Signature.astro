@@ -1,0 +1,179 @@
+---
+// A declaration, rendered as code rather than as prose.
+//
+// Signatures must never travel through the markdown pipeline: `extern "C"`
+// comes back with curly quotes, `FznsoPtr<'_, T>` loses its underscores to
+// emphasis, and `->` arrives as a literal entity. So the text arrives here as a
+// prop — a JSX expression, not markdown — and is tokenised and escaped here.
+//
+// The highlighting is deliberately shallow. It exists to give a wall of
+// declarations some shape, not to be a language parser; anything it cannot
+// classify renders as plain text.
+
+interface Props {
+	/** The declaration, exactly as the source spells it. */
+	text: string;
+	/** Shown as a pill before the signature: `field`, `method`, `struct`, … */
+	kind?: string;
+	/** Link to the line of source this came from. */
+	source?: string;
+	/** Denser styling, for a member nested under the type that owns it. */
+	member?: boolean;
+	/**
+	 * Declarations written `type: name`, as MiniZinc spells a predicate, rather
+	 * than the `name: type` of everything else this renders.
+	 *
+	 * Only the registry's constraint entries use that order. The API reference
+	 * does not: `min: i64` declares `min`, and marking the token after the colon
+	 * would highlight the type instead of the field.
+	 */
+	typeFirst?: boolean;
+}
+
+const { text, kind, source, member = false, typeFirst = false } = Astro.props;
+
+const KEYWORDS = new Set([
+	'struct', 'enum', 'fn', 'extern', 'const', 'unsafe', 'type', 'trait', 'impl',
+	'mut', 'dyn', 'where', 'pub', 'static', 'macro_rules', 'class', 'using',
+	'namespace', 'template', 'typename', 'virtual', 'inline', 'operator', 'def',
+	'self', 'return', 'noexcept', 'override', 'final',
+]);
+
+const PRIMITIVES = new Set([
+	'i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize',
+	'f32', 'f64', 'bool', 'str', 'char', 'void', 'int', 'float', 'double',
+	'size_t', 'uint32_t', 'int64_t', 'std', 'None', 'True', 'False',
+]);
+
+/** Split into (token, class) pairs. Order matters: longest patterns first. */
+const PATTERN =
+	/("(?:[^"\\]|\\.)*")|('(?:[A-Za-z_][A-Za-z0-9_]*|_))|([A-Za-z_][A-Za-z0-9_]*)|(\s+)|([^\sA-Za-z0-9_])/g;
+
+function tokenise(source: string) {
+	const out: { text: string; cls: string }[] = [];
+	let first = true;
+	let afterColon = false;
+	for (const m of source.matchAll(PATTERN)) {
+		const [text, str, lifetime, word, space, punct] = m;
+		if (str) out.push({ text, cls: 'tok-str' });
+		else if (lifetime) out.push({ text, cls: 'tok-lifetime' });
+		else if (space) out.push({ text, cls: '' });
+		else if (punct) {
+			out.push({ text, cls: 'tok-punct' });
+			if (text === ':') afterColon = true;
+			else if (text === ',' || text === '(' || text === ')') afterColon = false;
+		} else if (word) {
+			if (KEYWORDS.has(word)) out.push({ text, cls: 'tok-kw' });
+			// A parameter name, which is what the entry's formula refers to.
+			else if (typeFirst && afterColon) out.push({ text, cls: 'tok-param' });
+			else if (PRIMITIVES.has(word)) out.push({ text, cls: 'tok-prim' });
+			else if (/^[A-Z]/.test(word)) out.push({ text, cls: 'tok-type' });
+			// Otherwise the declared name is the first identifier that is not a
+			// keyword — what someone scans the page for.
+			else if (first) out.push({ text, cls: 'tok-name' });
+			else out.push({ text, cls: '' });
+			if (!KEYWORDS.has(word)) first = false;
+		}
+	}
+	return out;
+}
+
+const tokens = tokenise(text);
+---
+
+<div class:list={['signature', { 'signature-member': member }]}>
+	{kind && <span class="signature-kind">{kind}</span>}
+	<code>{tokens.map((t) => (t.cls ? <span class={t.cls}>{t.text}</span> : t.text))}</code>
+	{source && <a class="signature-source" href={source}>source</a>}
+</div>
+
+<style>
+	.signature {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.4rem;
+		margin-block: 0.5rem 0.4rem;
+	}
+
+	.signature code {
+		/* Fits its content rather than filling the row, so the source link sits
+		   beside the declaration instead of flush against the column edge. */
+		flex: 0 1 auto;
+		min-width: 0;
+		padding: 0.35rem 0.6rem;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.3rem;
+		background: var(--sl-color-gray-6);
+		color: var(--sl-color-white);
+		font-size: var(--sl-text-xs);
+		line-height: 1.6;
+		/* Long fn-pointer types must wrap rather than scroll the page sideways. */
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+
+	.signature-member code {
+		border: none;
+		border-inline-start: 2px solid var(--sl-color-gray-5);
+		border-radius: 0;
+		background: none;
+		padding-block: 0.1rem;
+	}
+
+	.signature-kind {
+		flex: none;
+		padding: 0.05rem 0.4rem;
+		border-radius: 0.75rem;
+		background: var(--sl-color-accent-low);
+		color: var(--sl-color-white);
+		font-size: 0.65rem;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		white-space: nowrap;
+	}
+
+	.signature-source {
+		flex: none;
+		color: var(--sl-color-gray-3);
+		font-size: var(--sl-text-xs);
+		text-decoration: none;
+		white-space: nowrap;
+	}
+
+	.signature-source:hover {
+		color: var(--sl-color-text-accent);
+		text-decoration: underline;
+	}
+
+	/* Semantic Starlight colours, so both themes stay legible without a second
+	   palette to maintain. */
+	.tok-kw {
+		color: var(--sl-color-purple-high);
+	}
+	.tok-type {
+		color: var(--sl-color-blue-high);
+	}
+	.tok-prim {
+		color: var(--sl-color-green-high);
+	}
+	.tok-str {
+		color: var(--sl-color-orange-high);
+	}
+	.tok-lifetime {
+		color: var(--sl-color-red-high);
+		font-style: italic;
+	}
+	.tok-name {
+		color: var(--sl-color-white);
+		font-weight: 600;
+	}
+	.tok-punct {
+		color: var(--sl-color-gray-3);
+	}
+	/* Parameter names are what the definition below the signature refers to, so
+	   they need to be findable without competing with the declared name. */
+	.tok-param {
+		color: var(--sl-color-white);
+	}
+</style>

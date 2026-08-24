@@ -1,0 +1,157 @@
+---
+// A filter box for a generated registry page.
+//
+// Registry pages put every entry in one document so that a category stays a
+// single page — good for the build, and for Pagefind, which indexes each `###`
+// and links to its anchor. Narrowing *within* a page is what this adds.
+//
+// It is progressive: with JavaScript off the entries are all there, just
+// unfiltered.
+interface Props {
+	count: number;
+	noun: string;
+}
+const { count, noun } = Astro.props;
+---
+
+<div class="filter-box">
+	<input
+		type="search"
+		autocomplete="off"
+		spellcheck="false"
+		placeholder={`Filter ${count} ${noun}s…`}
+		aria-label={`Filter ${noun}s`}
+	/>
+	<p class="filter-box-count" aria-live="polite" data-total={count}>{count} {noun}s</p>
+</div>
+
+<script>
+	for (const filter of document.querySelectorAll<HTMLElement>('.filter-box')) {
+		const input = filter.querySelector('input')!;
+		const status = filter.querySelector<HTMLElement>('.filter-box-count')!;
+		const total = Number(status.dataset.total);
+		const noun = status.textContent!.replace(/^\d+\s*/, '');
+		const entries = Array.from(
+			filter.parentElement!.querySelectorAll<HTMLElement>('.filter-entry'),
+		);
+
+		const apply = () => {
+			const query = input.value.trim().toLowerCase();
+			let shown = 0;
+			for (const entry of entries) {
+				const match = query === '' || (entry.dataset.search ?? '').includes(query);
+				entry.hidden = !match;
+				if (match) shown++;
+			}
+			status.textContent = shown === total ? `${total} ${noun}` : `${shown} of ${total} ${noun}`;
+		};
+
+		input.addEventListener('input', apply);
+		// Restore state on back-navigation, where the browser refills the input.
+		apply();
+	}
+</script>
+
+<style>
+	.filter-box {
+		position: sticky;
+		top: var(--sl-nav-height, 0);
+		z-index: 1;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.5rem 1rem;
+		margin-block: 1.5rem;
+		padding-block: 0.5rem;
+		background: var(--sl-color-bg);
+	}
+
+	.filter-box input {
+		flex: 1 1 16rem;
+		padding: 0.5rem 0.75rem;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.35rem;
+		background: var(--sl-color-black);
+		color: var(--sl-color-white);
+		font-size: var(--sl-text-sm);
+	}
+
+	.filter-box input:focus-visible {
+		outline: 2px solid var(--sl-color-accent-high);
+		outline-offset: 1px;
+	}
+
+	.filter-box-count {
+		margin: 0;
+		color: var(--sl-color-gray-3);
+		font-size: var(--sl-text-xs);
+	}
+</style>
+
+<style is:global>
+	.filter-entry[hidden] {
+		display: none;
+	}
+
+	.filter-entry + .filter-entry {
+		border-top: 1px solid var(--sl-color-hairline);
+	}
+
+	/* Size the heading through its wrapper, not the `h3`.
+	   Starlight reserves end-of-line padding on the heading and pulls the anchor
+	   icon back into it by the same amount, both in `em` resolved against the
+	   wrapper. Setting `font-size` on the `h3` alone shrinks the padding but not
+	   the pull-back, and the icon lands inside the heading text.
+	   The `h3` is `display: inline` for the same reason, so its own margin would
+	   do nothing either. */
+	.filter-entry .sl-heading-wrapper,
+	.filter-entry .sl-heading-wrapper > h3 {
+		font-size: var(--sl-text-lg);
+	}
+
+	.filter-entry .sl-heading-wrapper {
+		margin-top: 1.25rem;
+	}
+
+	.filter-badge {
+		margin-inline-start: 0.5rem;
+		padding: 0.1rem 0.45rem;
+		border-radius: 1rem;
+		background: var(--sl-color-gray-6);
+		color: var(--sl-color-gray-2);
+		font-size: var(--sl-text-xs);
+		white-space: nowrap;
+	}
+
+	/* --- API reference entries -------------------------------------------- */
+
+	/* The members of a type, set apart from its own prose so that a long list of
+	   fields does not read as a continuation of the paragraph above it. */
+	.api-members {
+		margin-block: 1rem 0.5rem;
+		padding-inline-start: 1rem;
+		border-inline-start: 2px solid var(--sl-color-hairline);
+	}
+
+	/* Members carry no heading: at 144 per page they would bury the table of
+	   contents. They still get an id, so the specification can link to one. */
+	.api-member + .api-member {
+		margin-top: 0.9rem;
+		padding-top: 0.9rem;
+		border-top: 1px solid var(--sl-color-hairline);
+	}
+
+	.api-member p {
+		margin-block: 0.3rem;
+		color: var(--sl-color-gray-2);
+		font-size: var(--sl-text-sm);
+	}
+
+	/* Scroll clear of the sticky header, and mark what was linked to. */
+	.api-member:target {
+		scroll-margin-top: calc(var(--sl-nav-height) + 1rem);
+		background: var(--sl-color-accent-low);
+		box-shadow: 0 0 0 0.5rem var(--sl-color-accent-low);
+		border-radius: 0.2rem;
+	}
+</style>

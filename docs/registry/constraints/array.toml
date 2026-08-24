@@ -1,0 +1,203 @@
+[meta]
+order = 2
+label = "Arrays"
+title = "Array constraints"
+description = "Element access, extrema, membership and sorting over arrays of decision variables."
+intro = """
+Constraints that relate an array to one of its elements, to an extremum, or to a rearrangement of
+itself.
+
+Each is named for the type of the array's elements, so `int_array_element` selects from an array of
+integers and `bool_array_element` from an array of Booleans.
+
+There is one element constraint per element type, not two.
+FZnSO's `var int` argument type [accepts a constant](../../../spec/types-and-values/#types), so an
+array of constants needs no separate identifier.
+
+Wherever a constraint names a position in an array, an `offset` argument travels with that array and
+gives the number its first element is at, so `index` is read in the caller's own numbering rather
+than in [the flat list's](../../../spec/types-and-values/#a-list-is-flat-and-one-based).
+Pass `1` for an array numbered from one; nothing here assumes it.
+"""
+
+# ---------------------------------------------------------------------------
+# Element access
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "int_array_element"
+args = ["list of var int: xs", "int: offset", "var int: index", "var int: value"]
+reified = ["int_array_element_reif"]
+summary = "Selects the element of an integer array at a variable index."
+definition = 'value = xs_{index - offset + 1}'
+
+[[entry]]
+ident = "bool_array_element"
+args = ["list of var bool: xs", "int: offset", "var int: index", "var bool: value"]
+reified = ["bool_array_element_reif"]
+summary = "Selects the element of a Boolean array at a variable index."
+definition = 'value \leftrightarrow xs_{index - offset + 1}'
+
+[[entry]]
+ident = "float_array_element"
+args = ["list of var float: xs", "int: offset", "var int: index", "var float: value"]
+reified = ["float_array_element_reif"]
+summary = "Selects the element of a float array at a variable index."
+definition = 'value = xs_{index - offset + 1}'
+
+[[entry]]
+ident = "set_of_int_array_element"
+args = ["list of var set of int: xs", "int: offset", "var int: index", "var set of int: value"]
+summary = "Selects the element of an array of sets at a variable index."
+definition = 'value = xs_{index - offset + 1}'
+
+# ---------------------------------------------------------------------------
+# Extrema
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "int_array_maximum"
+args = ["var int: value", "list of var int: xs"]
+summary = "The value is the largest element of a non-empty array."
+definition = 'value = \max_{i} xs_i'
+notes = "`xs` must be non-empty. The binary maximum is this constraint with a two-element list."
+
+[[entry]]
+ident = "int_array_minimum"
+args = ["var int: value", "list of var int: xs"]
+summary = "The value is the smallest element of a non-empty array."
+definition = 'value = \min_{i} xs_i'
+notes = "`xs` must be non-empty."
+
+[[entry]]
+ident = "float_array_maximum"
+args = ["var float: value", "list of var float: xs"]
+summary = "The value is the largest element of a non-empty array."
+definition = 'value = \max_{i} xs_i'
+
+[[entry]]
+ident = "float_array_minimum"
+args = ["var float: value", "list of var float: xs"]
+summary = "The value is the smallest element of a non-empty array."
+definition = 'value = \min_{i} xs_i'
+
+[[entry]]
+ident = "int_array_arg_max"
+args = ["list of var int: xs", "int: offset", "var int: index"]
+summary = "The index holds the position of a largest element, choosing the first on a tie."
+definition = 'xs_{index - offset + 1} = \max_{j} xs_j \;\wedge\; \forall j < index : xs_{j - offset + 1} < xs_{index - offset + 1}'
+notes = "`xs` must be non-empty. `index` is given in the caller's numbering, which starts at `offset`. Ties resolve to the lowest index, so the result is unique."
+
+[[entry]]
+ident = "int_array_arg_min"
+args = ["list of var int: xs", "int: offset", "var int: index"]
+summary = "The index holds the position of a smallest element, choosing the first on a tie."
+definition = 'xs_{index - offset + 1} = \min_{j} xs_j \;\wedge\; \forall j < index : xs_{j - offset + 1} > xs_{index - offset + 1}'
+notes = "`xs` must be non-empty. `index` is given in the caller's numbering, which starts at `offset`."
+
+[[entry]]
+ident = "bool_array_arg_max"
+args = ["list of var bool: xs", "int: offset", "var int: index"]
+summary = "The index holds the position of the first element that holds."
+definition = 'xs_{index - offset + 1} \;\wedge\; \forall j < index : \neg xs_{j - offset + 1}'
+notes = "`index` is given in the caller's numbering, which starts at `offset`."
+
+[[entry]]
+ident = "bool_array_arg_min"
+args = ["list of var bool: xs", "int: offset", "var int: index"]
+summary = "The index holds the position of the first element that does not hold."
+definition = '\neg xs_{index - offset + 1} \;\wedge\; \forall j < index : xs_{j - offset + 1}'
+notes = "`index` is given in the caller's numbering, which starts at `offset`."
+
+[[entry]]
+ident = "float_array_arg_max"
+args = ["list of var float: xs", "int: offset", "var int: index"]
+summary = "The index holds the position of a largest element, choosing the first on a tie."
+definition = 'xs_{index - offset + 1} = \max_{j} xs_j \;\wedge\; \forall j < index : xs_{j - offset + 1} < xs_{index - offset + 1}'
+
+[[entry]]
+ident = "float_array_arg_min"
+args = ["list of var float: xs", "int: offset", "var int: index"]
+summary = "The index holds the position of a smallest element, choosing the first on a tie."
+definition = 'xs_{index - offset + 1} = \min_{j} xs_j \;\wedge\; \forall j < index : xs_{j - offset + 1} > xs_{index - offset + 1}'
+
+# ---------------------------------------------------------------------------
+# Value lookup
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "int_array_arg_val"
+args = ["list of var int: xs", "int: offset", "var int: value", "var int: index"]
+summary = "The index holds the first position at which the array takes the given value."
+definition = 'xs_{index - offset + 1} = value \;\wedge\; \forall j < index : xs_{j - offset + 1} \neq value'
+
+[[entry]]
+ident = "bool_array_arg_val"
+args = ["list of var bool: xs", "int: offset", "var bool: value", "var int: index"]
+summary = "The index holds the first position at which the array takes the given value."
+definition = '(xs_{index - offset + 1} \leftrightarrow value) \;\wedge\; \forall j < index : \neg (xs_{j - offset + 1} \leftrightarrow value)'
+
+[[entry]]
+ident = "float_array_arg_val"
+args = ["list of var float: xs", "int: offset", "var float: value", "var int: index"]
+summary = "The index holds the first position at which the array takes the given value."
+definition = 'xs_{index - offset + 1} = value \;\wedge\; \forall j < index : xs_{j - offset + 1} \neq value'
+
+[[entry]]
+ident = "int_array_member"
+args = ["list of var int: xs", "var int: value"]
+reified = ["int_array_member_reif"]
+summary = "The value occurs somewhere in the array."
+definition = '\exists i : xs_i = value'
+
+[[entry]]
+ident = "bool_array_member"
+args = ["list of var bool: xs", "var bool: value"]
+reified = ["bool_array_member_reif"]
+summary = "The value occurs somewhere in the array."
+definition = '\exists i : xs_i \leftrightarrow value'
+
+[[entry]]
+ident = "float_array_member"
+args = ["list of var float: xs", "var float: value"]
+reified = ["float_array_member_reif"]
+summary = "The value occurs somewhere in the array."
+definition = '\exists i : xs_i = value'
+
+[[entry]]
+ident = "set_of_int_array_member"
+args = ["list of var set of int: xs", "var set of int: value"]
+reified = ["set_of_int_array_member_reif"]
+summary = "The value occurs somewhere in the array."
+definition = '\exists i : xs_i = value'
+
+# ---------------------------------------------------------------------------
+# Rearrangement
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "int_array_write"
+args = ["list of var int: xs", "int: offset", "var int: index", "var int: value", "list of var int: result"]
+summary = "The result equals the array with one position overwritten."
+definition = 'result_j = \begin{cases} value & \text{if } j = index - offset + 1 \\ xs_j & \text{otherwise} \end{cases}'
+notes = "`xs` and `result` must have equal length. The array analogue of an assignment, for modelling state that changes step by step."
+
+[[entry]]
+ident = "int_array_sort"
+args = ["list of var int: xs", "list of var int: ys"]
+summary = "The second array is the first sorted into non-decreasing order."
+definition = '\left( \forall v : \lvert \{\, i \mid xs_i = v \,\} \rvert = \lvert \{\, i \mid ys_i = v \,\} \rvert \right) \;\wedge\; \forall i < j : ys_i \leq ys_j'
+notes = "`xs` and `ys` must have equal length."
+
+[[entry]]
+ident = "int_array_arg_sort"
+args = ["list of var int: xs", "int: offset", "list of var int: permutation"]
+summary = "The permutation lists the positions of the array's elements in sorted order."
+definition = '\forall i < j : xs_{permutation_i - offset + 1} \leq xs_{permutation_j - offset + 1}'
+notes = "`permutation` holds positions in `xs`, numbered from `offset`. Ties resolve to the lower original position, so the result is unique."
+
+[[entry]]
+ident = "float_array_arg_sort"
+args = ["list of var float: xs", "int: offset", "list of var int: permutation"]
+summary = "The permutation lists the positions of the array's elements in sorted order."
+definition = '\forall i < j : xs_{permutation_i - offset + 1} \leq xs_{permutation_j - offset + 1}'

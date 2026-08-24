@@ -1,4 +1,10 @@
 //! Dynamic loading of FZnSO solver libraries.
+//!
+//! Solvers are found by name rather than by path, from a fixed list of
+//! directories. The search order, the per-platform locations, and the rules a
+//! file name must satisfy for a name to be recovered from it are specified at
+//! <https://fznso.minizinc.dev/spec/discovery/> and
+//! <https://fznso.minizinc.dev/spec/naming-and-versioning/>.
 
 use std::{ffi, mem, sync::Arc};
 

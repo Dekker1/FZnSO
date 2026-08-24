@@ -1,0 +1,236 @@
+---
+title: Quickstart
+description: The shortest useful FZnSO program, from both sides of the interface.
+sidebar:
+  order: 3
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+The interface has two sides, with a quickstart for each.
+
+## Using a solver
+
+Find a solver by name, describe a small problem, and print the solutions.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+import fznso
+
+# 1. Find and open a solver library, then create an instance.
+solver = fznso.Library.find("example_solver").create_solver()
+
+# 2. Describe the problem.
+model = fznso.LayeredModel()
+var_int = fznso.Type("int", decision=True)
+a = model.add_decision(var_int, range(3, 21), name="a")   # a in 3..20
+b = model.add_decision(var_int, range(10, 21), name="b")  # b in 10..20
+model.add_constraint("int_lin_le", [[-1], [a], 0])          # a >= 0
+model.set_objective("minimize", a)
+
+# 3. Configure and run.
+solver.option_set("time_limit", 10_000)  # milliseconds
+status = solver.run(model, on_solution=lambda s: print(s[a], s[b]))
+
+print(status)  # Status.Complete
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+use fznso::{LayeredModel, Library, OwnedValue, RangeList, Solver, Status, Type, TypeBase};
+
+let lib = unsafe { Library::find("example_solver") }?;
+let mut solver = lib.create_solver();
+
+let var_int = Type::new(TypeBase::FznsoTypeBaseInt).decision(true);
+let mut model = LayeredModel::default();
+let a = model.add_decision(
+    var_int,
+    OwnedValue::IntSet(RangeList::from(3_i64..=20)),
+    Some("a".into()),
+    false,
+    true,
+    vec![],
+);
+let _ = model.add_constraint(
+    "int_lin_le",
+    vec![
+        OwnedValue::IntList(vec![-1]),
+        OwnedValue::List(vec![OwnedValue::Decision(a)]),
+        OwnedValue::Int(0),
+    ],
+    None,
+    vec![],
+);
+
+solver.option_set("time_limit", (&10_000_i64).into())?;
+let status = solver.run(
+    &model,
+    &mut |sol: &fznso::DynSolution<'_>| println!("{}", sol.value(0).get_int()),
+    None,
+    fznso::dont_interrupt(),
+);
+assert!(matches!(status, Status::Complete));
+```
+
+`Library::find` is `unsafe` because opening a library runs its initialisers: you are trusting the file.
+Everything after that is safe.
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+#include "fznso.hpp"
+
+auto library = fznso::Library::find("example_solver");
+fznso::DynSolver solver = library->create_solver();
+
+const fznso::Type INT_VAR = fznso::Type{FznsoTypeBaseInt}.decision(true);
+fznso::LayeredModel model;
+fznso::Decision a = model.add_decision(INT_VAR, fznso::OwnedValue::int_range(3, 20), "a");
+model.add_decision(INT_VAR, fznso::OwnedValue::int_range(10, 20), "b");
+model.add_constraint("int_lin_le", {fznso::OwnedValue::int_list({-1}),
+                                    fznso::OwnedValue::list({fznso::OwnedValue{a}}),
+                                    fznso::OwnedValue{std::int64_t{0}}});
+model.set_objective("minimize", fznso::OwnedValue{a});
+
+solver.option_set("time_limit", fznso::OwnedValue{std::int64_t{10000}});
+fznso::Status status = solver.run(model, [&](const fznso::Solution& sol) {
+    std::cout << sol[a].as_int() << '\n';
+});
+```
+
+The C++ bindings are header-only: `#include "fznso.hpp"` and add `c/` and `cpp/` to your include path.
+Nothing to link.
+
+</TabItem>
+</Tabs>
+
+:::caution
+The solution is valid **only inside that callback** — copy out whatever you want to keep.
+[Nothing transfers ownership](../../spec/lifetimes-and-ownership/#nothing-transfers-ownership) is the rule this is one case of.
+:::
+
+Next: [Using a solver](../../guides/using-a-solver/) for the complete workflow, or [Installing solvers](../../guides/installing-solvers/) if `find` cannot see yours.
+
+## Implementing a solver
+
+Implement the interface for your own solver, and every FZnSO application can drive it.
+
+<Tabs syncKey="lang">
+<TabItem label="Rust">
+
+```rust
+use fznso::{Model, Solution, Solver, SolverType, Status, Value};
+
+struct MySolution;
+impl Solution for MySolution {
+    fn value(&self, index: usize) -> Value<'_> { todo!() }
+    fn statistic(&self, name: &str) -> Value<'_> { todo!() }
+}
+
+struct MySolver;
+
+impl Solver for MySolver {
+    type Solution<'s> = MySolution where MySolver: 's;
+    fn option_get(&self, name: &str) -> Value<'_> { todo!() }
+    fn option_set(&mut self, name: &str, value: Value<'_>) -> Result<(), String> { todo!() }
+    fn run<M, F, G, H>(
+        &mut self,
+        model: &M,
+        on_solution: &mut F,
+        on_message: Option<&mut G>,   // `None` — nobody is listening, skip building diagnostics
+        should_stop: Option<&H>,      // `None` — the caller never cancels, skip polling
+    ) -> Status
+    where
+        M: Model + Sync,
+        F: for<'s> FnMut(&'s MySolution) + Send,
+        G: FnMut(&str, Value<'_>) + Send,
+        H: Fn() -> bool + Send + Sync,
+    { todo!() }
+}
+
+// What the solver declares. Every capability list defaults to empty.
+impl SolverType for MySolver {
+    fn new() -> Self { MySolver }
+}
+
+// Writes all thirteen entry points as `fznso_mysolver_…`.
+fznso::fznso_export!(MySolver, "mysolver");
+```
+
+Build as a `cdylib`, and the file name must match the name you passed:
+
+```toml
+[lib]
+crate-type = ["cdylib"]
+name = "mysolver"
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+#include "fznso_export.hpp"
+
+class MySolver final : public fznso::Solver {
+public:
+    fznso::Value option_get(std::string_view name) const override { return {}; }
+
+    std::optional<std::string> option_set(std::string_view name, fznso::Value v) override {
+        return "unknown option";  // a message rejects it; std::nullopt accepts
+    }
+
+    fznso::Status run(const fznso::Model& model, fznso::SolutionSink& solutions,
+                      fznso::MessageSink& messages, const fznso::StopSignal& stop) override {
+        if (stop.requested()) {
+            return fznso::Status{fznso::Status::Kind::Incomplete, {}};
+        }
+        // `wanted()` is false when nobody is listening — skip *building* the message.
+        if (messages.wanted()) {
+            messages.message("log", fznso::Value{std::string_view{"searching"}});
+        }
+        // … search, calling solutions.solution(…) with a SolutionSource per answer …
+        return fznso::Status{fznso::Status::Kind::Complete, {}};
+    }
+
+    // Capability lists are static and default to empty; hide the ones you support.
+    static FznsoOptionList option_list() { return {0, nullptr}; }
+};
+
+// Writes all thirteen entry points as `fznso_mysolver_…`.
+FZNSO_EXPORT_SOLVER(MySolver, mysolver)
+```
+
+Build as a shared library named `libmysolver.so` / `libmysolver.dylib` / `mysolver.dll`.
+
+</TabItem>
+<TabItem label="C">
+
+Copy [`c/fznso_solver_template.c`](../../spec/entry-points/#the-template), replace every `NAME` with your solver's name, and fill in the bodies.
+
+```c
+#include "fznso_types.h"
+
+uint32_t fznso_mysolver_abi_version(void) { return FZNSO_ABI_VERSION; }
+
+FznsoStatus fznso_mysolver_solver_run(
+    FznsoSolver *solver, FznsoModelRef model, void *context,
+    void (*on_solution)(void *, FznsoSolutionRef),
+    void (*on_message)(void *, FznsoStr, FznsoValueRef),
+    bool (*should_stop)(void *)) {
+    /* … */
+    return FznsoComplete;
+}
+```
+
+</TabItem>
+</Tabs>
+
+The name in the symbols must match the library's file name; see [Naming & versioning](../../spec/naming-and-versioning/).
+
+Next: [Implementing a solver](../../guides/implementing-a-solver/) for the complete walkthrough with a working example.

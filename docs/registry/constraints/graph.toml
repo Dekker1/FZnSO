@@ -1,0 +1,273 @@
+[meta]
+order = 6
+label = "Graphs & tables"
+title = "Graph & extensional constraints"
+description = "Graph structure constraints, and constraints defined by an explicit table or automaton."
+intro = '''
+Two families that share a shape: both describe a solution by reference to a structure given as data
+rather than by an arithmetic relation.
+
+**Graph constraints** take a fixed graph as two parallel arrays, `from` and `to`, one entry per edge.
+Two Boolean arrays then select a subgraph: `nodes[v]` says vertex *v* is in it, and `edges[e]` says
+edge *e* is.
+The flow constraints are the exception: they decide a quantity per arc rather than a selection, so
+they take a `flow` array in place of the two selectors.
+`node_offset` is the number the caller's vertices start from, since the values in `from` and `to`
+index `nodes` and a flat list cannot carry that numbering itself.
+
+**Extensional constraints** take the permitted assignments themselves: a table of tuples, or an
+automaton that accepts them.
+
+The graph constraints share a `graph_` prefix rather than a type prefix, because what they constrain
+is the *structure* a subgraph takes and not the type of anything in it.
+A constraint over directed edges takes a `_directed` suffix, so `graph_tree` and
+`graph_tree_directed` sit together rather than being filed under `t` and `d`.
+The extensional constraints are named for their element type, as everything else is.
+
+`bounded_path` and its relatives are absent: bounding a path's weight is `graph_path` alongside a
+`bool_lin_le` over the edge selectors, which introduces nothing new.
+'''
+
+
+# ---------------------------------------------------------------------------
+# Notation used by the definitions on this page
+# ---------------------------------------------------------------------------
+
+[[notation]]
+tex = 'V'
+means = "the vertices of the given graph"
+
+[[notation]]
+tex = 'o'
+is = '= node_offset'
+means = "the number the caller's vertices start from"
+
+[[notation]]
+tex = 'N'
+is = '= \{\, v \in V \mid nodes_{v - o + 1} \,\}'
+means = "the selected vertices"
+
+[[notation]]
+tex = 'E'
+is = '= \{\, e \mid edges_e \,\}'
+means = "the selected edges"
+
+[[notation]]
+tex = 'u \sim v'
+is = '\iff \exists e \in E : \{ from_e, to_e \} = \{ u, v \}'
+means = "a selected edge joins them"
+
+[[notation]]
+tex = 'u \to v'
+is = '\iff \exists e \in E : from_e = u \wedge to_e = v'
+means = "a selected arc runs from one to the other"
+
+[[notation]]
+tex = 'u \rightsquigarrow v'
+means = "reachability: the reflexive-transitive closure of the adjacency above, taken over arcs in the directed constraints"
+
+[[notation]]
+tex = 'u \rightsquigarrow^{+} v'
+means = "its transitive closure, so a vertex reaching itself needs a genuine cycle"
+
+[[notation]]
+tex = '\deg(v)'
+is = '= \lvert \{\, e \in E \mid v \in \{ from_e, to_e \} \,\} \rvert'
+means = "the degree, how many selected edges touch it"
+
+[[notation]]
+tex = '\deg^{-}(v)'
+is = '= \lvert \{\, e \in E \mid to_e = v \,\} \rvert'
+means = "the in-degree, how many selected arcs end at it"
+
+[[notation]]
+tex = '[P]'
+is = '= 1 \text{ if } P,\; 0 \text{ otherwise}'
+means = "the Iverson bracket"
+
+
+# ---------------------------------------------------------------------------
+# Circuits
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "int_circuit"
+args = ["list of var int: xs", "int: offset"]
+summary = "The successor array describes a single circuit visiting every node exactly once."
+definition = '\left( \forall i \neq j : xs_i \neq xs_j \right) \;\wedge\; \lvert \{\, \sigma^{k}(v) \mid 1 \leq k \leq \lvert xs \rvert \,\} \rvert = \lvert xs \rvert \quad \text{where } \sigma(i) = xs_{i - offset + 1}'
+notes = "`xs` is numbered from `offset`, and its values name nodes in that same numbering. The Hamiltonian-circuit constraint behind most vehicle-routing models."
+
+[[entry]]
+ident = "int_subcircuit"
+args = ["list of var int: xs", "int: offset"]
+summary = "The successor array describes a single circuit over a subset of the nodes, with the rest as self-loops."
+definition = '\left( \forall i \neq j : xs_i \neq xs_j \right) \;\wedge\; \lvert \{\, \sigma^{k}(v) \mid 1 \leq k \leq \lvert F \rvert \,\} \rvert = \lvert F \rvert \quad \text{where } \sigma(i) = xs_{i - offset + 1},\; F = \{\, i \mid \sigma(i) \neq i \,\},\; v \in F'
+notes = "`xs` is numbered from `offset`. A node that maps to itself is unvisited; unlike `int_circuit`, nodes may be left out."
+
+# ---------------------------------------------------------------------------
+# Subgraph structure
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "graph_subgraph"
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of var bool: nodes", "list of var bool: edges"]
+summary = "The selected edges and nodes form a subgraph: every selected edge has both endpoints selected."
+definition = '\forall e \in E : nodes_{from_e - node_offset + 1} \;\wedge\; nodes_{to_e - node_offset + 1}'
+notes = "The well-formedness condition every other graph constraint here assumes."
+
+[[entry]]
+ident = "graph_connected"
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of var bool: nodes", "list of var bool: edges"]
+summary = "The selected subgraph is connected."
+definition = '\forall u, v \in N : u \rightsquigarrow v'
+
+[[entry]]
+ident = "graph_connected_directed"
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of var bool: nodes", "list of var bool: edges"]
+summary = "The selected directed subgraph is strongly connected."
+definition = '\forall u, v \in N : u \rightsquigarrow v'
+
+[[entry]]
+ident = "graph_reachable"
+args = ["list of int: from", "list of int: to", "int: node_offset", "var int: root", "list of var bool: nodes", "list of var bool: edges"]
+summary = "Every selected node is reachable from the root in the selected subgraph."
+definition = '\forall v \in N : root \rightsquigarrow v'
+
+[[entry]]
+ident = "graph_reachable_directed"
+args = ["list of int: from", "list of int: to", "int: node_offset", "var int: root", "list of var bool: nodes", "list of var bool: edges"]
+summary = "Every selected node is reachable from the root along the arcs' direction."
+definition = '\forall v \in N : root \rightsquigarrow v'
+
+[[entry]]
+ident = "graph_acyclic_directed"
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of var bool: nodes", "list of var bool: edges"]
+summary = "The selected directed subgraph contains no cycle, making it a DAG."
+definition = '\nexists v \in N : v \rightsquigarrow^{+} v'
+
+# ---------------------------------------------------------------------------
+# Paths and trees
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "graph_path"
+args = ["list of int: from", "list of int: to", "int: node_offset", "var int: source", "var int: sink", "list of var bool: nodes", "list of var bool: edges"]
+summary = "The selected subgraph is a simple path from the source to the sink."
+definition = '\left( \forall u, v \in N : u \rightsquigarrow v \right) \;\wedge\; \forall v \in N : \deg(v) = 2 - [\, v = source \,] - [\, v = sink \,]'
+
+[[entry]]
+ident = "graph_path_directed"
+args = ["list of int: from", "list of int: to", "int: node_offset", "var int: source", "var int: sink", "list of var bool: nodes", "list of var bool: edges"]
+summary = "The selected subgraph is a simple directed path from the source to the sink."
+definition = '\left( source \rightsquigarrow sink \right) \;\wedge\; \forall v \in N : \deg^{-}(v) = [\, v \neq source \,] \;\wedge\; \lvert E \rvert = \lvert N \rvert - 1'
+
+
+
+[[entry]]
+ident = "graph_tree"
+args = ["list of int: from", "list of int: to", "int: node_offset", "var int: root", "list of var bool: nodes", "list of var bool: edges"]
+summary = "The selected subgraph is a tree rooted at the given node."
+definition = '\left( \forall u, v \in N : u \rightsquigarrow v \right) \;\wedge\; \lvert E \rvert = \lvert N \rvert - 1 \;\wedge\; root \in N'
+
+[[entry]]
+ident = "graph_tree_directed"
+args = ["list of int: from", "list of int: to", "int: node_offset", "var int: root", "list of var bool: nodes", "list of var bool: edges"]
+summary = "The selected subgraph is a directed tree with all arcs pointing away from the root."
+definition = '\forall v \in N : \deg^{-}(v) = [\, v \neq root \,] \;\wedge\; root \rightsquigarrow v'
+
+[[entry]]
+ident = "graph_steiner_tree"
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: weight", "list of var bool: nodes", "list of var bool: edges", "var int: weight_bound"]
+summary = "The selected subgraph is a tree whose total edge weight is within the given bound."
+definition = '\left( \forall u, v \in N : u \rightsquigarrow v \right) \;\wedge\; \lvert E \rvert = \lvert N \rvert - 1 \;\wedge\; \sum_{e \in E} weight_e \leq weight_bound'
+notes = "Which nodes to include is part of the decision, which is what makes it a Steiner tree rather than a spanning tree."
+
+[[entry]]
+ident = "graph_steiner_tree_directed"
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: weight", "var int: root", "list of var bool: nodes", "list of var bool: edges", "var int: weight_bound"]
+summary = "The selected subgraph is a directed tree from the root whose total arc weight is within the given bound."
+definition = '\left( \forall v \in N : \deg^{-}(v) = [\, v \neq root \,] \;\wedge\; root \rightsquigarrow v \right) \;\wedge\; \sum_{e \in E} weight_e \leq weight_bound'
+
+[[entry]]
+ident = "graph_spanning_tree"
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: weight", "list of var bool: edges", "var int: weight_bound"]
+summary = "The selected edges span every node of the graph, with total weight within the given bound."
+definition = 'N = V \;\wedge\; \left( \forall u, v \in V : u \rightsquigarrow v \right) \;\wedge\; \lvert E \rvert = \lvert V \rvert - 1 \;\wedge\; \sum_{e \in E} weight_e \leq weight_bound'
+notes = "Unlike `graph_steiner_tree`, every node must be covered."
+
+[[entry]]
+ident = "graph_spanning_tree_directed"
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: weight", "var int: root", "list of var bool: edges", "var int: weight_bound"]
+summary = "The selected arcs form a spanning arborescence from the root, with total weight within the given bound."
+definition = '\forall v \in V : \deg^{-}(v) = [\, v \neq root \,] \;\wedge\; root \rightsquigarrow v \;\wedge\; \sum_{e \in E} weight_e \leq weight_bound'
+
+# ---------------------------------------------------------------------------
+# Flow
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "graph_network_flow"
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: balance", "list of var int: flow"]
+summary = "The flow on each arc satisfies the given supply and demand at every node."
+definition = '\forall v : \sum_{e \,:\, to_e = v} flow_e \;-\; \sum_{e \,:\, from_e = v} flow_e \;=\; balance_{v - node_offset + 1}'
+notes = "The graph is given as `from` and `to`, one entry per arc, the same way every other constraint here takes one. `balance` is numbered from `node_offset`: a positive value is demand, a negative one supply. Unlike the rest of the family there are no selector arrays, because every arc carries a flow rather than being in or out."
+
+[[entry]]
+ident = "graph_network_flow_cost"
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: balance", "list of int: weight", "list of var int: flow", "var int: total_cost"]
+summary = "As graph_network_flow, and the total cost is the weighted sum of the flows."
+definition = 'total_cost = \sum_{e} weight_e \cdot flow_e'
+
+# ---------------------------------------------------------------------------
+# Extensional
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "int_table"
+args = ["list of var int: xs", "list of int: tuples"]
+summary = "The assignment to the array appears as a row of the given table."
+definition = '\exists r : \forall j : xs_j = tuples_{(r-1) \cdot \lvert xs \rvert + j}'
+notes = "`tuples` is the table flattened row-major, one permitted assignment per row. No row length is needed: the rows are as long as `xs`. The most direct way to state a relation with no closed form."
+
+
+[[entry]]
+ident = "bool_table"
+args = ["list of var bool: xs", "list of bool: tuples"]
+reified = ["bool_table_reif", "bool_table_imp"]
+summary = "The Boolean assignment appears as a row of the given table."
+definition = '\exists r : \forall j : xs_j \leftrightarrow tuples_{(r-1) \cdot \lvert xs \rvert + j}'
+notes = "`tuples` is the table flattened row-major; the rows are as long as `xs`."
+
+[[entry]]
+ident = "int_regular"
+args = ["list of var int: xs", "int: states", "int: alphabet", "list of int: transition", "int: initial", "set of int: accepting"]
+summary = "The array, read as a string, is accepted by the given deterministic automaton."
+definition = 'q_0 = initial \;\wedge\; q_j = transition_{q_{j-1},\, xs_j} \;\wedge\; q_{\lvert xs \rvert} \in accepting'
+notes = "`transition` is the state-by-symbol table flattened row-major, `states` rows of `alphabet` entries, so no row length travels with it. A transition to 0 means the string is rejected. States are numbered from 1, and symbols run from 1 to `alphabet`."
+
+[[entry]]
+ident = "int_regular_nfa"
+args = ["list of var int: xs", "int: states", "int: alphabet", "list of set of int: transition", "int: initial", "set of int: accepting"]
+summary = "The array, read as a string, is accepted by the given non-deterministic automaton."
+definition = '\exists q : q_0 = initial \;\wedge\; q_j \in transition_{q_{j-1},\, xs_j} \;\wedge\; q_{\lvert xs \rvert} \in accepting'
+notes = "As `int_regular`, but each transition gives a set of possible next states."
+
+[[entry]]
+ident = "int_regular_cost"
+args = ["list of var int: xs", "int: states", "int: alphabet", "list of int: transition", "int: initial", "set of int: accepting", "list of int: weight", "var int: total_cost"]
+summary = "As int_regular, and the total cost sums the weight of each transition taken."
+definition = 'total_cost = \sum_{j} weight_{q_{j-1},\, xs_j}'
+
+[[entry]]
+ident = "int_mdd"
+args = ["list of var int: xs", "int: nodes", "list of int: level", "int: edges", "list of int: from", "list of set of int: label", "list of int: to"]
+summary = "The assignment corresponds to a root-to-leaf path through the given multi-valued decision diagram."
+definition = '\exists e_1, \ldots, e_{\lvert xs \rvert} : from_{e_1} = 1 \;\wedge\; \forall j : \left( to_{e_j} = from_{e_{j+1}} \;\wedge\; xs_j \in label_{e_j} \right)'
+notes = "`level` gives each node's layer, and `from`, `label` and `to` describe the edges. Nodes are numbered from 1, so no offset travels with them. A compact alternative to `int_table` when the relation factorises."
+
+
+[[entry]]
+ident = "int_mdd_cost"
+args = ["list of var int: xs", "int: nodes", "list of int: level", "int: edges", "list of int: from", "list of set of int: label", "list of int: weight", "list of int: to", "var int: total_cost"]
+summary = "As int_mdd, and the total cost sums the weight of each edge on the chosen path."
+definition = '\exists e_1, \ldots, e_{\lvert xs \rvert} : from_{e_1} = 1 \;\wedge\; \left( \forall j : to_{e_j} = from_{e_{j+1}} \;\wedge\; xs_j \in label_{e_j} \right) \;\wedge\; total_cost = \sum_{j} weight_{e_j}'

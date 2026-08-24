@@ -1,0 +1,72 @@
+---
+// A mathematical definition, typeset at build time.
+//
+// The LaTeX arrives as a prop rather than as markdown, for the same reason
+// `Signature.astro` takes its text that way: `{`, `\` and `_` are all MDX
+// syntax, and a formula is nothing but those characters.
+//
+// `throwOnError` is deliberate. A definition that does not parse is a broken
+// definition, and the build should say so rather than ship a red error string
+// into the documentation.
+
+import katex from 'katex';
+
+interface Props {
+	/** The definition, as LaTeX. */
+	tex: string;
+	/** Rendered under the formula, e.g. the quantifier's index set. */
+	where?: string;
+	/** Set in running text — a notation table cell rather than a definition. */
+	inline?: boolean;
+}
+
+const { tex, where, inline } = Astro.props;
+
+const html = katex.renderToString(tex, {
+	displayMode: !inline,
+	throwOnError: true,
+	strict: 'warn',
+});
+---
+
+{
+	inline ? (
+		<Fragment set:html={html} />
+	) : (
+		<div class="formula">
+			<Fragment set:html={html} />
+			{where && <p class="formula-where">{where}</p>}
+		</div>
+	)
+}
+
+<style>
+	.formula {
+		margin-block: 0.75rem;
+		padding: 0.6rem 0.8rem;
+		border-inline-start: 3px solid var(--sl-color-accent);
+		border-radius: 0.2rem;
+		background: var(--sl-color-gray-6);
+		/* A long quantified formula scrolls rather than widening the page. */
+		overflow-x: auto;
+	}
+
+	/* KaTeX centres display math from its own stylesheet, on the inner element.
+	   Left-aligned sits better beside the prose it defines. */
+	.formula :global(.katex-display),
+	.formula :global(.katex-display > .katex) {
+		margin: 0;
+		text-align: left;
+	}
+
+	.formula :global(.katex) {
+		font-size: 1.05em;
+		color: var(--sl-color-white);
+	}
+
+	.formula-where {
+		margin: 0.4rem 0 0;
+		color: var(--sl-color-gray-3);
+		font-size: var(--sl-text-xs);
+	}
+</style>

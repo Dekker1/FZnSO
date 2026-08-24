@@ -1,0 +1,165 @@
+[meta]
+order = 12
+title = "Statistics"
+description = "Statistic identifiers a solver can report about its search, from a solution or from the solver instance."
+intro = """
+A solver declares the statistics it can report through `fznso_<name>_statistic_list`.
+Each carries a type and two independent flags saying *where* it can be read from:
+
+- **`solution`** — read with `FznsoSolutionMethods::statistic` during `on_solution`, describing the
+  search at the moment that solution was found;
+- **`solver`** — read with `fznso_<name>_solver_statistic`, describing the instance, and still
+  readable after a run has finished.
+
+At least one flag must be set; both may be.
+An identifier a solver did not declare, or one read from the wrong side, yields `FznsoValueAbsent`
+rather than an error.
+
+Counters are cumulative over the life of the solver instance, across runs, unless a solver documents
+otherwise.
+
+## Where these come from
+
+These are the [standard FlatZinc statistics](https://docs.minizinc.dev/en/stable/fzn-spec.html#statistics-output),
+respelled in this registry's conventions: `snake_case` rather than `camelCase`, and the type-prefixed
+pair `int_objective` / `float_objective` where FlatZinc's untyped text output could report one name
+as either.
+
+So `openNodes` is `open_nodes`, `peakDepth` is `peak_depth`, `solveTime` is `solve_time`.
+The one substantive rename is FlatZinc's `variables`, which is `decisions` here, because that is what
+the rest of this interface calls them.
+"""
+
+# ---------------------------------------------------------------------------
+# Search
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "nodes"
+type = "int"
+summary = "Search tree nodes explored."
+
+[[entry]]
+ident = "open_nodes"
+type = "int"
+summary = "Search tree nodes created but not yet explored."
+
+[[entry]]
+ident = "failures"
+type = "int"
+summary = "Leaf nodes that failed, where propagation proved no solution lies below."
+
+[[entry]]
+ident = "restarts"
+type = "int"
+summary = "Times the solver restarted the search from the root."
+
+[[entry]]
+ident = "peak_depth"
+type = "int"
+summary = "Greatest search depth reached."
+
+[[entry]]
+ident = "backjumps"
+type = "int"
+summary = "Times the solver jumped back past more than one decision."
+
+[[entry]]
+ident = "nogoods"
+type = "int"
+summary = "Nogoods recorded during the search."
+
+[[entry]]
+ident = "solutions"
+type = "int"
+summary = "Solutions reported so far, counting from zero for the first."
+
+# ---------------------------------------------------------------------------
+# Objective
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "int_objective"
+type = "int"
+summary = "The objective value of the current solution."
+notes = "Declared by a solver whose objective is an integer; one optimising a float declares `float_objective` instead."
+
+[[entry]]
+ident = "float_objective"
+type = "float"
+summary = "The objective value of the current solution."
+
+[[entry]]
+ident = "int_objective_bound"
+type = "int"
+summary = "The best dual bound the solver has proved on the objective."
+notes = "The gap between this and `int_objective` is what remains to be closed. The same value is pushed as it improves through the `progress.bound` message scope."
+
+[[entry]]
+ident = "float_objective_bound"
+type = "float"
+summary = "The best dual bound the solver has proved on the objective."
+
+# ---------------------------------------------------------------------------
+# Model size
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "decisions"
+type = "int"
+summary = "Decision variables the solver holds after posting the model, which may differ from the model's own count once simplification has run."
+
+[[entry]]
+ident = "int_decisions"
+type = "int"
+summary = "Integer decision variables the solver created."
+
+[[entry]]
+ident = "bool_decisions"
+type = "int"
+summary = "Boolean decision variables the solver created."
+
+[[entry]]
+ident = "float_decisions"
+type = "int"
+summary = "Floating-point decision variables the solver created."
+
+[[entry]]
+ident = "set_of_int_decisions"
+type = "int"
+summary = "Set decision variables the solver created."
+
+[[entry]]
+ident = "constraints"
+type = "int"
+summary = "Constraints the solver holds after posting the model, which may differ from the model's own count once simplification has run."
+
+[[entry]]
+ident = "propagators"
+type = "int"
+summary = "Propagators the solver created."
+notes = "Often larger than `constraints`: one constraint may be enforced by several propagators."
+
+[[entry]]
+ident = "propagations"
+type = "int"
+summary = "Propagator invocations performed."
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "init_time"
+type = "float"
+summary = "Seconds spent posting the model, before the search began."
+
+[[entry]]
+ident = "solve_time"
+type = "float"
+summary = "Seconds spent searching, excluding the time taken to read the model."
+
+[[entry]]
+ident = "peak_memory"
+type = "float"
+summary = "Greatest memory the solver held at once, in megabytes."

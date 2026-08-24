@@ -1,0 +1,63 @@
+[meta]
+order = 10
+title = "Objective strategies"
+description = "Objective strategy identifiers with an agreed name, argument type and meaning."
+intro = """
+A model has [at most one objective](../../spec/model/#the-objective), and a solver declares the strategies it supports through `fznso_<name>_objective_list`.
+
+Each strategy comes in an `int_` and a `float_` form, because the argument type differs; a solver may support either, both or neither.
+"""
+
+[[entry]]
+ident = "int_maximize"
+arg = "var int"
+summary = "Find an assignment maximising the given decision variable."
+
+[[entry]]
+ident = "float_maximize"
+arg = "var float"
+summary = "Find an assignment maximising the given decision variable."
+
+[[entry]]
+ident = "int_minimize"
+arg = "var int"
+summary = "Find an assignment minimising the given decision variable."
+
+[[entry]]
+ident = "float_minimize"
+arg = "var float"
+summary = "Find an assignment minimising the given decision variable."
+
+[[entry]]
+ident = "int_lex_maximize"
+arg = "list of var int"
+summary = "Maximise the variables in lexicographical order: the first is maximised, then the second subject to it, and so on."
+
+[[entry]]
+ident = "float_lex_maximize"
+arg = "list of var float"
+summary = "Maximise the variables in lexicographical order: the first is maximised, then the second subject to it, and so on."
+
+[[entry]]
+ident = "int_lex_minimize"
+arg = "list of var int"
+summary = "Minimise the variables in lexicographical order: the first is minimised, then the second subject to it, and so on."
+
+[[entry]]
+ident = "float_lex_minimize"
+arg = "list of var float"
+summary = "Minimise the variables in lexicographical order: the first is minimised, then the second subject to it, and so on."
+
+[[entry]]
+ident = "int_pareto_maximize"
+arg = "list of var int"
+summary = "Report solutions that are not dominated by any already reported: each assigns some variable a higher value than every previous solution did."
+notes = """
+Unlike the single-objective strategies, this reports a *set* of incomparable solutions rather than converging on one.
+Every solution is delivered through `on_solution` as it is found, so `intermediate` has no effect here.
+"""
+
+[[entry]]
+ident = "float_pareto_maximize"
+arg = "list of var float"
+summary = "Report solutions that are not dominated by any already reported: each assigns some variable a higher value than every previous solution did."

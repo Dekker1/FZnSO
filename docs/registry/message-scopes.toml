@@ -1,0 +1,34 @@
+[meta]
+order = 13
+title = "Message scopes"
+description = "The scope names a solver uses to report non-fatal diagnostics through on_message."
+intro = """
+The scopes naming the [diagnostics](../../spec/running/#diagnostics) a solver reports through `on_message`.
+
+They are the one kind of name here that is **not declared up front**, so a scope not listed below is not an error: report it verbatim.
+Filtering on a prefix works — `progress` catches `progress.bound` and anything added beside it later.
+"""
+
+[[entry]]
+ident = "log"
+type = "string"
+summary = "Freeform diagnostic text, generally enabled by the `verbose` option."
+
+[[entry]]
+ident = "warn"
+type = "string"
+summary = "Something about the model the user should know, which did not prevent solving, for example an annotation the solver ignored."
+
+[[entry]]
+ident = "progress.bound"
+type = "int | float"
+summary = "A new dual bound on the objective."
+notes = """
+Sent as `int` or `float` to match the objective's type.
+Bounds improve monotonically over a run, which the [serial callback contract](../../spec/threading/) preserves even when several workers find them.
+"""
+
+[[entry]]
+ident = "core.assumptions"
+type = "list of var bool"
+summary = "A subset of the assumed Boolean decision variables that cannot all hold at once."

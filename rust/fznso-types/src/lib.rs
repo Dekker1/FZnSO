@@ -237,9 +237,7 @@ pub struct FznsoModelMethods {
 	/// variable's value.
 	///
 	/// A solver must give every such variable a value in every solution it
-	/// reports, and is free to leave the others open. Nothing else marks a
-	/// variable as needed — in particular, whether it has a name does not,
-	/// since names exist only for debugging.
+	/// reports, and is free to leave the others open.
 	pub decision_in_solution:
 		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, decision: FznsoDecisionIdx) -> bool,
 	/// Retrieve the number of annotations on a decision variable.

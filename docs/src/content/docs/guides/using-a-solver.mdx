@@ -1,0 +1,358 @@
+---
+title: Using a solver
+description: The complete consumer workflow, from opening a library to reading solutions back.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+This guide walks the whole consumer side.
+If you just want something running, start with the [Quickstart](../../start/quickstart/).
+
+## 1. Open a library
+
+Find one by name, or open a specific file:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+import fznso
+
+lib = fznso.Library.find("gecode")          # newest installed
+lib = fznso.Library.find("gecode", "6")     # newest 6.x.y
+lib = fznso.Library("/path/to/libgecode.so")     # this exact file
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+use fznso::Library;
+
+let lib = unsafe { Library::find("gecode") }?;
+let lib = unsafe { Library::find_version("gecode", "6") }?;
+let lib = unsafe { Library::new("/path/to/libgecode.so") }?;
+```
+
+Opening a library is `unsafe` because it runs the file's initialisers: you are trusting the file, and no amount of checking afterwards changes that.
+Everything past this point is safe.
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+#include "fznso.hpp"
+
+auto lib = fznso::Library::find("gecode");
+auto lib = fznso::Library::find_version("gecode", "6");
+fznso::Library lib{"/path/to/libgecode.so"};
+```
+
+</TabItem>
+</Tabs>
+
+The ABI version is checked here, before any other entry point is called; a mismatched solver fails to load rather than crashing later.
+If nothing is found, see [Installing solvers](../installing-solvers/).
+
+## 2. Ask what it can do
+
+A library declares its capabilities in [five lists](../../spec/entry-points/#the-library), fixed for its lifetime.
+Read them if you need to adapt; skip them if you already know the solver.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+The capability lists are not exposed to Python yet.
+Read them from Rust or C++, or drive the solver by names you already know.
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+lib.constraint_types();  // identifiers and argument types
+lib.decision_types();    // decision-variable types it can create
+lib.objective_list();    // objective strategies
+lib.option_list();       // options, with types and defaults
+lib.statistic_list();    // statistics, and where each can be read from
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+lib->constraint_types();  // identifiers and argument types
+lib->decision_types();    // decision-variable types it can create
+lib->objectives();        // objective strategies
+lib->options();           // options, with types and defaults
+lib->statistics();        // statistics, and where each can be read from
+```
+
+</TabItem>
+</Tabs>
+
+**Do not pass a name that is not in these lists**, and check the argument *types* too — a solver may accept a constraint only in a [narrower](../../spec/entry-points/#declaring-a-narrower-argument-type) form than the [registry](../../registry/) declares.
+
+## 3. Create an instance
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+solver = lib.create_solver()
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+let mut solver = lib.create_solver();
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+fznso::DynSolver solver = lib->create_solver();
+```
+
+</TabItem>
+</Tabs>
+
+One instance holds one configuration and whatever search state survives between runs.
+Create several if you want to search several problems at once; instances do not share state.
+
+## 4. Describe the problem
+
+The simplest route is `LayeredModel`, an in-memory model the bindings provide:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+var_int = fznso.Type("int", decision=True)
+
+model = fznso.LayeredModel()
+x = model.add_decision(var_int, range(1, 11), name="x")   # x in 1..10
+y = model.add_decision(var_int, range(1, 11), name="y")
+model.add_constraint("int_lin_le", [[1, 1], [x, y], 12])   # x + y <= 12
+model.add_constraint("int_lin_ne", [[1, -1], [x, y], 0])   # x != y
+model.set_objective("int_maximize", x)
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+use fznso::{LayeredModel, OwnedValue, RangeList, Type, TypeBase};
+
+let var_int = Type::new(TypeBase::FznsoTypeBaseInt).decision(true);
+let mut model = LayeredModel::default();
+let x = model.add_decision(
+    var_int,
+    OwnedValue::IntSet(RangeList::from(1_i64..=10)),
+    Some("x".into()),
+    false,
+    true,
+    vec![],
+);
+let _ = model.add_constraint("int_all_different", vec![xs.clone()], None, vec![]);
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+const fznso::Type INT_VAR = fznso::Type{FznsoTypeBaseInt}.decision(true);
+
+fznso::LayeredModel model;
+fznso::Decision x = model.add_decision(INT_VAR, fznso::OwnedValue::int_range(1, 10), "x");
+model.add_constraint("int_all_different", {fznso::OwnedValue::list({fznso::OwnedValue{x}})});
+model.set_objective("int_maximize", fznso::OwnedValue{x});
+```
+
+</TabItem>
+</Tabs>
+
+If your application already holds the problem in its own structures, implement the model interface over them instead of copying into a `LayeredModel`. That is what the callback design is for.
+See [The model](../../spec/model/).
+
+:::caution
+A custom model returns values **by borrow**.
+Return objects the model owns and keeps alive for the whole run, not freshly built temporaries.
+:::
+
+## 5. Configure
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+solver.option_set("time_limit", 30_000)   # milliseconds
+solver.option_set("threads", 8)
+solver.option_set("intermediate", True)   # report improving solutions as they are found
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+solver.option_set("time_limit", (&30_000_i64).into())?;   // milliseconds
+solver.option_set("threads", (&8_i64).into())?;
+solver.option_set("intermediate", (&true).into())?;
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+solver.option_set("time_limit", fznso::OwnedValue{std::int64_t{30000}});  // milliseconds
+solver.option_set("threads", fznso::OwnedValue{std::int64_t{8}});
+solver.option_set("intermediate", fznso::OwnedValue{true});
+```
+
+</TabItem>
+</Tabs>
+
+Setting an option the solver did not declare fails and carries a message.
+The common options are in the [registry](../../registry/options/).
+
+## 6. Run
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+best = None
+
+def on_solution(sol):
+    global best
+    best = (sol[x], sol[y])           # copied out — see the warning below
+    print("found", best, "nodes:", sol.statistic("nodes"))
+
+status = solver.run(
+    model,
+    on_solution=on_solution,
+    on_message=lambda scope, value: print(f"[{scope}] {value}"),
+)
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+let mut best = None;
+let status = solver.run(
+    &model,
+    &mut |sol: &fznso::DynSolution<'_>| best = Some(sol.value(0).get_int()),
+    Some(&mut |scope: &str, value: fznso::Value<'_>| eprintln!("[{scope}] {value:?}")),
+    fznso::dont_interrupt(),
+);
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+std::optional<std::int64_t> best;
+fznso::Status status = solver.run(
+    model,
+    [&](const fznso::Solution& sol) { best = sol[x].as_int(); },
+    [&](std::string_view scope, const fznso::Value& v) {
+        std::cerr << '[' << scope << "] " << v.as_string() << '\n';
+    });
+```
+
+</TabItem>
+</Tabs>
+
+:::danger
+The solution handed to your callback is valid **only until that callback returns**.
+Copy out every value you want to keep.
+Storing the solution object itself and reading it later reads freed memory. The Python bindings detect this and raise, but Rust and C++ cannot.
+:::
+
+## 7. Read the outcome
+
+`run` returns one of three [statuses](../../spec/running/#status): `Complete` (the search finished — with an objective, the last solution reported is optimal), `Incomplete` (it stopped early, so what you have is valid but not necessarily best), or `Error`.
+
+Solver-scoped statistics stay readable after the run:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+print(solver.statistic("nodes"), solver.statistic("solve_time"))
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+println!("{}", solver.statistic("nodes").get_int());
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+std::cout << solver.statistic("nodes").as_int() << '\n';
+```
+
+</TabItem>
+</Tabs>
+
+## 8. Stopping early
+
+For a deadline set [`time_limit`](../../registry/options/); for anything a deadline cannot express — a cancel button, "five solutions is enough" — pass a `should_stop` predicate.
+[Stopping early](../../spec/running/#stopping-early) covers why the first is not merely a special case of the second.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+stop = threading.Event()
+solver.run(model, on_solution=cb, should_stop=stop.is_set)
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+let stop = AtomicBool::new(false);
+solver.run(
+    &model,
+    &mut on_solution,
+    fznso::ignore_messages(),
+    Some(&|| stop.load(Ordering::Relaxed)),
+);
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+std::atomic<bool> stop{false};
+solver.run(model, on_solution, [](std::string_view, const fznso::Value&) {},
+           [&] { return stop.load(std::memory_order_relaxed); });
+```
+
+</TabItem>
+</Tabs>
+
+`should_stop` is the one callback you must make [thread-safe](../../spec/threading/#should_stop-may-be-called-concurrently).
+Reading an atomic flag, as above, already is.
+
+## 9. Run again
+
+Change the model and call `run` again on the same instance.
+That is what the interface is for; see [Incremental solving](../incremental-solving/).
+
+## Complete working consumers
+
+The test suites drive a real solver end to end and are kept working by CI:
+
+- `rust/fznso/tests/dylib.rs`
+- `cpp/tests/test_consumer.cpp`
+- `python/tests/test_fznso.py`

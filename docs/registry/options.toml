@@ -1,0 +1,74 @@
+[meta]
+order = 11
+title = "Options"
+description = "Solver options with an agreed name, type and meaning."
+intro = """
+Options are set and read back through the [solver instance](../../spec/entry-points/#the-solver-instance) entry points; a solver declares the ones it accepts in `fznso_<name>_option_list`, each with a type and a default.
+Setting one it did not declare [fails with a message](../../spec/entry-points/#errors).
+
+Signatures are written `ident: type = default`, where the type is an [`FznsoType`](../../spec/types-and-values/#types) and `absent` is `FznsoValueAbsent`.
+"""
+
+[[entry]]
+ident = "all_solutions"
+type = "bool"
+default = "false"
+summary = "Continue searching after an optimal solution, to report the others that share its objective value."
+notes = """
+With no objective set this option has no effect: every solution is reported anyway.
+
+It is independent of `intermediate`, which controls whether solutions found *on the way* to the optimum are reported.
+Setting both reports the improving sequence and then every solution tied with the last of them.
+"""
+
+[[entry]]
+ident = "fixed_search"
+type = "bool"
+default = "false"
+summary = "Follow the search order given by the model's annotations exactly, rather than treating it as advice."
+
+[[entry]]
+ident = "intermediate"
+type = "bool"
+default = "false"
+summary = "Report each improving solution as it is found, rather than only the final one."
+notes = """
+Only meaningful for a model with an objective.
+The solver keeps searching after each report, until it finds a better solution or proves none exists, so the run still ends with `FznsoComplete` if it finished.
+
+Improving solutions arrive in order, which the [serial callback contract](../../spec/threading/) guarantees.
+"""
+
+[[entry]]
+ident = "random_seed"
+type = "opt int"
+default = "absent"
+summary = "Seed for the solver's random number generator; absent means the solver chooses."
+notes = "Solvers are encouraged to vary the seed by default, so that repeated runs diversify."
+
+[[entry]]
+ident = "threads"
+type = "int"
+default = "1"
+summary = "How many threads a multi-threaded solver may search with."
+notes = """
+A value above 1 puts the [threading contract](../../spec/threading/) into effect: the application's model must be safe to read concurrently, and its `should_stop` safe to call concurrently.
+"""
+
+[[entry]]
+ident = "time_limit"
+type = "opt int"
+default = "absent"
+summary = "Abandon the search after this many milliseconds; absent means no limit."
+notes = """
+Must be positive.
+The type carries no range, so a solver rejects a non-positive value through `option_set` rather than through the type system.
+
+Prefer this over polling a clock in `should_stop`: a solver told its budget up front can plan its search around it (sizing restart schedules, budgeting between portfolio strategies) in a way one merely being interrupted cannot.
+"""
+
+[[entry]]
+ident = "verbose"
+type = "bool"
+default = "false"
+summary = "Emit additional information about the search through the `log` message scope."

@@ -1,0 +1,121 @@
+---
+title: Incremental solving
+description: Using layers to add and retract parts of a problem between runs, from both sides of the interface.
+sidebar:
+  order: 4
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Layers are what make [the loop this interface exists for](../../start/what-is-fznso/#the-problem-it-solves) cheaper on its second pass than its first.
+The rules are in [The model](../../spec/model/#layers); this is how to use them.
+
+## For applications
+
+A model starts with one permanent base layer.
+Push a layer to add decisions and constraints as a group; pop it to retract the whole group.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+model = fznso.LayeredModel()
+x = model.add_decision(var_int, range(1, 101), name="x")   # base layer
+model.add_constraint("int_lin_le", [[1], [x], 50])
+
+solver.run(model, on_solution=record)        # solve
+
+model.push_layer()                            # everything below is now fixed
+model.add_constraint("int_lin_le", [[-1], [x], -20])   # x >= 20
+solver.run(model, on_solution=record)        # solve again, incrementally
+
+model.pop_layer()                             # retract that constraint
+solver.run(model, on_solution=record)        # back to the original problem
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+let mut model = LayeredModel::default();
+let x = model.add_decision(var_int, domain, Some("x".into()), false, true, vec![]);
+
+solver.run(&model, &mut record, ignore_messages(), dont_interrupt());
+
+model.push_layer();                       // everything below is now fixed
+let _ = model.add_constraint("int_lin_le", vec![/* x >= 20 */], None, vec![]);
+solver.run(&model, &mut record, ignore_messages(), dont_interrupt());
+
+model.pop_layer();                        // retract that constraint
+solver.run(&model, &mut record, ignore_messages(), dont_interrupt());
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+fznso::LayeredModel model;
+fznso::Decision x = model.add_decision(INT_VAR, fznso::OwnedValue::int_range(1, 100), "x");
+
+solver.run(model, record);
+
+model.push_layer();                       // everything below is now fixed
+model.add_constraint("int_lin_le", {/* x >= 20 */});
+solver.run(model, record);
+
+model.pop_layer();                        // retract that constraint
+solver.run(model, record);
+```
+
+</TabItem>
+</Tabs>
+
+Because indices follow layer order, popping never renumbers anything that survives: `x` is still decision 0.
+
+### Choosing the right kind of layer
+
+**Push a plain layer** for anything you might retract: a hypothesis, a user's tentative choice, a branch of your own search.
+
+**Mark a layer permanent** when you are certain it will never be retracted.
+That is a promise, and it buys something real: the solver may fold those constraints irreversibly into its own representation, simplify against them, and discard the original form.
+
+`model.mark_permanent()` marks the current top layer, and it can never be popped again.
+
+**Mark a permanent layer [redundant](../../spec/model/#redundant-layers)** when it has become vacuous.
+The solver *may* then drop it — which is not the same as retracting it, since a permanent layer cannot be retracted, only made irrelevant.
+
+`model.mark_redundant(layer)` does that from Rust and C++; it is not exposed to Python yet.
+
+### What the solver sees
+
+`LayeredModel` reports [the three layer counts](../../spec/model/#layers) correctly for free.
+If you implement the model over your own structures you must maintain them yourself — and reporting `layer_unchanged` as 0 every time is always correct, since it just means the solver re-reads everything.
+
+:::caution
+Reporting a layer as unchanged when it is not is the one way to get a wrong answer.
+The solver will skip it, and search a problem you did not pose.
+:::
+
+## For solvers
+
+Reading `layer_unchanged` is optional.
+A solver that ignores it and re-posts the whole model on every run is correct, and is the right place to start.
+
+To exploit it:
+
+```text title="pseudocode"
+n = model.layer_unchanged()
+
+if n == 0 or n < layers_i_have_posted:
+    reset everything and post from layer 0
+else:
+    keep my state through layer n-1
+    post decisions   decision_layer_end(n-1)   .. decision_len()
+    post constraints constraint_layer_end(n-1) .. constraint_len()
+```
+
+`decision_layer_end` and `constraint_layer_end` give each layer [its range](../../spec/model/#layers).
+
+The three guarantees you build on — permanent and redundant counts only ever grow, and unchanged layers are a prefix — are stated with the callbacks that carry them.
+What you may **not** assume is that the layer count only grows.
+A pop reduces it, and a push after a pop can put different content at the same index, which is precisely why `layer_unchanged` exists rather than being inferred from the count.

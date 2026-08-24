@@ -18,13 +18,30 @@ use std::{
 	env,
 	path::{Path, PathBuf},
 	process::Command,
+	sync::Once,
 };
 
 use fznso::{
 	LayeredModel, Library, LoadError, OwnedValue, Solution, Solver, Status, Type, TypeBase,
 };
 
-/// Build the named `cdylib` example and return the path to it.
+/// Build every `cdylib` example. See [`example_path`].
+fn build_examples() {
+	let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+	let mut cmd = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+	let _ = cmd
+		.arg("build")
+		.arg("--manifest-path")
+		.arg(&manifest)
+		.arg("--examples");
+	if !cfg!(debug_assertions) {
+		let _ = cmd.arg("--release");
+	}
+	let status = cmd.status().expect("failed to run cargo");
+	assert!(status.success(), "could not build the examples");
+}
+
+/// Return the path to the named `cdylib` example, building the examples first.
 ///
 /// `cargo test` builds test targets, not example `cdylib`s, so the library
 /// would otherwise be missing on a clean tree and — worse — silently stale
@@ -32,20 +49,14 @@ use fznso::{
 /// matter how it was invoked. The outer cargo has already finished building and
 /// released its lock by the time test binaries run, so this nested invocation
 /// does not deadlock.
+///
+/// Every example is built once, by whichever test gets here first. Building
+/// per-test raced instead: cargo replaces the unsuffixed `libexample_solver.so`
+/// non-atomically, so a concurrent test could look for it during the gap and
+/// find nothing.
 fn example_path(name: &str) -> PathBuf {
-	let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
-	let mut cmd = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
-	let _ = cmd
-		.arg("build")
-		.arg("--manifest-path")
-		.arg(&manifest)
-		.arg("--example")
-		.arg(name);
-	if !cfg!(debug_assertions) {
-		let _ = cmd.arg("--release");
-	}
-	let status = cmd.status().expect("failed to run cargo");
-	assert!(status.success(), "could not build example `{name}`");
+	static BUILD: Once = Once::new();
+	BUILD.call_once(build_examples);
 
 	// The test binary lives in `<target>/<profile>/deps/`, so example `cdylib`s
 	// sit in the sibling `examples/` directory. Deriving it this way survives a

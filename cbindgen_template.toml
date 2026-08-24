@@ -2,19 +2,23 @@ language = "C"
 
 # Wrapping header contents
 header = """
-// FZnSO solver entry points to implement in C.
-//
-// Each function below is named `fznso_NAME_...`. The `fznso_` marker is fixed;
-// `NAME` is a placeholder that a real solver replaces with its library name —
-// the base name of the built library file (e.g. `gecode` for `libgecode.so`).
-// Prefixing every symbol this way lets several solvers be linked into one binary
-// without colliding (with each other or with any wrapped library), and lets a
-// loader recover the name from the file name.
-//
-// The rules that hold across the whole interface — opaque handles, accessor
-// preconditions, what stays valid for how long, and how the version is matched —
-// are stated once at the top of `fznso_types.h`."""
-documentation_style = "c99"
+/// @file
+/// FZnSO solver entry points to implement in C.
+///
+/// This is a template to copy, not a header to include: replace every `NAME`
+/// with your solver's name and fill in the bodies.
+///
+/// The `fznso_` marker is fixed; `NAME` is the base name of the built library
+/// file (e.g. `gecode` for `libgecode.so`). Prefixing every symbol this way lets
+/// several solvers be linked into one binary without colliding — with each other
+/// or with any wrapped library — and lets a loader recover the name from the file
+/// name. The naming rules are specified at
+/// <https://fznso.minizinc.dev/spec/naming-and-versioning/>.
+///
+/// The rules that hold across the whole interface — opaque handles, accessor
+/// preconditions, what stays valid for how long, and how the version is matched —
+/// are stated once at the top of `fznso_types.h`."""
+documentation_style = "doxy"
 no_includes = true
 includes = ["fznso_types.h"]
 cpp_compat = false

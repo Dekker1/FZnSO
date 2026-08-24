@@ -1,17 +1,26 @@
 //! FZnSO Protocol Solver Template
 //!
-//! This crate defines the solver functionality to be implemented FZnSO
-//! protocol, which allows the incremental usage of solvers that can solve
-//! decision and optimization problems. The goal of the interface is to easily
-//! use different solvers in a unified way, and to allow the dynamic loading of
-//! solver libraries (as DLLs).
+//! This crate declares the thirteen entry points a solver implements to speak
+//! the FZnSO protocol, which allows the incremental usage of solvers that can
+//! solve decision and optimization problems. The goal of the interface is to
+//! easily use different solvers in a unified way, and to allow the dynamic
+//! loading of solver libraries.
 //!
-//! The entry points below are named `fznso_NAME_...`. The `fznso_` marker is
-//! fixed; `NAME` is a placeholder that a real solver replaces with its library
-//! name — the base name of the built library file (e.g. `gecode` for
-//! `libgecode.so`). Prefixing every symbol this way lets several solvers be
-//! linked into one binary without colliding, and keeps them out of any wrapped
-//! library's namespace.
+//! It is a template to copy, not a library to link against. Every function
+//! below is `unimplemented!()`.
+//!
+//! The entry points are named `fznso_NAME_...`. The `fznso_` marker is fixed;
+//! `NAME` is a placeholder that a real solver replaces with its library name —
+//! the base name of the built library file (e.g. `gecode` for `libgecode.so`).
+//! Prefixing every symbol this way lets several solvers be linked into one
+//! binary without colliding, and keeps them out of any wrapped library's
+//! namespace. The naming rules are specified at
+//! <https://fznso.minizinc.dev/spec/naming-and-versioning/>.
+//!
+//! Each function below states its own contract. The rules that hold across the
+//! whole interface — opaque handles, accessor preconditions, what stays valid
+//! for how long, and how the version is matched — are specified once at
+//! <https://fznso.minizinc.dev/spec/lifetimes-and-ownership/>.
 
 #![allow(
 	non_snake_case,
@@ -165,67 +174,28 @@ pub unsafe extern "C" fn fznso_NAME_solver_read_error(
 }
 
 #[unsafe(no_mangle)]
-/// Run the solver with the given model
-///
-/// `on_message` reports non-fatal diagnostics: warnings, progress and search
-/// information. `scope` names the kind of message and is dot-separated so that
-/// callers can filter on a prefix. Failures are not reported here; they are
-/// signalled by returning [`FznsoError`] and retrieved with
-/// [`fznso_NAME_solver_read_error`].
-///
-/// `on_message` may be [`None`], meaning nobody is listening. A solver should
-/// then skip *building* diagnostics rather than formatting them and handing
-/// them to a sink that discards them — that is the point of making it nullable.
-///
-/// # What stays valid for how long
+/// Run the solver with the given model.
 ///
 /// `model` is borrowed for the duration of this call and is read-only
-/// throughout. Everything the solver hands *out* is borrowed the same way: the
-/// solution passed to `on_solution`, and the scope and value passed to
-/// `on_message`, need only stay valid for the duration of that one callback,
-/// and a caller that wants to keep any of it must copy it.
+/// throughout. The solution passed to `on_solution`, and the scope and value
+/// passed to `on_message`, are likewise valid only for the duration of that one
+/// callback.
 ///
-/// # Stopping early
+/// Both `on_message` and `should_stop` may be [`None`], and the difference is
+/// worth honouring: `None` means *nobody is listening* and *the caller will
+/// never cancel* respectively, so a solver should skip building diagnostics and
+/// drop the poll from its search loop, rather than doing the work and
+/// discarding it.
 ///
-/// `should_stop` lets the caller abandon the search: the solver polls it, and a
-/// `true` answer means stop as soon as convenient and return
-/// [`FznsoIncomplete`]. It may be [`None`], which means the caller will never
-/// ask to stop: a solver then skips polling entirely rather than calling a
-/// predicate that always answers `false`.
+/// Failures are not reported through `on_message`. Return
+/// [`FznsoStatus::FznsoError`] and make the reason available through
+/// [`fznso_NAME_solver_read_error`].
 ///
-/// A solver is expected to:
-///
-/// - poll it **once before starting**, so that a caller which has already asked
-///   to stop gets no search at all;
-/// - poll it **at least once after each `on_solution` returns**, so that a
-///   caller can stop from inside the callback — this is what makes "stop after
-///   this solution" reliable;
-/// - otherwise poll it as often as it reasonably can, so that a cancel is acted
-///   on promptly rather than at the end of the search.
-///
-/// To set a deadline, solvers should prefer the `time_limit` option over
-/// polling a clock here, because a solver that knows its deadline up front can
-/// plan its search around it.
-///
-/// # Threading
-///
-/// A solver may search on several threads. The contract for the callbacks and
-/// the model is:
-///
-/// - `on_solution` and `on_message` must be invoked **serially**: never two at
-///   once, and never one while the other runs. They may be called from any
-///   thread (for example the worker that found a solution), as long as each
-///   call happens-before the next. A caller therefore need not make its
-///   callbacks safe to call concurrently. (Serial reporting also keeps
-///   solutions in the improving order that intermediate/bound reporting relies
-///   on.)
-/// - `model` may be queried **concurrently**: it is a read-only view for the
-///   duration of the call, so a parallel solver may read it from many threads
-///   at once. A caller must therefore make the model safe for concurrent reads.
-/// - `should_stop` may be called **concurrently**, from any thread, including
-///   while `on_solution` or `on_message` is running, i.e. every worker may poll
-///   it independently. It is the one callback a caller must make thread-safe,
-///   which for the usual implementation (reading an atomic flag) it already is.
+/// The full contracts — when `should_stop` must be polled, and what a
+/// multi-threaded solver may do with the callbacks and the model — are
+/// specified once at
+/// <https://fznso.minizinc.dev/spec/running/> and
+/// <https://fznso.minizinc.dev/spec/threading/>.
 ///
 /// # Safety
 ///

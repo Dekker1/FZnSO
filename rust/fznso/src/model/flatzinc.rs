@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use flatzinc_serde::{
 	Annotation as FznAnnotation, AnnotationArgument, AnnotationLiteral, Argument, FlatZinc,
-	Literal, Method, RangeList, Type,
+	Literal, Method, NamedRef, RangeList, Type,
 };
 use fznso_types::{
 	FznsoDecisionIdx, FznsoFloatRange, FznsoIntRange, FznsoPtr, FznsoType, FznsoTypeBase,
@@ -291,9 +293,23 @@ impl Model for FlatZincModel {
 	}
 
 	fn decision_in_solution(&self, decision: DecisionIdx) -> bool {
-		// A FlatZinc variable the compiler introduced is scaffolding for the
-		// ones the model declared; only the latter can be asked for.
-		!self.variables[decision.0].introduced
+		// What the instance says has to be reported, which is not the same as
+		// what the compiler did not introduce: the elements of an output array
+		// are usually introduced variables, and a variable can be declared in
+		// the model and still be left out of the output.
+		//
+		// Linear in the size of the output section, and a solver asks once per
+		// decision. A consumer handing over a large instance repeatedly is
+		// better served by a model of its own that answers from a precomputed
+		// set.
+		let var = &self.variables[decision.0];
+		self.output.iter().any(|entry| match entry {
+			NamedRef::Variable(v) => Arc::ptr_eq(v, var),
+			NamedRef::Array(a) => a.contents.iter().any(|lit| match lit {
+				Literal::Variable(v) => Arc::ptr_eq(v, var),
+				_ => false,
+			}),
+		})
 	}
 
 	fn decision_domain(&self, decision: DecisionIdx) -> Value<'_> {

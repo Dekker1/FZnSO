@@ -1,0 +1,6 @@
+# Build scripts are opt-in under pnpm; these two need theirs.
+#   esbuild — links its platform binary, without which `astro build` cannot run
+#   sharp   — Starlight's image pipeline, needs its native binding
+allowBuilds:
+  esbuild: true
+  sharp: true

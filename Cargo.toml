@@ -15,7 +15,7 @@ repository = "https://tangled.org/dekker.one/FZnSO"
 version = "0.1.0"
 authors = ["Jip J. Dekker <jip@dekker.one>"]
 edition = "2024"
-license = ""
+license = "MIT"
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

@@ -1,0 +1,135 @@
+---
+title: Installing solvers
+description: Where to put a solver library so applications can find it, how to override the search, and how to diagnose a solver that will not load.
+sidebar:
+  order: 1
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Applications find solvers **by name**, never by path.
+For that to work, the library file has to be in a directory FZnSO searches, with a file name it can read a name back from.
+
+The rules are in [Discovery](../../spec/discovery/) and [Naming & versioning](../../spec/naming-and-versioning/); this page is the operational version.
+
+## Where to put it
+
+Pick the first that fits:
+
+| Where | Directory | Use it for |
+| --- | --- | --- |
+| Development | wherever you like, then set `FZNSO_SOLVER_PATH` | a solver you are building |
+| Per user | `~/.local/share/fznso` (Linux), `~/Library/Application Support/fznso` (macOS), `%LOCALAPPDATA%\fznso` (Windows) | a solver you installed for yourself |
+| System | `/usr/local/lib/fznso`, `/usr/lib/fznso`, or a `fznso` directory beside the executable on Windows | a packaged solver |
+
+[Earlier entries win outright](../../spec/discovery/) — newer versions do not override the order — which is what makes the development case work.
+
+```sh
+export FZNSO_SOLVER_PATH="$PWD/target/debug/examples"
+```
+
+`FZNSO_SOLVER_PATH` takes several directories, separated by `:` (or `;` on Windows).
+
+## Naming the file
+
+The file name is where the solver's name comes from, so it is not free-form:
+
+```text
+libgecode.so             ✓  name is `gecode`
+libgecode.6.2.1.so       ✓  name is `gecode`, version 6.2.1
+libgecode.6.2.1.dylib    ✓  same on macOS
+gecode.6.2.1.dll         ✓  same on Windows
+libgecode.so.6           ✓  a distribution-packaged version, also read as 6
+gecode-6.dll             ✗  `-` cannot appear in a C identifier
+libgecode-solver.so      ✗  same problem
+```
+
+So: a valid C identifier that does not start with `lib`, then the version, then the extension — on
+every platform, [for reasons](../../spec/naming-and-versioning/#where-the-version-goes).
+Several versions can live side by side; asking for `gecode` gets the newest.
+
+## Checking what is installed
+
+Each binding can enumerate the search path:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+for found in fznso.Library.discover():
+    print(found.name, found.version, found.path)
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+for found in fznso::Library::discover() {
+    println!("{} {} {}", found.name, found.version, found.path.display());
+}
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+for (const fznso::Library::Discovered& d : fznso::Library::discover()) {
+    std::cout << d.name << ' ' << d.version << ' ' << d.path << '\n';
+}
+```
+
+</TabItem>
+</Tabs>
+
+This is a directory listing, not a load, so it also shows solvers whose ABI version does not match.
+
+## Pinning a version
+
+Asking for a name alone gets the newest installed version.
+To pin, name a prefix of whole components:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+fznso.Library.find("gecode", "6")      # any 6.x.y
+fznso.Library.find("gecode", "6.2")    # any 6.2.x, but not 6.1.0
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+Library::find_version("gecode", "6")     // any 6.x.y
+Library::find_version("gecode", "6.2")   // any 6.2.x, but not 6.1.0
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+fznso::Library::find_version("gecode", "6");    // any 6.x.y
+fznso::Library::find_version("gecode", "6.2");  // any 6.2.x, but not 6.1.0
+```
+
+</TabItem>
+</Tabs>
+
+Components are compared numerically, so `10` is newer than `9`.
+
+## When it will not load
+
+| Symptom | Cause |
+| --- | --- |
+| Not found, though the file is there | The file name does not yield a valid name — check the table above. Or the directory is not on the search path. |
+| Found, but rejected | The solver reports a different [`FZNSO_ABI_VERSION`](../../spec/abi-stability/) than your application. Rebuild it against matching headers. |
+| A required symbol is missing | The solver does not export all [thirteen entry points](../../spec/entry-points/), or the name in the symbols does not match the file name. |
+
+The last one is worth checking directly:
+
+```sh
+nm -gU libgecode.so | grep fznso_
+```
+
+Every symbol must read `fznso_gecode_…`.
+If they say `fznso_NAME_…`, the template was copied but not renamed.

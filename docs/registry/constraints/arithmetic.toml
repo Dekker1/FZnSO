@@ -1,0 +1,340 @@
+[meta]
+order = 1
+label = "Arithmetic"
+title = "Arithmetic constraints"
+description = "Integer, Boolean and floating-point linear, arithmetic and logical constraints."
+intro = """
+The primitives every flattened model bottoms out in.
+
+There is deliberately no `int_le`, `int_plus` or `bool_and` here.
+Where a constraint is the same relation as another in a different argument shape, only the general
+form is kept: `int_lin_le` covers every integer inequality, `bool_array_and` covers the binary
+conjunction, and rewriting into them costs nothing but a list literal.
+See [About the registry](../../) for the rule in full.
+
+Most have a **reified** form `_reif`, relating the constraint to a Boolean `r`, and some an
+**implied** form `_imp`, which only forces `r` one way.
+They take the base arguments followed by `r`, and are listed on the entry they belong to.
+"""
+
+# ---------------------------------------------------------------------------
+# Integer linear
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "int_lin_eq"
+args = ["list of int: coeffs", "list of var int: xs", "int: total"]
+reified = ["int_lin_eq_reif", "int_lin_eq_imp"]
+summary = "The weighted sum of the variables equals a constant."
+definition = '\sum_{i} coeffs_i \cdot xs_i = total'
+notes = "`coeffs` and `xs` must have equal length. Equality between two variables, and addition, are both this constraint: `a = b` is `([1,-1], [a,b], 0)` and `a + b = c` is `([1,1,-1], [a,b,c], 0)`."
+
+[[entry]]
+ident = "int_lin_le"
+args = ["list of int: coeffs", "list of var int: xs", "int: bound"]
+reified = ["int_lin_le_reif", "int_lin_le_imp"]
+summary = "The weighted sum of the variables is at most a constant."
+definition = '\sum_{i} coeffs_i \cdot xs_i \leq bound'
+notes = "Strict inequality is the same constraint with a tighter bound: `a < b` is `([1,-1], [a,b], -1)`."
+
+[[entry]]
+ident = "int_lin_ne"
+args = ["list of int: coeffs", "list of var int: xs", "int: total"]
+reified = ["int_lin_ne_reif", "int_lin_ne_imp"]
+summary = "The weighted sum of the variables differs from a constant."
+definition = '\sum_{i} coeffs_i \cdot xs_i \neq total'
+
+# ---------------------------------------------------------------------------
+# Integer arithmetic
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "int_abs"
+args = ["var int: a", "var int: b"]
+summary = "The second integer is the absolute value of the first."
+definition = 'b = \lvert a \rvert'
+
+[[entry]]
+ident = "int_times"
+args = ["var int: a", "var int: b", "var int: c"]
+summary = "The third integer is the product of the first two."
+definition = 'c = a \cdot b'
+
+[[entry]]
+ident = "int_div"
+args = ["var int: a", "var int: b", "var int: c"]
+summary = "Integer division truncating towards zero."
+definition = 'c = \operatorname{trunc}(a / b)'
+notes = "Undefined when `b = 0`; a solver may fail the constraint or reject the model."
+
+[[entry]]
+ident = "int_mod"
+args = ["var int: a", "var int: b", "var int: c"]
+summary = "The remainder of integer division, taking the sign of the dividend."
+definition = 'c = a - b \cdot \operatorname{trunc}(a / b)'
+notes = "Undefined when `b = 0`. The sign follows `a`, so `-7 mod 2 = -1`."
+
+[[entry]]
+ident = "int_pow"
+args = ["var int: a", "var int: b", "var int: c"]
+summary = "The third integer is the first raised to the power of the second."
+definition = 'c = a^{b}'
+notes = "Undefined when `b` is negative and `a` is neither 1 nor -1."
+
+[[entry]]
+ident = "int_to_float"
+args = ["var int: a", "var float: b"]
+summary = "Converts an integer to the float of the same value."
+definition = 'b = a'
+
+# ---------------------------------------------------------------------------
+# Boolean
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "bool_clause"
+args = ["list of var bool: pos", "list of var bool: neg"]
+reified = ["bool_clause_reif"]
+summary = "At least one of the positive literals holds, or at least one of the negative literals fails."
+definition = '\bigvee_{i} pos_i \;\vee\; \bigvee_{j} \neg neg_j'
+notes = "The CNF clause every SAT-style solver is built around. Either list may be empty, but not both. Implication is this constraint: `a → b` is `([b], [a])`."
+
+[[entry]]
+ident = "bool_array_and"
+args = ["list of var bool: xs", "var bool: r"]
+summary = "The result holds exactly when every element of the array does."
+definition = 'r \leftrightarrow \bigwedge_{i} xs_i'
+notes = "True when `xs` is empty. The binary conjunction is this constraint with a two-element list."
+
+[[entry]]
+ident = "bool_array_or"
+args = ["list of var bool: xs", "var bool: r"]
+summary = "The result holds exactly when at least one element of the array does."
+definition = 'r \leftrightarrow \bigvee_{i} xs_i'
+notes = "False when `xs` is empty."
+
+[[entry]]
+ident = "bool_array_xor"
+args = ["list of var bool: xs"]
+summary = "An odd number of the array's elements hold."
+definition = '\bigoplus_{i} xs_i'
+
+[[entry]]
+ident = "bool_lin_eq"
+args = ["list of int: coeffs", "list of var bool: xs", "var int: total"]
+summary = "The weighted count of the Booleans that hold equals a given total."
+definition = '\sum_{i} coeffs_i \cdot [\,xs_i\,] = total'
+notes = "`[x]` is 1 when `x` holds and 0 otherwise. Equality and negation between Booleans are both this constraint: `a ↔ b` is `([1,-1], [a,b], 0)` and `a ↔ ¬b` is `([1,1], [a,b], 1)`."
+
+[[entry]]
+ident = "bool_lin_le"
+args = ["list of int: coeffs", "list of var bool: xs", "int: bound"]
+summary = "The weighted count of the Booleans that hold is at most a constant."
+definition = '\sum_{i} coeffs_i \cdot [\,xs_i\,] \leq bound'
+
+[[entry]]
+ident = "bool_to_int"
+args = ["var bool: a", "var int: b"]
+summary = "Maps a Boolean to 1 when it holds and 0 when it does not."
+definition = 'b = \begin{cases} 1 & \text{if } a \\ 0 & \text{otherwise} \end{cases}'
+
+# ---------------------------------------------------------------------------
+# Float linear
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "float_lin_eq"
+args = ["list of float: coeffs", "list of var float: xs", "float: total"]
+reified = ["float_lin_eq_reif", "float_lin_eq_imp"]
+summary = "The weighted sum of the variables equals a constant."
+definition = '\sum_{i} coeffs_i \cdot xs_i = total'
+
+[[entry]]
+ident = "float_lin_le"
+args = ["list of float: coeffs", "list of var float: xs", "float: bound"]
+reified = ["float_lin_le_reif", "float_lin_le_imp"]
+summary = "The weighted sum of the variables is at most a constant."
+definition = '\sum_{i} coeffs_i \cdot xs_i \leq bound'
+
+[[entry]]
+ident = "float_lin_lt"
+args = ["list of float: coeffs", "list of var float: xs", "float: bound"]
+reified = ["float_lin_lt_reif", "float_lin_lt_imp"]
+summary = "The weighted sum of the variables is strictly less than a constant."
+definition = '\sum_{i} coeffs_i \cdot xs_i < bound'
+notes = "Kept alongside `float_lin_le`, unlike the integer case: there is no next float to shift the bound by."
+
+[[entry]]
+ident = "float_lin_ne"
+args = ["list of float: coeffs", "list of var float: xs", "float: total"]
+reified = ["float_lin_ne_reif", "float_lin_ne_imp"]
+summary = "The weighted sum of the variables differs from a constant."
+definition = '\sum_{i} coeffs_i \cdot xs_i \neq total'
+
+# ---------------------------------------------------------------------------
+# Float arithmetic
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "float_abs"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the absolute value of the first."
+definition = 'b = \lvert a \rvert'
+
+[[entry]]
+ident = "float_times"
+args = ["var float: a", "var float: b", "var float: c"]
+summary = "The third float is the product of the first two."
+definition = 'c = a \cdot b'
+
+[[entry]]
+ident = "float_div"
+args = ["var float: a", "var float: b", "var float: c"]
+summary = "The third float is the quotient of the first two."
+definition = 'c = a / b'
+notes = "Undefined when `b = 0`."
+
+[[entry]]
+ident = "float_pow"
+args = ["var float: a", "var float: b", "var float: c"]
+summary = "The third float is the first raised to the power of the second."
+definition = 'c = a^{b}'
+
+[[entry]]
+ident = "float_sqrt"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the non-negative square root of the first."
+definition = 'b = \sqrt{a} \;\wedge\; b \geq 0'
+notes = "Undefined when `a` is negative."
+
+[[entry]]
+ident = "float_exp"
+args = ["var float: a", "var float: b"]
+summary = "The second float is e raised to the power of the first."
+definition = 'b = e^{a}'
+
+[[entry]]
+ident = "float_ln"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the natural logarithm of the first."
+definition = 'b = \ln a'
+notes = "Undefined for `a` at most 0."
+
+[[entry]]
+ident = "float_log10"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the base-10 logarithm of the first."
+definition = 'b = \log_{10} a'
+notes = "Undefined for `a` at most 0."
+
+[[entry]]
+ident = "float_log2"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the base-2 logarithm of the first."
+definition = 'b = \log_{2} a'
+notes = "Undefined for `a` at most 0."
+
+[[entry]]
+ident = "float_sin"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the sine of the first, in radians."
+definition = 'b = \sin a'
+
+[[entry]]
+ident = "float_cos"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the cosine of the first, in radians."
+definition = 'b = \cos a'
+
+[[entry]]
+ident = "float_tan"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the tangent of the first, in radians."
+definition = 'b = \tan a'
+
+[[entry]]
+ident = "float_asin"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the arcsine of the first."
+definition = 'b = \arcsin a'
+
+[[entry]]
+ident = "float_acos"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the arccosine of the first."
+definition = 'b = \arccos a'
+
+[[entry]]
+ident = "float_atan"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the arctangent of the first."
+definition = 'b = \arctan a'
+
+[[entry]]
+ident = "float_sinh"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the hyperbolic sine of the first."
+definition = 'b = \sinh a'
+
+[[entry]]
+ident = "float_cosh"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the hyperbolic cosine of the first."
+definition = 'b = \cosh a'
+
+[[entry]]
+ident = "float_tanh"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the hyperbolic tangent of the first."
+definition = 'b = \tanh a'
+
+[[entry]]
+ident = "float_asinh"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the inverse hyperbolic sine of the first."
+definition = 'b = \operatorname{arsinh} a'
+
+[[entry]]
+ident = "float_acosh"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the inverse hyperbolic cosine of the first."
+definition = 'b = \operatorname{arcosh} a'
+
+[[entry]]
+ident = "float_atanh"
+args = ["var float: a", "var float: b"]
+summary = "The second float is the inverse hyperbolic tangent of the first."
+definition = 'b = \operatorname{artanh} a'
+
+[[entry]]
+ident = "float_ceil"
+args = ["var float: a", "var int: b"]
+summary = "The integer is the smallest one no less than the float."
+definition = 'b = \lceil a \rceil'
+
+[[entry]]
+ident = "float_floor"
+args = ["var float: a", "var int: b"]
+summary = "The integer is the largest one no greater than the float."
+definition = 'b = \lfloor a \rfloor'
+
+[[entry]]
+ident = "float_round"
+args = ["var float: a", "var int: b"]
+summary = "The integer is the float rounded to nearest, halves away from zero."
+definition = 'b = \operatorname{round}(a)'
+
+[[entry]]
+ident = "float_piecewise_linear"
+args = ["var float: x", "var float: y", "list of float: x_knot", "list of float: y_knot"]
+summary = "The two floats are related by the piecewise-linear function through the given knots."
+definition = 'y = y_knot_k + \left( x - x_knot_k \right) \cdot \frac{y_knot_{k+1} - y_knot_k}{x_knot_{k+1} - x_knot_k} \quad \text{where } x_knot_k \leq x \leq x_knot_{k+1}'
+notes = "`x_knot` must be non-decreasing, and the two knot arrays must have equal length. `x` is constrained to the interval the knots span."
+
+[[entry]]
+ident = "float_in"
+args = ["var float: x", "float: lower_bound", "float: upper_bound"]
+reified = ["float_in_reif"]
+summary = "The float lies within an inclusive interval."
+definition = 'lower_bound \leq x \;\wedge\; x \leq upper_bound'
+notes = "Says the same thing as the variable's declared domain, but as a posted constraint."

@@ -1,0 +1,133 @@
+[meta]
+order = 5
+label = "Scheduling & packing"
+title = "Scheduling & packing constraints"
+description = "Resource, task and geometric packing constraints."
+intro = """
+Constraints that place tasks in time or shapes in space without overlapping a limited resource.
+
+Tasks are described by parallel arrays: `start`, `duration` and where relevant `resource`, all
+indexed alike, so task *i* occupies the half-open interval from `start[i]` to
+`start[i] + duration[i]`.
+A task with an optional start is **absent** when its start takes the absent value, and an absent
+task consumes nothing; $\bot$ is that absent value.
+
+Rectangle packing is `int_no_overlap` rather than `diffn`: the name says what the constraint
+enforces, and its arguments pair position with extent per dimension (`x, dx, y, dy`) rather than
+listing all positions and then all extents.
+
+For more than two dimensions, `int_geost` takes a `dimensions` count and flattens its per-object
+arrays row-major, since [a list cannot carry a
+shape](../../../spec/types-and-values/#a-list-is-flat-and-one-based).
+"""
+
+# ---------------------------------------------------------------------------
+# Resource constraints
+# ---------------------------------------------------------------------------
+
+[[entry]]
+ident = "int_cumulative"
+args = ["list of var int: start", "list of var int: duration", "list of var int: resource", "var int: capacity"]
+summary = "At no point in time do the running tasks consume more than the available capacity."
+definition = '\forall t : \sum_{i \,:\, start_i \leq t < start_i + duration_i} resource_i \;\leq\; capacity'
+notes = "`start`, `duration` and `resource` must have equal length. Durations and resource requirements must be non-negative."
+
+[[entry]]
+ident = "int_cumulatives"
+args = ["list of var int: start", "list of var int: duration", "list of var int: resource", "list of var int: machine", "list of var int: capacity", "int: capacity_offset", "bool: is_upper_bound"]
+summary = "As int_cumulative, but each task runs on one of several machines, each with its own capacity."
+notes = "`capacity` is numbered from `capacity_offset`, the lowest machine number. With `is_upper_bound` false the capacities are lower bounds instead, and the inequality reverses."
+definition = '\forall m, t : \sum_{i \,:\, machine_i = m \,\wedge\, start_i \leq t < start_i + duration_i} resource_i \;\leq\; capacity_{m - capacity_offset + 1}'
+
+[[entry]]
+ident = "int_disjunctive"
+args = ["list of var int: start", "list of var int: duration"]
+summary = "No two tasks overlap in time."
+definition = '\forall i < j : start_i + duration_i \leq start_j \;\vee\; start_j + duration_j \leq start_i'
+notes = "Zero-duration tasks may coincide with anything. Use `int_disjunctive_strict` to forbid that."
+
+[[entry]]
+ident = "int_disjunctive_strict"
+args = ["list of var int: start", "list of var int: duration"]
+summary = "No two tasks overlap, and a zero-duration task may not fall inside another task."
+definition = '\forall i < j : start_i + duration_i \leq start_j \;\vee\; start_j + duration_j \leq start_i'
+notes = "Differs from `int_disjunctive` only for zero-duration tasks, which here must still be separated."
+
+[[entry]]
+ident = "int_alternative"
+args = ["var int: span_start", "var int: span_duration", "list of var int: start", "list of var int: duration"]
+summary = "Exactly one of the alternative tasks is present, and it fills the enclosing task exactly."
+definition = '\lvert \{\, i \mid start_i \neq \bot \,\} \rvert = 1 \;\wedge\; \forall i : start_i \neq \bot \rightarrow \left( start_i = span_start \;\wedge\; duration_i = span_duration \right)'
+notes = "Models a job that can be done in one of several ways. The alternatives must have optional starts."
+
+[[entry]]
+ident = "int_span"
+args = ["var int: span_start", "var int: span_duration", "list of var int: start", "list of var int: duration"]
+summary = "The enclosing task starts with the earliest present sub-task and ends with the latest."
+definition = 'span_start = \min_{i \,:\, start_i \neq \bot} start_i \;\wedge\; span_start + span_duration = \max_{i \,:\, start_i \neq \bot} \left( start_i + duration_i \right)'
+notes = "Minimum and maximum are taken over the present sub-tasks only."
+
+# ---------------------------------------------------------------------------
+# Bin packing
+# ---------------------------------------------------------------------------
+
+
+[[entry]]
+ident = "int_bin_packing"
+args = ["list of int: capacity", "int: offset", "list of var int: bin", "list of int: weight"]
+summary = "Items are assigned to bins, each bin having its own capacity."
+definition = '\forall b : \sum_{i \,:\, bin_i = b} weight_i \;\leq\; capacity_{b - offset + 1}'
+notes = "`bin` and `weight` must have equal length, and weights must be non-negative. A single shared capacity is this constraint with a constant array."
+
+[[entry]]
+ident = "int_bin_packing_load"
+args = ["list of var int: load", "int: offset", "list of var int: bin", "list of int: weight"]
+summary = "Each bin's load variable holds the total weight assigned to that bin."
+definition = '\forall b : load_{b - offset + 1} = \sum_{i \,:\, bin_i = b} weight_i'
+notes = "`load` is numbered from `offset`, the lowest bin number. Makes the loads available to the rest of the model, so they can be bounded or optimised."
+
+[[entry]]
+ident = "int_knapsack"
+args = ["list of int: weight", "list of int: profit", "list of var int: xs", "var int: total_weight", "var int: total_profit"]
+summary = "Items are selected in given quantities, with their total weight and total profit reported."
+definition = 'total_weight = \sum_{i} weight_i \cdot xs_i \;\wedge\; total_profit = \sum_{i} profit_i \cdot xs_i'
+notes = "`xs` holds the quantity chosen of each item. Bound `total_weight` to impose the knapsack's capacity."
+
+# ---------------------------------------------------------------------------
+# Geometric packing
+# ---------------------------------------------------------------------------
+
+
+
+[[entry]]
+ident = "int_no_overlap"
+args = ["list of var int: x", "list of var int: dx", "list of var int: y", "list of var int: dy"]
+summary = "No two rectangles overlap."
+definition = '\forall i < j : x_i + dx_i \leq x_j \;\vee\; x_j + dx_j \leq x_i \;\vee\; y_i + dy_i \leq y_j \;\vee\; y_j + dy_j \leq y_i'
+notes = "All four arrays must have equal length. Position and extent are paired per dimension, so the arguments read `x, dx, y, dy` rather than all positions then all extents. Rectangles that merely touch do not overlap."
+
+[[entry]]
+ident = "int_no_overlap_nonstrict"
+args = ["list of var int: x", "list of var int: dx", "list of var int: y", "list of var int: dy"]
+summary = "No two rectangles of non-zero area overlap; rectangles with zero width or height are ignored."
+definition = '\forall i < j : dx_i \cdot dy_i = 0 \;\vee\; dx_j \cdot dy_j = 0 \;\vee\; x_i + dx_i \leq x_j \;\vee\; x_j + dx_j \leq x_i \;\vee\; y_i + dy_i \leq y_j \;\vee\; y_j + dy_j \leq y_i'
+
+[[entry]]
+ident = "int_geost"
+args = ["int: dimensions", "list of int: rect_size", "list of int: rect_origin", "list of set of int: shape", "list of var int: xs", "list of var int: kind"]
+summary = "Objects of the given shapes are placed so that none overlap."
+definition = '\forall i < j : R_i \cap R_j = \emptyset \quad \text{where } d = dimensions,\; R_i = \bigcup_{r \in shape_{kind_i}} \prod_{k=1}^{d} \left[\, p_{i,k},\; p_{i,k} + rect_size_{(r-1)d+k} \,\right),\; p_{i,k} = xs_{(i-1)d+k} + rect_origin_{(r-1)d+k}'
+notes = "`dimensions` is the number of dimensions, and every array indexed by rectangle or object is flattened row-major with that many entries per row. Each shape is a set of rectangles given by `rect_size` and `rect_origin`; `kind` selects one per object and `xs` places its origin. The general form of `int_no_overlap`."
+
+[[entry]]
+ident = "int_geost_bb"
+args = ["int: dimensions", "list of int: rect_size", "list of int: rect_origin", "list of set of int: shape", "list of var int: xs", "list of var int: kind", "list of var int: lower_bound", "list of var int: upper_bound"]
+summary = "As int_geost, and additionally every object lies within a given bounding box."
+definition = '\forall i, k : lower_bound_k \leq xs_{i,k} \;\wedge\; xs_{i,k} \leq upper_bound_k'
+
+[[entry]]
+ident = "int_geost_smallest_bb"
+args = ["int: dimensions", "list of int: rect_size", "list of int: rect_origin", "list of set of int: shape", "list of var int: xs", "list of var int: kind", "list of var int: lower_bound", "list of var int: upper_bound"]
+summary = "As int_geost_bb, with the bounding box constrained to fit the objects exactly."
+definition = '\forall k : lower_bound_k = \min_{i} xs_{i,k} \;\wedge\; upper_bound_k = \max_{i} xs_{i,k}'
+

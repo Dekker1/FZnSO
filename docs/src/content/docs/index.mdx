@@ -1,0 +1,47 @@
+---
+title: Flat White Vitriol (FZnSO)
+description: An incremental solver protocol for combinatorial solving using dynamically loadable libraries.
+template: splash
+# Without this the tab reads "Flat White Vitriol (FZnSO) | FZnSO", because
+# Starlight only drops the site-title suffix when the page title matches it.
+head:
+  - tag: title
+    content: Flat White Vitriol (FZnSO)
+hero:
+  tagline: One interface for constraint and optimisation solvers, loaded at run time as ordinary libraries, with no subprocess, text format, or re-flattening between solves.
+  actions:
+    - text: What is FZnSO?
+      link: start/what-is-fznso/
+      icon: right-arrow
+    - text: Read the specification
+      link: spec/overview/
+      icon: open-book
+      variant: minimal
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Start where you are
+
+<CardGrid>
+	<LinkCard
+		title="I want to use a solver"
+		href="guides/using-a-solver/"
+		description="Load a solver by name, describe a problem, and read solutions back, from Rust, C++ or Python."
+	/>
+	<LinkCard
+		title="I want to implement a solver"
+		href="guides/implementing-a-solver/"
+		description="Export thirteen entry points from a dynamically loadable library and every FZnSO consumer can drive your solver."
+	/>
+	<LinkCard
+		title="I need the exact rules"
+		href="spec/overview/"
+		description="The normative specification: entry points, types, lifetimes, threading and ABI stability."
+	/>
+	<LinkCard
+		title="What names should I use?"
+		href="registry/"
+		description="The registry of common constraints, options, objectives, statistics and message scopes."
+	/>
+</CardGrid>

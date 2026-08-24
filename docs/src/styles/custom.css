@@ -1,0 +1,95 @@
+/* Typography.
+ *
+ * Atkinson Hyperlegible Next for prose: it was drawn by the Braille Institute
+ * to keep similar glyphs apart, which is worth having in a document where `1`,
+ * `l`, `I` and `|` all appear in running text.
+ *
+ * DM Mono for code. Asap Condensed for headings, whose narrower letterforms let
+ * a long identifier like `int_global_cardinality_low_up_closed` sit on one line
+ * at heading size.
+ *
+ * All three are self-hosted from `@fontsource`; see `customCss` in
+ * `astro.config.mjs`.
+ */
+:root {
+	--sl-font: 'Atkinson Hyperlegible Next Variable', ui-sans-serif, system-ui, sans-serif;
+	--sl-font-mono: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	--fznso-font-display: 'Asap Condensed', var(--sl-font);
+
+	/* Starlight's 1.75 is set for its own font stack. Atkinson has a large
+	   x-height, so the same leading reads as loose. */
+	--sl-line-height: 1.6;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.site-title,
+.hero h1 {
+	font-family: var(--fznso-font-display);
+	font-weight: 700;
+	/* Condensed letterforms sit tightly by default; a little tracking keeps a
+	   long snake_case heading from reading as one word. */
+	letter-spacing: 0.01em;
+}
+
+/* Starlight's sidebar and table-of-contents headings are chrome, not content,
+   and read better in the body face at their small size. */
+.sidebar-content summary,
+starlight-toc > nav > h2 {
+	font-family: var(--sl-font);
+}
+
+/* Mermaid diagrams.
+ *
+ * `rehype-mermaid` renders them to inline SVG at build time, so a page carries
+ * no JavaScript to draw a diagram and its labels stay real text — selectable,
+ * and indexed by the site search.
+ *
+ * That leaves one SVG to serve both themes. The alternative, `rehype-mermaid`'s
+ * `dark` option, emits a `<picture>` keyed on `prefers-color-scheme`, which
+ * follows the operating system and would therefore ignore Starlight's own
+ * light/dark toggle. Inverting the light rendering keeps the two in step.
+ */
+svg[id^='mermaid-'] {
+	display: block;
+	margin-inline: auto;
+	max-width: 100%;
+}
+
+[data-theme='dark'] svg[id^='mermaid-'] {
+	/* Not a full inversion: pure black would become pure white, which is harsher
+	   than anything else on the page. */
+	filter: invert(0.9) hue-rotate(180deg);
+}
+
+/* The notation table on a registry page: symbol, its definition, then a gloss.
+   The first two columns hold formulas, so they size to their content and the
+   prose takes the rest. */
+.notation {
+	table-layout: auto;
+}
+
+.notation td {
+	border: none;
+	padding: 0.25rem 0.9rem 0.25rem 0;
+	vertical-align: baseline;
+}
+
+.notation td:first-child {
+	text-align: right;
+}
+
+/* Both formula columns keep to one line; the prose column takes what is left. */
+.notation td:first-child,
+.notation td:nth-child(2) {
+	white-space: nowrap;
+}
+
+.notation td:last-child {
+	width: 100%;
+	color: var(--sl-color-gray-2);
+}
