@@ -1,0 +1,15 @@
+<!-- Placeholder wordmark. Two lines rather than one because five glyphs across
+     a 16px square are not legible at any weight.
+
+     A favicon renders with system fonts, not the site's, so the family is a
+     stack and `textLength` pins each line's width whichever font is picked.
+     The two lengths are in proportion to their glyph counts (3:2), so the
+     letters come out the same width on both lines. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="FZnSO">
+  <rect width="32" height="32" rx="7" fill="#16213e"/>
+  <g fill="#fff" text-anchor="middle" font-size="13" font-weight="700"
+     font-family="'Helvetica Neue', Arial, sans-serif">
+    <text x="16" y="15.2" textLength="24" lengthAdjust="spacingAndGlyphs">FZn</text>
+    <text x="16" y="27.4" textLength="16" lengthAdjust="spacingAndGlyphs">SO</text>
+  </g>
+</svg>

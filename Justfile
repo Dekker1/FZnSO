@@ -29,7 +29,10 @@ test: test-cpp test-python
 test-cpp:
     #!/usr/bin/env sh
     set -e
-    ext=$(case "$(uname)" in Darwin) echo dylib;; *) echo so;; esac)
+    case "$(uname)" in
+        Darwin) ext=dylib ;;
+        *) ext=so ;;
+    esac
     warn="-std=c++17 -Wall -Wextra -Werror"
     san="-g -fsanitize=address,undefined -fno-omit-frame-pointer"
     cargo build --example example_solver --example bad_abi_solver

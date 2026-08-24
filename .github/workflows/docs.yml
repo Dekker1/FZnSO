@@ -21,35 +21,31 @@ jobs:
       contents: read
       pages: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      # The site's URL, including any custom domain, comes from the repository's
-      # Pages settings rather than from a committed `CNAME`. A pull request from
-      # a fork cannot read those settings, and never deploys either, so a
-      # failure here is not fatal — `astro.config.mjs` falls back.
+      # The site URL comes from Pages settings, not a committed `CNAME`. A fork
+      # PR cannot read those and never deploys; `astro.config.mjs` falls back.
       - name: Pages settings
         id: pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
         continue-on-error: true
 
-      # Nightly: the reference is built from rustdoc's JSON output, which is
-      # still an unstable format. `docs/scripts/api/rust.mjs` asserts the
-      # version it was written against, so a format bump fails loudly here
-      # rather than silently emitting empty pages.
+      # Nightly: the reference comes from rustdoc's unstable JSON. `api/rust.mjs`
+      # asserts the format version, so a bump fails rather than empties a page.
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: docs/package.json
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
           cache-dependency-path: docs/pnpm-lock.yaml
 
-      - uses: astral-sh/setup-uv@v7
-      - uses: extractions/setup-just@v3
+      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: extractions/setup-just@v4
       - run: sudo apt-get update && sudo apt-get install -y doxygen
 
       # `rehype-mermaid` renders diagrams to SVG in a real browser at build
@@ -66,10 +62,8 @@ jobs:
           . .venv/bin/activate
           uv pip install -q maturin griffe
 
-      # Dumps every API surface and renders the reference pages. `-D warnings`
-      # inside keeps the single-source rule honest: a doc comment linking to a
-      # renamed item fails here rather than rotting silently — and those links
-      # become real cross-page links in the rendered reference.
+      # Dumps every API surface and renders the reference. `-D warnings` inside
+      # fails on a doc comment linking to a renamed item, rather than rotting.
       - name: Reference and site
         env:
           SITE: ${{ steps.pages.outputs.origin }}
@@ -78,15 +72,20 @@ jobs:
           pnpm --dir docs install --frozen-lockfile
           just docs
 
-      # Catches a spec anchor renamed out from under a link, in the prose and in
-      # the doc comments that point at the site.
+      # Outbound URLs and assets; `check-links.mjs` owns internal links and
+      # anchors. `--root-dir` must be absolute; the exclusions are circular.
       - name: Check links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --no-progress --base docs/dist 'docs/dist/**/*.html'
+          args: >-
+            --no-progress
+            --root-dir '${{ github.workspace }}/docs/dist'
+            --exclude '^https?://github\.com/${{ github.repository }}'
+            --exclude '^https?://fznso\.minizinc\.dev'
+            'docs/dist/**/*.html'
           fail: true
 
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: docs/dist
 
@@ -102,4 +101,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

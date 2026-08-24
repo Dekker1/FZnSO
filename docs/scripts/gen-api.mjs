@@ -21,7 +21,7 @@ import { parseRust } from './api/rust.mjs';
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const REPO_ROOT = dirname(ROOT);
 const OUT = join(ROOT, 'src', 'content', 'docs', 'reference');
-const REPO = 'https://github.com/MiniZinc/FZnSO';
+const REPO = 'https://github.com/Dekker1/FZnSO';
 
 const PAGES = [
 	{

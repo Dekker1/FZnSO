@@ -15,18 +15,16 @@ permissions:
   contents: read
 
 jobs:
-  # `just check-headers` proves the generated C compiles; it cannot notice that
-  # the Rust it was generated from has moved on. This regenerates and fails on
-  # any difference, which is the only thing that keeps a vendored copy of
-  # `fznso_types.h` trustworthy.
+  # `check-headers` proves the generated C compiles, not that it still matches
+  # the Rust. Regenerating and diffing is what keeps a vendored copy honest.
   headers:
     name: C artifacts match the Rust source
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v3
+      - uses: extractions/setup-just@v4
       - run: cargo install cbindgen --locked
 
       - name: Regenerate
@@ -43,10 +41,9 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      # Nightly first, so stable ends up the default: `just check` runs plain
-      # `cargo clippy` and wants the stable lints, but `cargo +nightly fmt`
-      # because this repo sets rustfmt options stable silently ignores.
+      - uses: actions/checkout@v7
+      # Nightly first so stable is the default: `just check` runs plain `cargo
+      # clippy`, but `cargo +nightly fmt` for the unstable rustfmt options.
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
@@ -54,7 +51,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v3
+      - uses: extractions/setup-just@v4
       - run: just check
 
   test:
@@ -65,36 +62,31 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v3
-      - uses: astral-sh/setup-uv@v7
+      - uses: extractions/setup-just@v4
+      - uses: astral-sh/setup-uv@v10.0.1
 
-      # `just test-cpp` cross-builds the C++ suite for Windows when a mingw
-      # toolchain is present, and skips it with a message otherwise. Installing
-      # it here is what makes that path actually run somewhere.
+      # `just test-cpp` skips its Windows cross-build without mingw; installing
+      # it here is what makes that path run somewhere.
       - name: Windows cross-compiler
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y g++-mingw-w64-x86-64
 
-      # Rust workspace, the C++ suites under ASan/UBSan, and the Python
-      # bindings built with maturin.
+      # Rust workspace, the C++ suites under ASan/UBSan, and Python via maturin.
       - run: just test
 
-  # The interface passes handles as raw pointers that each side casts back to
-  # its own type. Every bug in that class has passed the ordinary suite first,
-  # so this is not optional diligence. `tests/dylib.rs` is skipped here: miri
-  # cannot `dlopen`, which is why `tests/abi.rs` drives the entry points
-  # directly.
+  # Handles cross as raw pointers each side casts back; every bug in that class
+  # has passed the ordinary suite first. `dylib.rs` skips itself (no `dlopen`).
   miri:
     name: Miri
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
       - uses: Swatinem/rust-cache@v2
-      - uses: extractions/setup-just@v3
+      - uses: extractions/setup-just@v4
       - run: just miri
