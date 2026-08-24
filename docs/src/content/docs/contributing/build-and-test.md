@@ -56,7 +56,7 @@ just test-cpp
 Run the Rust suite under miri before changing anything that touches handles, casts or lifetimes:
 
 ```sh
-cargo +nightly miri test --workspace
+just miri
 ```
 
 This is not optional diligence.

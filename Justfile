@@ -73,6 +73,15 @@ test-python:
     maturin develop
     pytest -q
 
+# Run the Rust suite under miri.
+#
+# `--lib --tests` is not optional: a plain `--workspace` also builds the
+# `cdylib` examples, which miri cannot produce a target for. The dynamic-loading
+# tests skip themselves here, since miri cannot `dlopen`; `tests/abi.rs` drives
+# the generated entry points directly so they are covered anyway.
+miri:
+    cargo +nightly miri test --workspace --lib --tests
+
 # Check the codebase using all CI linters.
 check: check-headers
     #!/usr/bin/env sh
