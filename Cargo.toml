@@ -2,6 +2,7 @@
 
 members = [
   "rust/fznso",
+  "rust/fznso-conform",
   "rust/fznso-solver-template",
   "rust/fznso-types",
 ]

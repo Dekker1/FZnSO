@@ -1,0 +1,18 @@
+[package]
+name = "fznso-conform"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# A tool, not a binding. It is kept out of `fznso` so that the crate a solver
+# depends on gains no TOML parser, and out of `fznso-types` — which defines the
+# ABI and has no dependencies at all — for the same reason.
+
+[[bin]]
+name = "fznso-conform"
+path = "src/main.rs"
+
+[dependencies]
+fznso = { path = "../fznso" }
+fznso-types = { path = "../fznso-types" }
+toml = "0.8"
