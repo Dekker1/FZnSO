@@ -14,6 +14,9 @@ The flow constraints are the exception: they decide a quantity per arc rather th
 they take a `flow` array in place of the two selectors.
 `node_offset` is the number the caller's vertices start from, since the values in `from` and `to`
 index `nodes` and a flat list cannot carry that numbering itself.
+The two spanning-tree constraints carry no `nodes` array, every vertex being covered by definition,
+and take a `node_count` in its place: a vertex in no edge is not recoverable from `from` and `to`,
+and without one the constraint would hold on a graph it does not span.
 
 **Extensional constraints** take the permitted assignments themselves: a table of tuples, or an
 automaton that accepts them.
@@ -26,6 +29,8 @@ The extensional constraints are named for their element type, as everything else
 
 `bounded_path` and its relatives are absent: bounding a path's weight is `graph_path` alongside a
 `bool_lin_le` over the edge selectors, which introduces nothing new.
+The tree constraints do carry a `weight` array, because their propagators filter with it; what they
+report is `total_weight`, an equality, so bounding a tree means bounding that.
 '''
 
 
@@ -35,7 +40,8 @@ The extensional constraints are named for their element type, as everything else
 
 [[notation]]
 tex = 'V'
-means = "the vertices of the given graph"
+is = '= \{\, o, \ldots, o + n - 1 \,\}'
+means = "the vertices of the given graph, where n is the length of nodes, or node_count where there is no such array"
 
 [[notation]]
 tex = 'o'
@@ -177,29 +183,29 @@ definition = '\forall v \in N : \deg^{-}(v) = [\, v \neq root \,] \;\wedge\; roo
 
 [[entry]]
 ident = "graph_steiner_tree"
-args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: weight", "list of var bool: nodes", "list of var bool: edges", "var int: weight_bound"]
-summary = "The selected subgraph is a tree whose total edge weight is within the given bound."
-definition = '\left( \forall u, v \in N : u \rightsquigarrow v \right) \;\wedge\; \lvert E \rvert = \lvert N \rvert - 1 \;\wedge\; \sum_{e \in E} weight_e \leq weight_bound'
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: weight", "list of var bool: nodes", "list of var bool: edges", "var int: total_weight"]
+summary = "The selected subgraph is a tree, reporting its total edge weight."
+definition = '\left( \forall u, v \in N : u \rightsquigarrow v \right) \;\wedge\; \lvert E \rvert = \lvert N \rvert - 1 \;\wedge\; total_weight = \sum_{e \in E} weight_e'
 notes = "Which nodes to include is part of the decision, which is what makes it a Steiner tree rather than a spanning tree."
 
 [[entry]]
 ident = "graph_steiner_tree_directed"
-args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: weight", "var int: root", "list of var bool: nodes", "list of var bool: edges", "var int: weight_bound"]
-summary = "The selected subgraph is a directed tree from the root whose total arc weight is within the given bound."
-definition = '\left( \forall v \in N : \deg^{-}(v) = [\, v \neq root \,] \;\wedge\; root \rightsquigarrow v \right) \;\wedge\; \sum_{e \in E} weight_e \leq weight_bound'
+args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: weight", "var int: root", "list of var bool: nodes", "list of var bool: edges", "var int: total_weight"]
+summary = "The selected subgraph is a directed tree from the root, reporting its total arc weight."
+definition = '\left( \forall v \in N : \deg^{-}(v) = [\, v \neq root \,] \;\wedge\; root \rightsquigarrow v \right) \;\wedge\; total_weight = \sum_{e \in E} weight_e'
 
 [[entry]]
 ident = "graph_spanning_tree"
-args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: weight", "list of var bool: edges", "var int: weight_bound"]
-summary = "The selected edges span every node of the graph, with total weight within the given bound."
-definition = 'N = V \;\wedge\; \left( \forall u, v \in V : u \rightsquigarrow v \right) \;\wedge\; \lvert E \rvert = \lvert V \rvert - 1 \;\wedge\; \sum_{e \in E} weight_e \leq weight_bound'
-notes = "Unlike `graph_steiner_tree`, every node must be covered."
+args = ["list of int: from", "list of int: to", "int: node_offset", "int: node_count", "list of int: weight", "list of var bool: edges", "var int: total_weight"]
+summary = "The selected edges span every node of the graph, reporting their total weight."
+definition = 'N = V \;\wedge\; \left( \forall u, v \in V : u \rightsquigarrow v \right) \;\wedge\; \lvert E \rvert = \lvert V \rvert - 1 \;\wedge\; total_weight = \sum_{e \in E} weight_e'
+notes = "Unlike `graph_steiner_tree`, every node must be covered, so `node_count` stands in for the `nodes` array whose length gives the vertex count elsewhere."
 
 [[entry]]
 ident = "graph_spanning_tree_directed"
-args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: weight", "var int: root", "list of var bool: edges", "var int: weight_bound"]
-summary = "The selected arcs form a spanning arborescence from the root, with total weight within the given bound."
-definition = '\forall v \in V : \deg^{-}(v) = [\, v \neq root \,] \;\wedge\; root \rightsquigarrow v \;\wedge\; \sum_{e \in E} weight_e \leq weight_bound'
+args = ["list of int: from", "list of int: to", "int: node_offset", "int: node_count", "list of int: weight", "var int: root", "list of var bool: edges", "var int: total_weight"]
+summary = "The selected arcs form a spanning arborescence from the root, reporting their total weight."
+definition = '\forall v \in V : \deg^{-}(v) = [\, v \neq root \,] \;\wedge\; root \rightsquigarrow v \;\wedge\; total_weight = \sum_{e \in E} weight_e'
 
 # ---------------------------------------------------------------------------
 # Flow
@@ -233,38 +239,44 @@ notes = "`tuples` is the table flattened row-major, one permitted assignment per
 [[entry]]
 ident = "bool_table"
 args = ["list of var bool: xs", "list of bool: tuples"]
-reified = ["bool_table_reif", "bool_table_imp"]
 summary = "The Boolean assignment appears as a row of the given table."
 definition = '\exists r : \forall j : xs_j \leftrightarrow tuples_{(r-1) \cdot \lvert xs \rvert + j}'
 notes = "`tuples` is the table flattened row-major; the rows are as long as `xs`."
 
 [[entry]]
 ident = "int_regular"
-args = ["list of var int: xs", "int: states", "int: alphabet", "list of int: transition", "int: initial", "set of int: accepting"]
+args = ["list of var int: xs", "int: states", "int: alphabet", "int: alphabet_offset", "list of int: transition", "int: initial", "set of int: accepting"]
 summary = "The array, read as a string, is accepted by the given deterministic automaton."
-definition = 'q_0 = initial \;\wedge\; q_j = transition_{q_{j-1},\, xs_j} \;\wedge\; q_{\lvert xs \rvert} \in accepting'
-notes = "`transition` is the state-by-symbol table flattened row-major, `states` rows of `alphabet` entries, so no row length travels with it. A transition to 0 means the string is rejected. States are numbered from 1, and symbols run from 1 to `alphabet`."
+definition = 'q_0 = initial \;\wedge\; q_j = transition_{q_{j-1},\, xs_j - alphabet_offset + 1} \;\wedge\; q_{\lvert xs \rvert} \in accepting'
+notes = "`transition` is the state-by-symbol table flattened row-major, `states` rows of `alphabet` entries, so no row length travels with it. A transition to 0 means the string is rejected. States are numbered from 1; symbols from `alphabet_offset`, so `xs` keeps the caller's own alphabet."
 
 [[entry]]
-ident = "int_regular_nfa"
-args = ["list of var int: xs", "int: states", "int: alphabet", "list of set of int: transition", "int: initial", "set of int: accepting"]
+ident = "int_regular_nondeterministic"
+args = ["list of var int: xs", "int: states", "int: alphabet", "int: alphabet_offset", "list of set of int: transition", "int: initial", "set of int: accepting"]
 summary = "The array, read as a string, is accepted by the given non-deterministic automaton."
-definition = '\exists q : q_0 = initial \;\wedge\; q_j \in transition_{q_{j-1},\, xs_j} \;\wedge\; q_{\lvert xs \rvert} \in accepting'
+definition = '\exists q : q_0 = initial \;\wedge\; q_j \in transition_{q_{j-1},\, xs_j - alphabet_offset + 1} \;\wedge\; q_{\lvert xs \rvert} \in accepting'
 notes = "As `int_regular`, but each transition gives a set of possible next states."
 
 [[entry]]
 ident = "int_regular_cost"
-args = ["list of var int: xs", "int: states", "int: alphabet", "list of int: transition", "int: initial", "set of int: accepting", "list of int: weight", "var int: total_cost"]
+args = ["list of var int: xs", "int: states", "int: alphabet", "int: alphabet_offset", "list of int: transition", "int: initial", "set of int: accepting", "list of int: weight", "var int: total_cost"]
 summary = "As int_regular, and the total cost sums the weight of each transition taken."
-definition = 'total_cost = \sum_{j} weight_{q_{j-1},\, xs_j}'
+definition = 'total_cost = \sum_{j} weight_{q_{j-1},\, xs_j - alphabet_offset + 1}'
 
 [[entry]]
 ident = "int_mdd"
 args = ["list of var int: xs", "int: nodes", "list of int: level", "int: edges", "list of int: from", "list of set of int: label", "list of int: to"]
 summary = "The assignment corresponds to a root-to-leaf path through the given multi-valued decision diagram."
 definition = '\exists e_1, \ldots, e_{\lvert xs \rvert} : from_{e_1} = 1 \;\wedge\; \forall j : \left( to_{e_j} = from_{e_{j+1}} \;\wedge\; xs_j \in label_{e_j} \right)'
-notes = "`level` gives each node's layer, and `from`, `label` and `to` describe the edges. Nodes are numbered from 1, so no offset travels with them. A compact alternative to `int_table` when the relation factorises."
+notes = "`level` gives each node's layer, and `from`, `label` and `to` describe the edges. Nodes are numbered from 1, so no offset travels with them. A compact alternative to `int_table` when the relation factorises.\n\nThe diagram must be **deterministic**: no two edges leaving a node may share a label. `int_mdd_nondeterministic` is the form without that requirement."
 
+
+[[entry]]
+ident = "int_mdd_nondeterministic"
+args = ["list of var int: xs", "int: nodes", "list of int: level", "int: edges", "list of int: from", "list of set of int: label", "list of int: to"]
+summary = "The assignment corresponds to some root-to-leaf path through the given decision diagram."
+definition = '\exists e_1, \ldots, e_{\lvert xs \rvert} : from_{e_1} = 1 \;\wedge\; \forall j : \left( to_{e_j} = from_{e_{j+1}} \;\wedge\; xs_j \in label_{e_j} \right)'
+notes = "As `int_mdd`, but edges leaving a node may share a label, so an assignment may be accepted along several paths. A separate name because a propagator written for the deterministic form is wrong here."
 
 [[entry]]
 ident = "int_mdd_cost"

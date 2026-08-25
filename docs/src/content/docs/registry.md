@@ -66,7 +66,7 @@ form sort together.
 
 ### Signatures are the most permissive form
 
-An entry's signature is the **widest** shape the constraint takes, so `set_of_int_in` types its set
+An entry's signature is the **widest** shape the constraint takes, so `int_in` types its set
 argument `var set of int` even though most uses have a constant there.
 A solver may then
 [declare a narrower type](../spec/entry-points/#declaring-a-narrower-argument-type) — `set of int`,
@@ -84,6 +84,14 @@ that array the number it is indexed from.
 They are the part of the type that a [flat, one-based
 list](../spec/types-and-values/#a-list-is-flat-and-one-based) cannot carry itself.
 
+### The result comes last
+
+Where a constraint [computes a value](#reified-and-implied-forms), that value is its **last**
+argument — `int_count(xs, value, n)`, `int_array_element(xs, offset, index, value)` — so the inputs
+come first and what the solver has to work out comes at the end.
+The offset rule above outranks it: an offset stays with its array even when that array is the
+result, which is why `int_bin_packing_load` ends `(…, load, offset)`.
+
 ### One constraint, one identifier
 
 The list is meant to be comprehensive but not repetitive.
@@ -98,27 +106,46 @@ rewriting into the kept form costs nothing:
 | `int_diffn` | renamed `int_no_overlap`, which says what it constrains |
 | `int_le`, `int_plus` | `int_lin_le`, `int_lin_eq` with a coefficient list |
 | `int_max`, `bool_and` | `int_array_maximum`, `bool_array_and` with a two-element list |
-| `at_least`, `at_most` | `int_count_geq`, `int_count_leq` |
-| `int_count_lt` | `int_count_leq` with `n - 1` |
+| `bool_array_or` | `bool_clause_reif` with an empty list of negative literals |
+| `at_least`, `at_most`, `int_count_leq`, `int_count_geq` | `int_count` alongside an `int_lin_le` on the count |
+| `int_count_eq` | renamed `int_count`: with no comparison forms left, the relation named nothing |
 | `all_different_except_0` | `int_all_different_except` with `{0}` |
 | `lex2` | `int_lex_chain_lesseq` on a matrix and on its transpose |
 
+The rule reaches further once a constraint is [functional](#reified-and-implied-forms): its result
+is a value, and comparing a value is what the linear constraints are for.
+Hence one counting entry, and no `_eq` on its name — there is no sibling relation left to tell it
+apart from.
+
 An entry **stays** when the solution sets genuinely differ, even if one constraint implies the
 other and even if the difference looks small.
-`int_circuit` and `int_subcircuit` are both here, as are `int_count_eq` and `int_count_leq`, and
-`float_lin_lt` beside `float_lin_le` — there is no next float to shift a bound by.
+`int_circuit` and `int_subcircuit` are both here, as are `int_global_cardinality` and its `_closed`
+form, and `float_lin_lt` beside `float_lin_le` — there is no next float to shift a bound by.
+`int_lin_le` and `bool_lin_le` stay on a different reading: a linear inequality is its own
+propagator, not a sum computed and then compared.
 
 ### Reified and implied forms
 
-Most constraints have a reified form, named `_reif`, and some an implied form, named `_imp`.
-They take the base constraint's arguments followed by a Boolean `r`:
+**Every constraint that is not functional also names a reified form `_reif` and an implied form
+`_imp`.** They take the base constraint's arguments followed by a Boolean `r`:
 
 - `C_reif(…, r)` holds when `r ↔ C`;
 - `C_imp(…, r)` holds when `r → C`, leaving `r` free when `C` holds.
 
-These are listed on the entry for the constraint they reify rather than given entries of their own,
-since the meaning follows mechanically from the base definition.
-A solver declares whichever of the three names it actually supports.
+Neither is written out anywhere: name and meaning both follow from the base entry, so a list would
+be a second copy to keep in step.
+A solver declares whichever of the three it supports.
+
+A constraint is **functional** when one argument is a decision variable the others determine, so a
+solver assigns it rather than testing it.
+Reifying that says no more than a reified equality on the result would, so a functional entry names
+neither form; the registry source marks them, being the shorter list.
+
+What decides it is whether that argument is a *variable*.
+`int_count(xs, value, n)` and `int_array_element` are functional; `int_lin_eq` is not, because its
+`total` is a constant to compare against.
+`bool_lin_eq`'s is a variable — nothing in a Boolean list can absorb an integer total, so it has
+to name one — which is why two entries that look alike differ here.
 
 ## The one rule
 

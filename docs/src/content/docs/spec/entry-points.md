@@ -47,8 +47,8 @@ capability is a specialisation of it.
 The common case is a solver that handles an argument only as a parameter:
 
 ```text
-registry     set_of_int_in(var int: x, var set of int: values)
-a solver     set_of_int_in(var int: x, set of int: values)
+registry     int_in(var int: x, var set of int: values)
+a solver     int_in(var int: x, set of int: values)
 ```
 
 That solver has not declared a different constraint.

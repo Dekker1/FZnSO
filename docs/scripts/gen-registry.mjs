@@ -63,6 +63,16 @@ const CATEGORIES = {
 };
 
 /**
+ * The `_reif` and `_imp` names an entry also declares.
+ *
+ * Every constraint names both unless it is functional, so the names are derived
+ * rather than listed: a list would be a second copy of the same fact, and the
+ * ad-hoc one this replaced had drifted to a quarter of the entries.
+ */
+const variantNames = (e) =>
+	e.functional || !e.args ? [] : [`${e.ident}_reif`, `${e.ident}_imp`];
+
+/**
  * The tokens a filter query is matched against.
  *
  * `lin_le` also finds `lin le`, and a folded variant name such as
@@ -72,7 +82,7 @@ const searchKey = (e) =>
 	[
 		e.ident,
 		e.ident.replaceAll('_', ' '),
-		...(e.reified ?? []),
+		...variantNames(e),
 		...(e.args ?? []).map((a) => parseArg(a).name),
 		e.summary,
 		e.definition ?? '',
@@ -224,9 +234,10 @@ function renderEntry(entry, category) {
 		? `\n<Formula tex={${JSON.stringify(markUpNames(entry.definition.trim(), entry.args))}} />\n`
 		: '';
 	// The reified and implied forms take the same arguments plus `r`, so they are
-	// listed rather than given entries of their own.
-	const variants = (entry.reified ?? []).length
-		? `\n<p class="entry-variants">also declarable as ${entry.reified
+	// derived rather than given entries of their own.
+	const named = variantNames(entry);
+	const variants = named.length
+		? `\n<p class="entry-variants">also declarable as ${named
 				.map((v) => `<code>${v}</code>`)
 				.join(' and ')}</p>\n`
 		: '';

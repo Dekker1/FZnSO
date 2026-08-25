@@ -7,7 +7,9 @@ intro = """
 Constraints over finite sets of integers.
 A solver that declares `var set of int` in its
 [decision types](../../../spec/entry-points/#the-library) should expect these; one that does not may
-still accept `set_of_int_in`, whose set argument is constant.
+still accept `int_in`, whose set argument is constant.
+That one is named for the integer it restricts; there is no interval form, because a range is a
+set.
 
 Sets cross the interface as [range lists](../../../spec/types-and-values/#sets), so a solver never
 sees an enumerated membership list for a large interval.
@@ -20,23 +22,22 @@ There is no `set_of_int_superset`: it is `set_of_int_subset` with the arguments 
 # ---------------------------------------------------------------------------
 
 [[entry]]
-ident = "set_of_int_in"
+ident = "int_in"
 args = ["var int: x", "var set of int: values"]
-reified = ["set_of_int_in_reif", "set_of_int_in_imp"]
 summary = "The integer is a member of the set."
 definition = 'x \in values'
 notes = "Declared with both sides variable, which is the general case. A solver that only supports a constant set says so by [declaring `values` as a parameter](../../../spec/entry-points/#declaring-a-narrower-argument-type); it is then the application's job not to reach for it when the set is a decision variable. Against a constant set this says the same thing as restricting the variable's `decision_domain`, but as a posted constraint rather than a declaration."
 
 [[entry]]
-ident = "set_of_int_at_most1"
-args = ["list of var set of int: xs"]
-reified = ["set_of_int_at_most1_reif"]
-summary = "No two sets in the array share more than one member."
-definition = '\forall i < j : \lvert xs_i \cap xs_j \rvert \leq 1'
+ident = "set_of_int_max_overlap"
+args = ["list of var set of int: xs", "int: max_overlap"]
+summary = "No two sets in the array share more than the given number of members."
+definition = '\forall i < j : \lvert xs_i \cap xs_j \rvert \leq max_overlap'
 
 [[entry]]
 ident = "set_of_int_card"
 args = ["var set of int: s", "var int: n"]
+functional = true
 summary = "The count is the number of elements in the set."
 definition = 'n = \lvert s \rvert'
 
@@ -47,21 +48,18 @@ definition = 'n = \lvert s \rvert'
 [[entry]]
 ident = "set_of_int_eq"
 args = ["var set of int: s", "var set of int: t"]
-reified = ["set_of_int_eq_reif"]
 summary = "The two sets have the same members."
 definition = 's = t'
 
 [[entry]]
 ident = "set_of_int_ne"
 args = ["var set of int: s", "var set of int: t"]
-reified = ["set_of_int_ne_reif"]
 summary = "The two sets differ in at least one member."
 definition = 's \neq t'
 
 [[entry]]
 ident = "set_of_int_subset"
 args = ["var set of int: s", "var set of int: t"]
-reified = ["set_of_int_subset_reif"]
 summary = "Every member of the first set is a member of the second."
 definition = 's \subseteq t'
 
@@ -85,42 +83,49 @@ definition = 's \prec t'
 [[entry]]
 ident = "set_of_int_union"
 args = ["var set of int: s", "var set of int: t", "var set of int: result"]
+functional = true
 summary = "The result contains exactly the members of either operand."
 definition = 'result = s \cup t'
 
 [[entry]]
 ident = "set_of_int_intersect"
 args = ["var set of int: s", "var set of int: t", "var set of int: result"]
+functional = true
 summary = "The result contains exactly the members common to both operands."
 definition = 'result = s \cap t'
 
 [[entry]]
 ident = "set_of_int_diff"
 args = ["var set of int: s", "var set of int: t", "var set of int: result"]
+functional = true
 summary = "The result contains the members of the first operand that are not in the second."
 definition = 'result = s \setminus t'
 
 [[entry]]
 ident = "set_of_int_symdiff"
 args = ["var set of int: s", "var set of int: t", "var set of int: result"]
+functional = true
 summary = "The result contains the members of exactly one of the two operands."
 definition = 'result = (s \setminus t) \cup (t \setminus s)'
 
 [[entry]]
 ident = "set_of_int_array_union"
 args = ["list of var set of int: xs", "var set of int: result"]
+functional = true
 summary = "The result is the union of every set in the array."
 definition = 'result = \bigcup_{i} xs_i'
 
 [[entry]]
 ident = "set_of_int_array_intersect"
 args = ["list of var set of int: xs", "var set of int: result"]
+functional = true
 summary = "The result is the intersection of every set in the array."
 definition = 'result = \bigcap_{i} xs_i'
 
 [[entry]]
 ident = "int_array_union"
 args = ["list of var int: xs", "var set of int: result"]
+functional = true
 summary = "The result is the set of values the integer array takes."
 definition = 'result = \{\, xs_i \mid i \,\}'
 
@@ -137,6 +142,7 @@ definition = '\bigcup_{i} xs_i = universe \;\wedge\; \forall i < j : xs_i \cap x
 [[entry]]
 ident = "set_of_int_to_bool"
 args = ["var set of int: s", "list of var bool: flags", "int: offset"]
+functional = true
 summary = "Each Boolean records whether the corresponding index is a member of the set."
 definition = '\forall i : flags_{i - offset + 1} \leftrightarrow i \in s'
 notes = "The standard channelling between a set variable and its characteristic vector."
@@ -149,12 +155,14 @@ definition = '\forall i, j : ints_{i - int_offset + 1} = j \leftrightarrow i \in
 
 [[entry]]
 ident = "int_array_roots"
-args = ["list of var int: xs", "int: offset", "var set of int: s", "var set of int: values"]
+args = ["list of var int: xs", "int: offset", "var set of int: values", "var set of int: s"]
+functional = true
 summary = "The set holds exactly those indices whose array element lies in the given value set."
 definition = '\forall i : i \in s \leftrightarrow xs_{i - offset + 1} \in values'
 
 [[entry]]
 ident = "int_array_range"
 args = ["list of var int: xs", "int: offset", "var set of int: domain", "var set of int: image"]
+functional = true
 summary = "The image is exactly the set of values the array takes at the given indices."
 definition = 'image = \{\, xs_{i - offset + 1} \mid i \in domain \,\}'

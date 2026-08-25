@@ -38,7 +38,6 @@ means = "its strict form"
 [[entry]]
 ident = "int_all_different"
 args = ["list of var int: xs"]
-reified = ["int_all_different_reif"]
 summary = "No value occurs twice in the array."
 definition = '\forall i < j : xs_i \neq xs_j'
 
@@ -48,6 +47,12 @@ args = ["list of var int: xs", "set of int: except"]
 summary = "No value occurs twice, except for values in the given set, which may repeat freely."
 definition = '\forall i < j : xs_i \neq xs_j \;\vee\; xs_i \in except'
 notes = "The common case of a value marking an unused slot is this constraint with `except = {0}`."
+
+[[entry]]
+ident = "int_all_different_symmetric"
+args = ["list of var int: xs", "int: offset"]
+summary = "The array is a permutation that is its own inverse."
+definition = '\forall i : \sigma(\sigma(i)) = i \quad \text{where } \sigma(i) = xs_{i - offset + 1}'
 
 [[entry]]
 ident = "set_of_int_all_different"
@@ -75,71 +80,52 @@ definition = '\forall i < j : xs_i \cap xs_j = \emptyset'
 
 [[entry]]
 ident = "int_nvalue"
-args = ["var int: n", "list of var int: xs"]
+args = ["list of var int: xs", "var int: n"]
+functional = true
 summary = "The count is how many distinct values the array takes."
 definition = 'n = \lvert \{\, xs_i \mid i \,\} \rvert'
 notes = "`n = 1` is `int_all_equal`; `n = length(xs)` is `int_all_different`."
-
-[[entry]]
-ident = "int_symmetric_all_different"
-args = ["list of var int: xs"]
-summary = "The array is a permutation that is its own inverse."
-definition = '\forall i : xs_{xs_i} = i'
 
 # ---------------------------------------------------------------------------
 # Counting
 # ---------------------------------------------------------------------------
 
 [[entry]]
-ident = "int_count_eq"
+ident = "int_count"
 args = ["list of var int: xs", "var int: value", "var int: n"]
+functional = true
 summary = "The value occurs exactly the given number of times in the array."
 definition = 'n = \lvert \{\, i \mid xs_i = value \,\} \rvert'
+notes = "The count is a value, not a comparison: at most `k` occurrences is this constraint alongside `int_lin_le([1], [n], k)`."
 
 [[entry]]
-ident = "int_count_leq"
-args = ["list of var int: xs", "var int: value", "var int: n"]
-summary = "The value occurs at most the given number of times."
-definition = '\lvert \{\, i \mid xs_i = value \,\} \rvert \leq n'
-notes = "Strictly fewer than `n` is this constraint with `n - 1`."
-
-[[entry]]
-ident = "int_count_geq"
-args = ["list of var int: xs", "var int: value", "var int: n"]
-summary = "The value occurs at least the given number of times."
-definition = '\lvert \{\, i \mid xs_i = value \,\} \rvert \geq n'
-notes = "Strictly more than `n` is this constraint with `n + 1`."
-
-[[entry]]
-ident = "int_count_neq"
-args = ["list of var int: xs", "var int: value", "var int: n"]
-summary = "The number of occurrences of the value differs from the given count."
-definition = '\lvert \{\, i \mid xs_i = value \,\} \rvert \neq n'
-
-[[entry]]
-ident = "bool_count_eq"
+ident = "bool_count"
 args = ["list of var bool: xs", "var bool: value", "var int: n"]
+functional = true
 summary = "The value occurs exactly the given number of times in the array."
 definition = 'n = \lvert \{\, i \mid xs_i \leftrightarrow value \,\} \rvert'
 
 [[entry]]
-ident = "float_count_eq"
+ident = "float_count"
 args = ["list of var float: xs", "var float: value", "var int: n"]
+functional = true
 summary = "The value occurs exactly the given number of times in the array."
 definition = 'n = \lvert \{\, i \mid xs_i = value \,\} \rvert'
 
 [[entry]]
-ident = "set_of_int_count_eq"
+ident = "set_of_int_count"
 args = ["list of var set of int: xs", "var set of int: value", "var int: n"]
+functional = true
 summary = "The value occurs exactly the given number of times in the array."
 definition = 'n = \lvert \{\, i \mid xs_i = value \,\} \rvert'
 
 [[entry]]
 ident = "int_among"
-args = ["var int: n", "list of var int: xs", "set of int: values"]
+args = ["list of var int: xs", "set of int: values", "var int: n"]
+functional = true
 summary = "The count is how many array elements take a value from the given set."
 definition = 'n = \lvert \{\, i \mid xs_i \in values \,\} \rvert'
-notes = "Counting a single value is `int_count_eq`; this counts membership of a set."
+notes = "Counting a single value is `int_count`; this counts membership of a set."
 
 [[entry]]
 ident = "int_sliding_among"
@@ -148,8 +134,14 @@ summary = "Every window of consecutive elements contains between the given bound
 definition = '\forall k : lower_bound \leq \lvert \{\, i \in [k, k + window) \mid xs_i \in values \,\} \rvert \leq upper_bound'
 
 [[entry]]
+ident = "bool_sliding_among"
+args = ["list of var bool: xs", "var bool: value", "int: window", "int: lower_bound", "int: upper_bound"]
+summary = "Every window of consecutive elements takes the given value between the given number of times."
+definition = '\forall k : lower_bound \leq \lvert \{\, i \in [k, k + window) \mid xs_i \leftrightarrow value \,\} \rvert \leq upper_bound'
+
+[[entry]]
 ident = "int_sliding_sum"
-args = ["int: lower_bound", "int: upper_bound", "int: window", "list of var int: xs"]
+args = ["list of var int: xs", "int: window", "int: lower_bound", "int: upper_bound"]
 summary = "Every window of consecutive elements sums to a value between the given bounds."
 definition = '\forall k : lower_bound \leq \sum_{i \in [k,\, k + window)} xs_i \leq upper_bound'
 
@@ -169,6 +161,7 @@ definition = '\left( xs_{(i-1)c+j} \right)_{i,j} \preceq \left( xs_{(j-1)c+i} \r
 [[entry]]
 ident = "int_global_cardinality"
 args = ["list of var int: xs", "list of int: cover", "list of var int: count"]
+functional = true
 summary = "Each covered value occurs as many times in the array as its matching count says."
 definition = '\forall j : count_j = \lvert \{\, i \mid xs_i = cover_j \,\} \rvert'
 notes = "Values outside `cover` are unconstrained. `cover` and `count` must have equal length."
@@ -193,8 +186,35 @@ summary = "As int_global_cardinality_low_up, and additionally every array elemen
 definition = '\forall i : xs_i \in cover \;\wedge\; \forall j : lower_bound_j \leq \lvert \{\, i \mid xs_i = cover_j \,\} \rvert \leq upper_bound_j'
 
 [[entry]]
+ident = "set_of_int_global_cardinality"
+args = ["list of var set of int: xs", "list of int: cover", "list of var int: count"]
+functional = true
+summary = "Each covered value is a member of as many sets in the array as its matching count says."
+definition = '\forall j : count_j = \lvert \{\, i \mid cover_j \in xs_i \,\} \rvert'
+notes = "Counts membership where `int_global_cardinality` counts equality, so the two are different constraints. Values outside `cover` are unconstrained."
+
+[[entry]]
+ident = "set_of_int_global_cardinality_closed"
+args = ["list of var set of int: xs", "list of int: cover", "list of var int: count"]
+summary = "As set_of_int_global_cardinality, and additionally no set may hold a value outside the cover."
+definition = '\left( \forall i : xs_i \subseteq cover \right) \wedge \forall j : count_j = \lvert \{\, i \mid cover_j \in xs_i \,\} \rvert'
+
+[[entry]]
+ident = "set_of_int_global_cardinality_low_up"
+args = ["list of var set of int: xs", "list of int: cover", "list of int: lower_bound", "list of int: upper_bound"]
+summary = "Each covered value is a member of a number of sets between its lower and upper bound."
+definition = '\forall j : lower_bound_j \leq \lvert \{\, i \mid cover_j \in xs_i \,\} \rvert \leq upper_bound_j'
+
+[[entry]]
+ident = "set_of_int_global_cardinality_low_up_closed"
+args = ["list of var set of int: xs", "list of int: cover", "list of int: lower_bound", "list of int: upper_bound"]
+summary = "As set_of_int_global_cardinality_low_up, and additionally no set may hold a value outside the cover."
+definition = '\left( \forall i : xs_i \subseteq cover \right) \wedge \forall j : lower_bound_j \leq \lvert \{\, i \mid cover_j \in xs_i \,\} \rvert \leq upper_bound_j'
+
+[[entry]]
 ident = "int_distribute"
-args = ["list of var int: count", "list of var int: cover", "list of var int: xs"]
+args = ["list of var int: xs", "list of var int: cover", "list of var int: count"]
+functional = true
 summary = "Each count says how often its matching value occurs in the array, with the values themselves variable."
 definition = '\forall j : count_j = \lvert \{\, i \mid xs_i = cover_j \,\} \rvert'
 notes = "Unlike `int_global_cardinality`, the values being counted are decision variables rather than constants."
@@ -206,7 +226,6 @@ notes = "Unlike `int_global_cardinality`, the values being counted are decision 
 [[entry]]
 ident = "int_increasing"
 args = ["list of var int: xs"]
-reified = ["int_increasing_reif"]
 summary = "The array is in non-decreasing order."
 definition = '\forall i < j : xs_i \leq xs_j'
 notes = "Non-increasing order is this constraint over the reversed array."
@@ -214,7 +233,6 @@ notes = "Non-increasing order is this constraint over the reversed array."
 [[entry]]
 ident = "bool_increasing"
 args = ["list of var bool: xs"]
-reified = ["bool_increasing_reif"]
 summary = "The array is in non-decreasing order, taking false below true."
 definition = '\forall i < j : xs_i \rightarrow xs_j'
 
@@ -255,7 +273,6 @@ definition = '\forall i < j : xs_i \prec xs_j'
 [[entry]]
 ident = "int_lex_lesseq"
 args = ["list of var int: xs", "list of var int: ys"]
-reified = ["int_lex_lesseq_reif"]
 summary = "The first array is before or equal to the second in lexicographic order."
 definition = 'xs = ys \;\vee\; \exists k : \left( \forall i < k : xs_i = ys_i \right) \wedge xs_k < ys_k'
 notes = "The arrays need not have equal length; a proper prefix is lexicographically smaller."
@@ -263,7 +280,6 @@ notes = "The arrays need not have equal length; a proper prefix is lexicographic
 [[entry]]
 ident = "int_lex_less"
 args = ["list of var int: xs", "list of var int: ys"]
-reified = ["int_lex_less_reif"]
 summary = "The first array is strictly before the second in lexicographic order."
 definition = '\exists k : \left( \forall i < k : xs_i = ys_i \right) \wedge xs_k < ys_k'
 
@@ -327,6 +343,20 @@ ident = "bool_lex_chain_less"
 args = ["list of var bool: xs", "int: columns"]
 summary = "The columns of a Boolean matrix are in strictly increasing lexicographic order."
 definition = '\forall j : \operatorname{col}_j(xs) \prec \operatorname{col}_{j+1}(xs)'
+
+[[entry]]
+ident = "bool_lex_chain_lesseq_orbitope_partition"
+args = ["list of var bool: xs", "int: columns"]
+summary = "The columns of a Boolean matrix are in non-decreasing lexicographic order, and exactly one entry in each row holds."
+definition = '\left( \forall j : \operatorname{col}_j(xs) \preceq \operatorname{col}_{j+1}(xs) \right) \wedge \forall i : \lvert \{\, j \mid xs_{(i-1)columns+j} \,\} \rvert = 1'
+notes = "`xs` is the matrix flattened row-major, `columns` entries per row. Breaks the symmetry of a set-partitioning model with interchangeable columns; an orbitope propagator reasons about the rows and the column ordering together, which is why this is one constraint and not two."
+
+[[entry]]
+ident = "bool_lex_chain_lesseq_orbitope_packing"
+args = ["list of var bool: xs", "int: columns"]
+summary = "The columns of a Boolean matrix are in non-decreasing lexicographic order, and at most one entry in each row holds."
+definition = '\left( \forall j : \operatorname{col}_j(xs) \preceq \operatorname{col}_{j+1}(xs) \right) \wedge \forall i : \lvert \{\, j \mid xs_{(i-1)columns+j} \,\} \rvert \leq 1'
+notes = "The set-packing form. With no row constraint at all it would be `bool_lex_chain_lesseq`."
 
 # ---------------------------------------------------------------------------
 # Value precedence
