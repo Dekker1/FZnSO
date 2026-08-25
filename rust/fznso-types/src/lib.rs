@@ -15,17 +15,17 @@ use std::{ffi, marker::PhantomData};
 /// solver whose reported version differs from its own.
 pub const FZNSO_ABI_VERSION: u32 = 1;
 
-#[repr(transparent)]
-#[derive(Debug)]
 /// The handle of an annotation on a decision, constraint or objective.
 ///
 /// Opaque: only the side that created it may interpret it. Read it through
 /// [`FznsoAnnotationRef`], which pairs it with the callbacks that can.
+#[repr(transparent)]
+#[derive(Debug)]
 pub struct FznsoAnnotation(pub ffi::c_void);
 
+/// The callbacks that read a [`FznsoAnnotation`].
 #[repr(C)]
 #[derive(Debug)]
-/// The callbacks that read a [`FznsoAnnotation`].
 pub struct FznsoAnnotationMethods {
 	/// Retrieve the identifier of an annotation.
 	///
@@ -42,9 +42,9 @@ pub struct FznsoAnnotationMethods {
 		extern "C" fn(ann: FznsoPtr<'_, FznsoAnnotation>, index: usize) -> FznsoValueRef<'_>,
 }
 
+/// An annotation together with the callbacks that read it.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-/// An annotation together with the callbacks that read it.
 pub struct FznsoAnnotationRef<'a> {
 	/// The data pointer of the annotation.
 	pub data: FznsoPtr<'a, FznsoAnnotation>,
@@ -53,16 +53,16 @@ pub struct FznsoAnnotationRef<'a> {
 	pub methods: &'static FznsoAnnotationMethods,
 }
 
+/// Wrapper type for the indexes that represent constraints in the model.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-/// Wrapper type for the indexes that represent constraints in the model.
 pub struct FznsoConstraintIdx(pub usize);
 
-#[repr(C)]
-#[derive(Clone, Debug)]
 /// A list of [`FznsoConstraintType`]s.
 ///
 /// This type is for example used to return from `fznso_<name>_constraint_list`.
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct FznsoConstraintList<'a> {
 	/// The number of elements in the `constraints` array.
 	pub len: usize,
@@ -72,10 +72,10 @@ pub struct FznsoConstraintList<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(C)]
-#[derive(Clone, Debug)]
 /// Representation of a type of constraint, discerned by its identifier and the
 /// types of its arguments.
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct FznsoConstraintType<'a> {
 	/// The identifier of the constraint type.
 	pub ident: FznsoStr<'a>,
@@ -88,15 +88,15 @@ pub struct FznsoConstraintType<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
+/// Wrapper type for the indexes that represent decision variables in the model.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-/// Wrapper type for the indexes that represent decision variables in the model.
 pub struct FznsoDecisionIdx(pub usize);
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
 /// An inclusive `[min, max]` float range, returned by
 /// [`FznsoValueMethods::get_range_float`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FznsoFloatRange {
 	/// The inclusive lower bound.
 	pub min: f64,
@@ -104,10 +104,10 @@ pub struct FznsoFloatRange {
 	pub max: f64,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
 /// An inclusive `[min, max]` integer range, returned by
 /// [`FznsoValueMethods::get_range_int`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FznsoIntRange {
 	/// The inclusive lower bound.
 	pub min: i64,
@@ -115,7 +115,6 @@ pub struct FznsoIntRange {
 	pub max: i64,
 }
 
-#[repr(transparent)]
 /// A pointer to an FZnSO handle, tagged with the lifetime for which the handle
 /// stays valid.
 ///
@@ -138,6 +137,7 @@ pub struct FznsoIntRange {
 /// [`FznsoModelMethods`] and friends borrow from their argument.
 ///
 /// cbindgen:no-export
+#[repr(transparent)]
 pub struct FznsoPtr<'a, T> {
 	/// The pointer to the handle, or a value encoded in the pointer word.
 	pub ptr: *const T,
@@ -145,21 +145,21 @@ pub struct FznsoPtr<'a, T> {
 	pub lifetime: PhantomData<&'a T>,
 }
 
-#[repr(transparent)]
-#[derive(Debug)]
 /// The handle of a model instance.
 ///
 /// Opaque: only the side that created it may interpret it. Read it through
 /// [`FznsoModelRef`], which pairs it with the callbacks that can.
+#[repr(transparent)]
+#[derive(Debug)]
 pub struct FznsoModel(pub ffi::c_void);
 
-#[repr(C)]
-#[derive(Debug)]
 /// The callbacks that read a [`FznsoModel`].
 ///
 /// Every index argument has a matching length callback, and must be below it.
 /// Everything these return (e.g. values, strings, and annotations) borrows from
 /// the model, and so is valid for as long as the model handle itself.
+#[repr(C)]
+#[derive(Debug)]
 pub struct FznsoModelMethods {
 	/// Returns the current number of model layers currently contained in the
 	/// model.
@@ -325,9 +325,9 @@ pub struct FznsoModelMethods {
 		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, index: usize) -> FznsoAnnotationRef<'_>,
 }
 
+/// A model together with the callbacks that read it.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-/// A model together with the callbacks that read it.
 pub struct FznsoModelRef<'a> {
 	/// The handle to the data of the model instance.
 	pub data: FznsoPtr<'a, FznsoModel>,
@@ -336,10 +336,10 @@ pub struct FznsoModelRef<'a> {
 	pub methods: &'static FznsoModelMethods,
 }
 
-#[repr(C)]
-#[derive(Clone, Debug)]
 /// Representation of a type of objective strategies, discerned by its
 /// identifier and the type of its argument.
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct FznsoObjective<'a> {
 	/// The identifier of the objective type.
 	pub ident: FznsoStr<'a>,
@@ -349,12 +349,12 @@ pub struct FznsoObjective<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(C)]
-#[derive(Clone, Debug)]
 /// A list of [`FznsoObjective`]s.
 ///
 /// This type is, for example, used to return from
 /// `fznso_<name>_objective_list`.
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct FznsoObjectiveList<'a> {
 	/// The number of elements in the `objectives` array.
 	pub len: usize,
@@ -364,9 +364,9 @@ pub struct FznsoObjectiveList<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
+/// The definition of an option that is available to be set for the solver.
 #[repr(C)]
 #[derive(Clone, Debug)]
-/// The definition of an option that is available to be set for the solver.
 pub struct FznsoOption<'a> {
 	/// The identifier used to set the option or get the current value of the
 	/// option.
@@ -379,11 +379,11 @@ pub struct FznsoOption<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(C)]
-#[derive(Clone, Debug)]
 /// A list of [`FznsoOption`]s.
 ///
 /// This type is, for example, used to return from `fznso_<name>_option_list`.
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct FznsoOptionList<'a> {
 	/// The number of elements in the `options` array.
 	pub len: usize,
@@ -393,21 +393,21 @@ pub struct FznsoOptionList<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(transparent)]
-#[derive(Debug)]
 /// The handle of a solution reported by a solver.
 ///
 /// Opaque: only the side that created it may interpret it. Read it through
 /// [`FznsoSolutionRef`], which pairs it with the callbacks that can.
+#[repr(transparent)]
+#[derive(Debug)]
 pub struct FznsoSolution(pub ffi::c_void);
 
-#[repr(C)]
-#[derive(Clone, Debug)]
 /// The callbacks that read a [`FznsoSolution`].
 ///
 /// The values these return borrow from the solution, so they last only as long
 /// as it does (i.e. for the duration of the `on_solution` callback that
 /// delivered it). Copy out anything that has to outlive the call.
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct FznsoSolutionMethods {
 	/// Function callback to retrieve the value assigned to a decision variable
 	/// in the solution.
@@ -423,9 +423,9 @@ pub struct FznsoSolutionMethods {
 	) -> FznsoValueRef<'a>,
 }
 
+/// A solution together with the callbacks that read it.
 #[repr(C)]
 #[derive(Clone, Debug)]
-/// A solution together with the callbacks that read it.
 pub struct FznsoSolutionRef<'a> {
 	/// The data pointer to be used as the first argument in the function
 	/// callbacks provided by the `methods` field.
@@ -435,17 +435,15 @@ pub struct FznsoSolutionRef<'a> {
 	pub methods: &'static FznsoSolutionMethods,
 }
 
-#[repr(transparent)]
-#[derive(Debug)]
 /// The handle of a solver instance, as returned by `fznso_solver_create`.
 ///
 /// Opaque: only the solver library may interpret it. An application passes it
 /// back to the library's entry points and releases it with
 /// `fznso_solver_free`.
+#[repr(transparent)]
+#[derive(Debug)]
 pub struct FznsoSolver(pub ffi::c_void);
 
-#[repr(C)]
-#[derive(Clone, Debug)]
 /// The definition of statistical information that is made available by the
 /// solver.
 ///
@@ -453,6 +451,8 @@ pub struct FznsoSolver(pub ffi::c_void);
 /// from, and are independent: a statistic may be available from a solution,
 /// from the solver instance, or from both. At least one of them must be set —
 /// a statistic with neither could be read from nowhere.
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct FznsoStatistic<'a> {
 	/// The identifier used to retrieve the statistical information from the
 	/// solver or a solution.
@@ -469,12 +469,12 @@ pub struct FznsoStatistic<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(C)]
-#[derive(Clone, Debug)]
 /// A list of [`FznsoStatistic`]s.
 ///
 /// This type is, for example, used to return from
 /// `fznso_<name>_statistic_list`.
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct FznsoStatisticList<'a> {
 	/// The number of elements in the `stats` array.
 	pub len: usize,
@@ -484,8 +484,6 @@ pub struct FznsoStatisticList<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
 /// A borrowed UTF-8 string, passed across the interface as a pointer/length
 /// pair.
 ///
@@ -497,6 +495,8 @@ pub struct FznsoStatisticList<'a> {
 ///
 /// A null `ptr` signals the absence of a string, which is used where a name or
 /// identifier is optional (e.g. [`FznsoModelMethods::decision_name`]).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
 pub struct FznsoStr<'a> {
 	/// Pointer to the first UTF-8 byte of the string, or null if absent.
 	pub ptr: *const ffi::c_char,
@@ -507,10 +507,10 @@ pub struct FznsoStr<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// The status returned by `fznso_solver_run`, indicating whether the solver
 /// completed its search.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FznsoStatus {
 	/// The solver explored the full search space and yielded all relevant
 	/// solutions.
@@ -526,10 +526,10 @@ pub enum FznsoStatus {
 	FznsoError,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// Representation of a type to signal and check whether an argument takes the
 /// correct type.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FznsoType {
 	/// Whether the type is a list of values.
 	pub list_of: bool,
@@ -545,9 +545,9 @@ pub struct FznsoType {
 	pub base: FznsoTypeBase,
 }
 
+/// Representation of the base type of a value.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-/// Representation of the base type of a value.
 pub enum FznsoTypeBase {
 	/// Boolean type
 	FznsoTypeBaseBool,
@@ -559,11 +559,11 @@ pub enum FznsoTypeBase {
 	FznsoTypeBaseString,
 }
 
-#[repr(C)]
-#[derive(Clone, Debug)]
 /// A list of [`FznsoType`]s.
 ///
 /// This type is for example used to return from `fznso_<name>_decision_list`.
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct FznsoTypeList<'a> {
 	/// The number of elements in the `types` array.
 	pub len: usize,
@@ -573,8 +573,6 @@ pub struct FznsoTypeList<'a> {
 	pub lifetime: PhantomData<&'a ()>,
 }
 
-#[repr(transparent)]
-#[derive(Debug)]
 /// The handle of a value: a constraint argument, a variable domain, a solution
 /// assignment, an option or a statistic.
 ///
@@ -586,12 +584,14 @@ pub struct FznsoTypeList<'a> {
 /// behind it, and the absent value carries a null. Dispatch on
 /// [`FznsoValueMethods::kind`] and use the accessor it permits; never
 /// dereference the handle itself.
+#[repr(transparent)]
+#[derive(Debug)]
 pub struct FznsoValue(ffi::c_void);
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 /// Enumerated type used to mark the kind of [`FznsoValue`]. This is used to
 /// determine which "get" method in [`FznsoValueMethods`] is safe to call.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FznsoValueKind {
 	/// No value is available.
 	FznsoValueAbsent,
@@ -621,13 +621,13 @@ pub enum FznsoValueKind {
 	FznsoValueList,
 }
 
-#[repr(C)]
-#[derive(Clone, Debug)]
 /// The callbacks that read a [`FznsoValue`].
 ///
 /// [`FznsoValueMethods::kind`] decides which of the others are meaningful; each
 /// states the precondition it needs. A nested value or string that these return
 /// borrows from the value it came from.
+#[repr(C)]
+#[derive(Clone, Debug)]
 pub struct FznsoValueMethods {
 	/// Function callback that returns the kind of the value.
 	pub kind: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> FznsoValueKind,
@@ -715,9 +715,9 @@ pub struct FznsoValueMethods {
 	pub get_element: extern "C" fn(FznsoPtr<'_, FznsoValue>, index: usize) -> FznsoValueRef<'_>,
 }
 
+/// A value together with the callbacks that read it.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-/// A value together with the callbacks that read it.
 pub struct FznsoValueRef<'a> {
 	/// The data pointer to be the first argument of `get_value`.
 	pub data: FznsoPtr<'a, FznsoValue>,

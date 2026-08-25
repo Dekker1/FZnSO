@@ -35,52 +35,52 @@ use fznso_types::{
 	FznsoValueRef,
 };
 
-#[unsafe(no_mangle)]
 /// Report the FZnSO ABI version this solver was built against. A loader rejects
 /// the solver if this does not match its own.
+#[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_abi_version() -> u32 {
 	fznso_types::FZNSO_ABI_VERSION
 }
 
-#[unsafe(no_mangle)]
 /// Returns the list of available constraint that can be added to the solver.
 ///
 /// The returned array must stay valid for as long as the library is loaded, so
 /// it is `static`. The caller never frees it.
+#[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_constraint_list() -> FznsoConstraintList<'static> {
 	unimplemented!()
 }
 
-#[unsafe(no_mangle)]
 /// Returns the list of types for which decision variable can be created by the
 /// solver.
 ///
 /// The returned array must stay valid for as long as the library is loaded, so
 /// it is `static`. The caller never frees it.
+#[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_decision_list() -> FznsoTypeList<'static> {
 	unimplemented!()
 }
 
-#[unsafe(no_mangle)]
 /// Returns the list of available objective that can be achieved by the solver.
 ///
 /// The returned array must stay valid for as long as the library is loaded, so
 /// it is `static`. The caller never frees it.
+#[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_objective_list() -> FznsoObjectiveList<'static> {
 	unimplemented!()
 }
 
-#[unsafe(no_mangle)]
 /// Returns the list of available options that can be set of the solver.
 ///
 /// The returned array must stay valid for as long as the library is loaded, so
 /// it is `static`. The caller never frees it.
+#[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_option_list() -> FznsoOptionList<'static> {
 	unimplemented!()
 }
 
-#[unsafe(no_mangle)]
 /// Create a new solver instance
+#[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_solver_create() -> *mut FznsoSolver {
 	unimplemented!()
 }
@@ -100,7 +100,6 @@ pub unsafe extern "C" fn fznso_NAME_solver_free(solver: *mut FznsoSolver) {
 	unimplemented!()
 }
 
-#[unsafe(no_mangle)]
 /// Get the current value of an option for the solver.
 ///
 /// Note that this is only valid to be called with options named by
@@ -115,6 +114,7 @@ pub unsafe extern "C" fn fznso_NAME_solver_free(solver: *mut FznsoSolver) {
 ///
 /// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
 /// not yet been passed to [`fznso_NAME_solver_free`].
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fznso_NAME_solver_option_get<'a>(
 	solver: FznsoPtr<'a, FznsoSolver>,
 	ident: FznsoStr<'_>,
@@ -124,7 +124,6 @@ pub unsafe extern "C" fn fznso_NAME_solver_option_get<'a>(
 	unimplemented!()
 }
 
-#[unsafe(no_mangle)]
 /// Set the current value of an option for the solver.
 ///
 /// Note that this is only valid to be called with options named by
@@ -136,6 +135,7 @@ pub unsafe extern "C" fn fznso_NAME_solver_option_get<'a>(
 ///
 /// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
 /// not yet been passed to [`fznso_NAME_solver_free`].
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fznso_NAME_solver_option_set(
 	solver: *mut FznsoSolver,
 	ident: FznsoStr<'_>,
@@ -147,7 +147,6 @@ pub unsafe extern "C" fn fznso_NAME_solver_option_set(
 	unimplemented!()
 }
 
-#[unsafe(no_mangle)]
 /// Read an error message from the solver.
 ///
 /// This function is expected to be called after solver interactions signal an
@@ -162,6 +161,7 @@ pub unsafe extern "C" fn fznso_NAME_solver_option_set(
 ///
 /// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
 /// not yet been passed to [`fznso_NAME_solver_free`].
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fznso_NAME_solver_read_error(
 	solver: *mut FznsoSolver,
 	context: *mut ffi::c_void,
@@ -173,7 +173,6 @@ pub unsafe extern "C" fn fznso_NAME_solver_read_error(
 	unimplemented!()
 }
 
-#[unsafe(no_mangle)]
 /// Run the solver with the given model.
 ///
 /// `model` is borrowed for the duration of this call and is read-only
@@ -201,6 +200,7 @@ pub unsafe extern "C" fn fznso_NAME_solver_read_error(
 ///
 /// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
 /// not yet been passed to [`fznso_NAME_solver_free`].
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fznso_NAME_solver_run(
 	solver: *mut FznsoSolver,
 	model: FznsoModelRef,
@@ -220,7 +220,6 @@ pub unsafe extern "C" fn fznso_NAME_solver_run(
 	unimplemented!()
 }
 
-#[unsafe(no_mangle)]
 /// Get the current value of a statistic from the solver instance.
 ///
 /// Note that this is only valid to be called with statistics named by
@@ -236,6 +235,7 @@ pub unsafe extern "C" fn fznso_NAME_solver_run(
 ///
 /// `solver` must be a pointer returned by [`fznso_NAME_solver_create`] that has
 /// not yet been passed to [`fznso_NAME_solver_free`].
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn fznso_NAME_solver_statistic<'a>(
 	solver: FznsoPtr<'a, FznsoSolver>,
 	ident: FznsoStr<'_>,
@@ -245,12 +245,12 @@ pub unsafe extern "C" fn fznso_NAME_solver_statistic<'a>(
 	unimplemented!()
 }
 
-#[unsafe(no_mangle)]
 /// Returns the list of available statistical information that can be requested
 /// from the solver and its solutions.
 ///
 /// The returned array must stay valid for as long as the library is loaded, so
 /// it is `static`. The caller never frees it.
+#[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_statistic_list() -> FznsoStatisticList<'static> {
 	unimplemented!()
 }
