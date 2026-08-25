@@ -48,6 +48,38 @@ summary = "Selects the element of a float array at a variable index."
 definition = 'value = xs_{index - offset + 1}'
 
 [[entry]]
+ident = "int_array_element_nd"
+args = ["list of var int: xs", "list of int: offsets", "list of int: sizes", "list of var int: indices", "var int: value"]
+functional = true
+summary = "Selects the element of a int array of any number of dimensions, at a variable index per dimension."
+definition = 'value = xs_{1 + \sum_{d} (indices_d - offsets_d) \prod_{e > d} sizes_e}'
+notes = "`offsets` and `sizes` describe one dimension each and must be the same length as `indices`; `xs` holds the array flattened row-major, so the last dimension varies fastest. The one-dimensional case is this constraint with single-element lists, but `int_array_element` is kept because a solver's propagator for it is a different one."
+
+[[entry]]
+ident = "bool_array_element_nd"
+args = ["list of var bool: xs", "list of int: offsets", "list of int: sizes", "list of var int: indices", "var bool: value"]
+functional = true
+summary = "Selects the element of a Boolean array of any number of dimensions, at a variable index per dimension."
+definition = 'value = xs_{1 + \sum_{d} (indices_d - offsets_d) \prod_{e > d} sizes_e}'
+notes = "`offsets` and `sizes` describe one dimension each and must be the same length as `indices`; `xs` holds the array flattened row-major, so the last dimension varies fastest. The one-dimensional case is this constraint with single-element lists, but `bool_array_element` is kept because a solver's propagator for it is a different one."
+
+[[entry]]
+ident = "float_array_element_nd"
+args = ["list of var float: xs", "list of int: offsets", "list of int: sizes", "list of var int: indices", "var float: value"]
+functional = true
+summary = "Selects the element of a float array of any number of dimensions, at a variable index per dimension."
+definition = 'value = xs_{1 + \sum_{d} (indices_d - offsets_d) \prod_{e > d} sizes_e}'
+notes = "`offsets` and `sizes` describe one dimension each and must be the same length as `indices`; `xs` holds the array flattened row-major, so the last dimension varies fastest. The one-dimensional case is this constraint with single-element lists, but `float_array_element` is kept because a solver's propagator for it is a different one."
+
+[[entry]]
+ident = "set_of_int_array_element_nd"
+args = ["list of var set of int: xs", "list of int: offsets", "list of int: sizes", "list of var int: indices", "var set of int: value"]
+functional = true
+summary = "Selects the element of a set array of any number of dimensions, at a variable index per dimension."
+definition = 'value = xs_{1 + \sum_{d} (indices_d - offsets_d) \prod_{e > d} sizes_e}'
+notes = "`offsets` and `sizes` describe one dimension each and must be the same length as `indices`; `xs` holds the array flattened row-major, so the last dimension varies fastest. The one-dimensional case is this constraint with single-element lists, but `set_of_int_array_element` is kept because a solver's propagator for it is a different one."
+
+[[entry]]
 ident = "set_of_int_array_element"
 args = ["list of var set of int: xs", "int: offset", "var int: index", "var set of int: value"]
 functional = true

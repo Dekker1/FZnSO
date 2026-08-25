@@ -16,7 +16,7 @@ Rectangle packing is `int_no_overlap` rather than `diffn`: the name says what th
 enforces, and its arguments pair position with extent per dimension (`x, dx, y, dy`) rather than
 listing all positions and then all extents.
 
-Beyond two dimensions there is nothing to pair, so `int_no_overlap_k` takes a `dimensions` count
+Beyond two dimensions there is nothing to pair, so `int_no_overlap_nd` takes a `dimensions` count
 and flattens `position` and `size` row-major, since [a list cannot carry a
 shape](../../../spec/types-and-values/#a-list-is-flat-and-one-based).
 `int_no_overlap_shape` — `geost` in MiniZinc and the literature — generalises again: an object's
@@ -118,14 +118,14 @@ summary = "No two rectangles of non-zero area overlap; rectangles with zero widt
 definition = '\forall i < j : dx_i \cdot dy_i = 0 \;\vee\; dx_j \cdot dy_j = 0 \;\vee\; x_i + dx_i \leq x_j \;\vee\; x_j + dx_j \leq x_i \;\vee\; y_i + dy_i \leq y_j \;\vee\; y_j + dy_j \leq y_i'
 
 [[entry]]
-ident = "int_no_overlap_k"
+ident = "int_no_overlap_nd"
 args = ["int: dimensions", "list of var int: position", "list of var int: size"]
 summary = "No two boxes overlap, in any number of dimensions."
 definition = '\forall i < j : \exists k \leq d : p_{i,k} + s_{i,k} \leq p_{j,k} \;\vee\; p_{j,k} + s_{j,k} \leq p_{i,k} \quad \text{where } d = dimensions,\; p_{i,k} = position_{(i-1)d+k},\; s_{i,k} = size_{(i-1)d+k}'
 notes = "`position` and `size` are flattened row-major, `dimensions` entries per box. `int_no_overlap` stays beside it for two dimensions, where a caller already has an array per coordinate."
 
 [[entry]]
-ident = "int_no_overlap_k_nonstrict"
+ident = "int_no_overlap_nd_nonstrict"
 args = ["int: dimensions", "list of var int: position", "list of var int: size"]
 summary = "No two boxes of non-zero volume overlap; a box with zero extent in any dimension is ignored."
 definition = '\forall i < j : \exists k \leq d : s_{i,k} = 0 \;\vee\; s_{j,k} = 0 \;\vee\; p_{i,k} + s_{i,k} \leq p_{j,k} \;\vee\; p_{j,k} + s_{j,k} \leq p_{i,k} \quad \text{where } d = dimensions,\; p_{i,k} = position_{(i-1)d+k},\; s_{i,k} = size_{(i-1)d+k}'

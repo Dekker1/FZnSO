@@ -13,7 +13,12 @@
 
 mod registry;
 
-use std::{collections::BTreeMap, env, path::PathBuf, process::ExitCode};
+use std::{
+	collections::BTreeMap,
+	env,
+	path::{Path, PathBuf},
+	process::ExitCode,
+};
 
 use fznso::Library;
 use fznso_types::FznsoType;
@@ -166,19 +171,105 @@ fn transposals(defined: &BTreeMap<String, Entry>) -> BTreeMap<Vec<String>, Strin
 	out
 }
 
+/// Which registry names a MiniZinc library declares an `fzn_<ident>` for.
+///
+/// The overlay is what makes a registry constraint reachable: a model calls a
+/// global, the global calls `fzn_<ident>`, and a solver declaring that
+/// identifier has the body dropped in favour of its own propagator. A registry
+/// name with no such predicate anywhere cannot be reached however it is
+/// declared, which is what this counts.
+fn coverage(registry: &Registry, library: &Path) -> Result<ExitCode, String> {
+	let mut declared = std::collections::BTreeSet::new();
+	let mut dir: Vec<_> = std::fs::read_dir(library)
+		.map_err(|e| format!("{}: {e}", library.display()))?
+		.filter_map(Result::ok)
+		.map(|e| e.path())
+		.filter(|p| p.extension().is_some_and(|e| e == "mzn"))
+		.collect();
+	dir.sort();
+	for path in &dir {
+		let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+		for line in text.lines() {
+			let Some(rest) = line.trim_start().strip_prefix("predicate fzn_") else {
+				continue;
+			};
+			let ident: String = rest
+				.chars()
+				.take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+				.collect();
+			if !ident.is_empty() {
+				declared.insert(ident);
+			}
+		}
+	}
+
+	// Grouped by the type prefix the registry names each constraint for, since
+	// that is how the work divides.
+	let mut missing: BTreeMap<&str, Vec<&String>> = BTreeMap::new();
+	let prefixes = ["int_", "bool_", "float_", "set_of_int_", "graph_"];
+	for ident in registry.constraints.keys() {
+		if declared.contains(ident) {
+			continue;
+		}
+		let group = prefixes
+			.iter()
+			.find(|p| ident.starts_with(*p))
+			.copied()
+			.unwrap_or("other");
+		missing.entry(group).or_default().push(ident);
+	}
+
+	let total = registry.constraints.len();
+	let absent: usize = missing.values().map(Vec::len).sum();
+	println!(
+		"{} of {total} registry names are reachable from {}",
+		total - absent,
+		library.display()
+	);
+	for (group, idents) in &missing {
+		println!("\n{group} — {} unreachable", idents.len());
+		for chunk in idents.chunks(3) {
+			println!(
+				"  {}",
+				chunk
+					.iter()
+					.map(|i| format!("{i:<38}"))
+					.collect::<String>()
+					.trim_end()
+			);
+		}
+	}
+	Ok(if absent == 0 {
+		ExitCode::SUCCESS
+	} else {
+		ExitCode::FAILURE
+	})
+}
+
+fn usage(argv0: &str) -> ExitCode {
+	eprintln!(
+		"usage: {argv0} check <solver library> [registry]\n\
+		        {argv0} coverage <minizinc library> [registry]\n\n\
+		 `check` reads a solver's capability lists and holds every registry name\n\
+		 it declares to the registry's types. `coverage` reads a directory of\n\
+		 MiniZinc files and reports the registry names no `fzn_<ident>` reaches.\n\
+		 The registry defaults to `docs/registry` beside this checkout."
+	);
+	ExitCode::FAILURE
+}
+
 fn main() -> ExitCode {
 	let args: Vec<String> = env::args().collect();
-	if args.len() < 2 {
-		eprintln!(
-			"usage: {} <solver library> [registry directory]\n\n\
-			 Checks every name the library declares against the FZnSO registry.\n\
-			 The registry defaults to `docs/registry` beside this checkout.",
-			args.first().map_or("fznso-conform", String::as_str)
-		);
-		return ExitCode::FAILURE;
+	let argv0 = args
+		.first()
+		.map_or("fznso-conform", String::as_str)
+		.to_string();
+	if args.len() < 3 {
+		return usage(&argv0);
 	}
-	let lib_path = PathBuf::from(&args[1]);
-	let registry_dir = args.get(2).map_or_else(
+	let subcommand = args[1].clone();
+	let target = PathBuf::from(&args[2]);
+	let registry_dir = args.get(3).map_or_else(
 		|| {
 			PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 				.join("../../docs/registry")
@@ -194,6 +285,24 @@ fn main() -> ExitCode {
 			return ExitCode::FAILURE;
 		}
 	};
+
+	match subcommand.as_str() {
+		"coverage" => {
+			return match coverage(&registry, &target) {
+				Ok(code) => code,
+				Err(e) => {
+					eprintln!("{e}");
+					ExitCode::FAILURE
+				}
+			};
+		}
+		"check" => {}
+		other => {
+			eprintln!("unknown subcommand `{other}`\n");
+			return usage(&argv0);
+		}
+	}
+	let lib_path = target;
 
 	// SAFETY: loading a shared object runs its initialisers; the path comes
 	// from the operator, who is the one asking for it to be inspected.
