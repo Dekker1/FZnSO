@@ -146,14 +146,14 @@ summary = "Every window of consecutive elements sums to a value between the give
 definition = '\forall k : lower_bound \leq \sum_{i \in [k,\, k + window)} xs_i \leq upper_bound'
 
 [[entry]]
-ident = "int_var_perm_sym"
+ident = "int_lex_least_under_permutation"
 args = ["list of var int: xs", "list of int: permutations"]
 summary = "The array is lexicographically no greater than any of its listed permutations."
 definition = '\forall p : xs \preceq \left( xs_{permutations_{p,1}}, xs_{permutations_{p,2}}, \ldots \right)'
 notes = "`permutations` is flattened row-major, one permutation per row; no row length travels with it because the rows are as long as `xs`. A general symmetry break for a known symmetry group."
 
 [[entry]]
-ident = "int_var_sqr_sym"
+ident = "int_lex_least_under_transposition"
 args = ["list of var int: xs", "int: columns"]
 summary = "A square matrix is lexicographically no greater than its transpose, or any row and column permutation of itself."
 definition = '\left( xs_{(i-1)c+j} \right)_{i,j} \preceq \left( xs_{(j-1)c+i} \right)_{i,j} \quad \text{where } c = columns'
