@@ -261,7 +261,49 @@ Storing the solution object and reading it later reads freed memory — the Pyth
 
 ## 5. Read the outcome
 
-`run` returns one of three [statuses](../../spec/running/#status): `Complete` (the search finished — with an objective, the last solution reported is optimal), `Incomplete` (it stopped early, so what you have is valid but not necessarily best), or `Error`.
+A run that finished reports one of two [statuses](../../spec/running/#status): `Complete`, meaning the search space was exhausted — so with an objective, the last solution reported is optimal — or `Incomplete`, meaning it stopped early and what you have is valid but not necessarily best.
+
+A solver that could not continue reports a failure instead, carrying its own message.
+The bindings call [`solver_read_error`](../../spec/entry-points/#errors) for you, so that message arrives with the failure:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+try:
+    status = solver.run(model, on_solution=on_solution)
+except RuntimeError as err:
+    print("solver failed:", err)   # the solver's own message
+else:
+    print(status)                  # Status.Complete or Status.Incomplete
+```
+
+</TabItem>
+<TabItem label="Rust">
+
+```rust
+match status {
+    Status::Complete => println!("optimal: {best:?}"),
+    Status::Incomplete => println!("best found: {best:?}"),
+    Status::Error(message) => eprintln!("solver failed: {message}"),
+}
+```
+
+</TabItem>
+<TabItem label="C++">
+
+```cpp
+if (status.failed()) {
+    std::cerr << "solver failed: " << status.error << '\n';
+} else if (status.complete() && best) {
+    std::cout << "optimal: " << *best << '\n';
+}
+```
+
+</TabItem>
+</Tabs>
+
+`option_set` fails the same way, and for the same reason: a message rather than a status — `Result<(), String>` in Rust, `std::optional<std::string>` in C++, a raised `RuntimeError` in Python.
 
 Solver-scoped statistics stay readable after the run:
 

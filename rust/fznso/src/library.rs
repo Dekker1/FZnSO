@@ -969,20 +969,11 @@ fn discover_in(dir: &std::path::Path) -> Vec<Discovered> {
 }
 
 impl Library {
-	/// The directories searched for solver libraries, in search order.
-	///
-	/// Solvers live in a directory of their own rather than on the normal
-	/// library path: a FZnSO shim is usually named after the solver it wraps,
-	/// so `libgecode.so` would otherwise collide with real Gecode, and a
-	/// dedicated directory is what makes [`discover`](Library::discover)
-	/// possible at all.
-	///
-	/// The order is
-	/// 1. `$FZNSO_SOLVER_PATH`, split on the platform's path separator,
-	/// 2. the per-user directory (`$XDG_DATA_HOME/fznso`,
-	///    `~/Library/Application Support/fznso`, or `%LOCALAPPDATA%\fznso`),
-	/// 3. the system directories (`/usr/local/lib/fznso`, `/usr/lib/fznso`, or
-	///    `fznso` beside the running executable on Windows).
+	/// The directories searched for solver libraries, in search order:
+	/// `$FZNSO_SOLVER_PATH`, then the per-user directory, then the system
+	/// directories. The per-platform locations, and why solvers live in a
+	/// directory of their own, are specified at
+	/// <https://fznso.minizinc.dev/spec/discovery/>.
 	pub fn search_paths() -> Vec<std::path::PathBuf> {
 		let system: Vec<String> = if cfg!(target_os = "windows") {
 			std::env::current_exe()
@@ -1021,16 +1012,13 @@ impl Library {
 	/// Load a solver by name from the search path, choosing the newest version.
 	///
 	/// Candidates are tried in [`discover`](Library::discover) order, so the
-	/// highest version in the earliest directory wins. Directory precedence
-	/// comes first — a solver placed in `$FZNSO_SOLVER_PATH` or the per-user
-	/// directory overrides a system one even if the system one is newer — and
-	/// the newest version is chosen only among candidates of equal precedence.
-	/// To pin a version regardless, use
+	/// highest version in the earliest directory wins: directory precedence
+	/// comes first, and the newest version is chosen only among candidates of
+	/// equal precedence. To pin a version, use
 	/// [`find_version`](Library::find_version).
 	///
 	/// A candidate built for a different ABI version is skipped and the search
-	/// continues, since solvers for several ABI versions can share one
-	/// directory.
+	/// continues.
 	///
 	/// # Safety
 	///

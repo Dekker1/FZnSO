@@ -91,4 +91,4 @@ One rule:
 | Example code | a real file under `rust/fznso/examples/`, `cpp/tests/` or `python/tests/`, imported with `?raw` |
 
 Pasting a paragraph into a second file is the signal to put it in the spec and link instead.
-CI enforces the links: `cargo doc` runs with `-D warnings`, and `scripts/check-links.mjs` walks the built site checking every internal link **and anchor**.
+CI enforces the links: `cargo doc` runs with `-D warnings`, and `docs/scripts/check-links.mjs` walks the built site checking every internal link **and anchor**.
