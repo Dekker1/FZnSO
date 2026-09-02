@@ -37,6 +37,11 @@ def threaded_solver_path() -> str:
 
 
 @pytest.fixture
+def library():
+    return fznso.Library(solver_path())
+
+
+@pytest.fixture
 def solver():
     return fznso.Library(solver_path()).create_solver()
 
@@ -451,3 +456,138 @@ def test_find_loads_a_solver_from_the_search_path(tmp_path, monkeypatch):
     # An unknown name reports where it looked.
     with pytest.raises(RuntimeError, match=str(tmp_path)):
         fznso.Library.find("definitely_absent")
+
+
+def test_capability_lists(library):
+    """A conforming application does not pass a name the solver did not declare."""
+    # The example solver declares statistics and leaves the other four lists
+    # empty, so this covers both the populated and the empty path.
+    stats = library.statistics()
+    assert [(s.ident, s.solution, s.solver) for s in stats] == [
+        ("solutions", True, False),
+        ("runs", False, True),
+    ]
+    assert stats[0].value_type == fznso.Type("int")
+    assert repr(stats[1]) == 'Statistic("runs", Type("int"), solution=False, solver=True)'
+
+    assert library.constraint_types() == []
+    assert library.decision_types() == []
+    assert library.objectives() == []
+    assert library.options() == []
+
+
+def test_layer_counts_reach_the_solver(solver):
+    """`layer_unchanged` is 0 until the model says otherwise."""
+    m = fznso.LayeredModel()
+    x = m.add_decision(VAR_INT, range(3, 21), name="x")
+    m.push_layer()
+    m.add_constraint("int_le", [0, x])
+
+    messages = []
+
+    def run():
+        messages.clear()
+        solver.run(
+            m,
+            on_solution=lambda s: None,
+            on_message=lambda scope, value: messages.append((scope, value)),
+        )
+
+    # Nothing said, nothing reused: the solver re-reads the whole model.
+    run()
+    assert ("layers.reuse", "unchanged=0;permanent=1;redundant=") in messages
+
+    # Both layers are now permanent, the second one vacuous, and neither has
+    # changed since the last run.
+    m.mark_permanent()
+    m.mark_redundant(1)
+    m.mark_redundant(1)  # marking twice says nothing new
+    m.set_unchanged(2)
+    run()
+    assert ("layers.reuse", "unchanged=2;permanent=2;redundant=1") in messages
+
+
+def test_only_a_permanent_layer_can_be_redundant():
+    m = fznso.LayeredModel()
+    m.push_layer()
+    with pytest.raises(IndexError, match="layer 1 is not permanent"):
+        m.mark_redundant(1)
+
+
+def test_annotation_fields():
+    ann = fznso.Annotation("int_search", [[1, 2], 3])
+    assert ann.ident == "int_search"
+    assert ann.arguments == [[1, 2], 3]
+    assert repr(ann) == 'Annotation("int_search", [[1, 2], 3])'
+    assert fznso.Annotation("output_var").arguments == []
+
+
+def test_annotations_reach_the_solver(solver):
+    m = fznso.LayeredModel()
+    x = m.add_decision(
+        VAR_INT,
+        range(3, 21),
+        name="x",
+        annotations=[fznso.Annotation("output_var")],
+    )
+    m.add_constraint(
+        "int_le",
+        [0, x],
+        annotations=[fznso.Annotation("domain_consistency", [1, 2])],
+    )
+    m.set_objective("minimize", x, annotations=[fznso.Annotation("warm_start", [3])])
+
+    messages = []
+    solver.run(
+        m,
+        on_solution=lambda s: None,
+        on_message=lambda scope, value: messages.append((scope, value)),
+    )
+    assert (
+        "annotations",
+        "d0:output_var() c0:domain_consistency(1,2) obj:warm_start(3)",
+    ) in messages
+
+    with pytest.raises(TypeError):
+        m.add_decision(VAR_INT, annotations=["output_var"])
+
+
+def test_custom_model_annotations(solver):
+    """A model implemented in Python can annotate too, borrowing as ever."""
+
+    class Annotated(fznso.Model):
+        def __init__(self):
+            super().__init__()
+            self._domain = fznso.int_set(5, 9)
+            # Owned by the model: annotations are borrowed, never copied.
+            self._decision_anns = [fznso.Annotation("output_var", [7])]
+            self._objective_anns = [fznso.Annotation("warm_start", [5])]
+
+        def decision_count(self):
+            return 1
+
+        def decision_type(self, i):
+            return VAR_INT
+
+        def decision_domain(self, i):
+            return self._domain
+
+        def decision_annotations(self, i):
+            return self._decision_anns
+
+        def objective_ident(self):
+            return "minimize"
+
+        def objective_argument(self):
+            return fznso.Decision(0)
+
+        def objective_annotations(self):
+            return self._objective_anns
+
+    messages = []
+    solver.run(
+        Annotated(),
+        on_solution=lambda s: None,
+        on_message=lambda scope, value: messages.append((scope, value)),
+    )
+    assert ("annotations", "d0:output_var(7) obj:warm_start(5)") in messages

@@ -63,8 +63,15 @@ Read them if you need to adapt; skip them if you already know the solver.
 <Tabs syncKey="lang">
 <TabItem label="Python">
 
-Not exposed to Python yet.
-Read the lists from Rust or C++, or drive the solver by names you already know.
+```python
+lib.constraint_types()  # identifiers and argument types
+lib.decision_types()    # decision-variable types it can create
+lib.objectives()        # objective strategies
+lib.options()           # options, with types and defaults
+lib.statistics()        # statistics, and where each can be read from
+```
+
+Each call copies the library's list into ordinary Python objects — `opt.ident`, `opt.argument_type`, `opt.default` — so read them once and keep what you need.
 
 </TabItem>
 <TabItem label="Rust">

@@ -134,6 +134,35 @@ impl Solver for ExampleSolver {
 			emit("warn", (&warning).into());
 		}
 
+		// The annotations on the model, when it has any. This fixture ignores
+		// their advice, but reporting them lets a test see that they crossed.
+		// Arguments are read as integers, which is all its callers use.
+		if on_message.is_some() {
+			let mut anns: Vec<String> = Vec::new();
+			let mut push = |site: String, ann: fznso::AnnotationRef<'_>| {
+				let args: Vec<String> = ann.arguments().map(|v| v.get_int().to_string()).collect();
+				anns.push(format!("{site}:{}({})", ann.ident(), args.join(",")));
+			};
+			for (i, decision) in model.decisions().enumerate() {
+				for ann in decision.annotations() {
+					push(format!("d{i}"), ann);
+				}
+			}
+			for (i, con) in model.constraints().enumerate() {
+				for ann in con.annotations() {
+					push(format!("c{i}"), ann);
+				}
+			}
+			for ann in model.objective().annotations() {
+				push("obj".to_owned(), ann);
+			}
+			if let Some(emit) = &mut on_message
+				&& !anns.is_empty()
+			{
+				emit("annotations", (&anns.join(" ")).into());
+			}
+		}
+
 		// Report the per-layer decision counts when the model has more than one
 		// layer, so tests can observe that the layer structure came through.
 		if model.layer_len() > 1 && on_message.is_some() {
@@ -143,6 +172,21 @@ impl Solver for ExampleSolver {
 				.collect();
 			if let Some(emit) = &mut on_message {
 				emit("layers", (&counts.join(",")).into());
+			}
+
+			// The three counts that say how much of the model the solver may
+			// reuse. Nothing else lets a test see that they crossed at all.
+			let redundant: Vec<String> = (0..model.layer_redundant_len())
+				.map(|i| model.layer_redundant_index(i).to_string())
+				.collect();
+			let reuse = format!(
+				"unchanged={};permanent={};redundant={}",
+				model.layer_unchanged(),
+				model.layer_permanent(),
+				redundant.join(",")
+			);
+			if let Some(emit) = &mut on_message {
+				emit("layers.reuse", (&reuse).into());
 			}
 
 			// Also read back the model's strings and a constraint argument, so
