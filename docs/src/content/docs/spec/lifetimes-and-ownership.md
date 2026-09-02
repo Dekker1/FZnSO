@@ -5,22 +5,20 @@ sidebar:
   order: 9
 ---
 
-These four rules apply to every declaration in the interface.
-They are stated here once so that individual functions need only name their own preconditions.
+These four rules apply to every declaration in the interface, and are stated here so that individual functions need only name their own preconditions.
 
 ## Handles are opaque
 
 `FznsoModel`, `FznsoValue`, `FznsoSolution`, `FznsoAnnotation` and `FznsoSolver` are handles, meaningful only to the side that created one.
 The receiver passes a handle back to the callbacks it arrived with, and never inspects or dereferences it.
 
-A handle need not address memory at all.
-A small payload such as a decision index is commonly stored *in* the pointer word rather than behind it, so that passing one across the interface never requires an allocation, and a null handle is a legitimate value rather than an error.
+A handle need not address memory at all: a small payload such as a decision index is commonly stored *in* the pointer word rather than behind it, so passing one across the interface never allocates, and a null handle is a legitimate value rather than an error.
 
-Reach the contents through the `methods` table of the matching `…Ref` struct (`FznsoValueRef`, `FznsoModelRef`, `FznsoSolutionRef`, `FznsoAnnotationRef`), which pairs the handle with the callbacks that can read it.
+Reach the contents through the `methods` table of the matching `…Ref` struct — `FznsoValueRef`, `FznsoModelRef`, `FznsoSolutionRef`, `FznsoAnnotationRef` — which pairs the handle with the callbacks that can read it.
 
 :::caution
 Dereferencing a handle, or casting it to anything but the type its creator used, is undefined behaviour.
-This is why the Rust bindings model handles as `FznsoPtr<'a, T>`, a raw pointer with a lifetime, rather than as `&T`: a reference would only carry permission to access the opaque type itself, not the larger real type behind it.
+This is why the Rust bindings model handles as `FznsoPtr<'a, T>`, a raw pointer with a lifetime, rather than as `&T`: a reference would carry permission to access only the opaque type itself, not the larger real type behind it.
 :::
 
 ## Accessors have preconditions
@@ -49,9 +47,9 @@ The receiver never frees it, and must not keep it past the window in which it is
 | A value from `fznso_<name>_solver_option_get` or `…_solver_statistic` | until the next call that can change the solver |
 
 **Copy anything that has to outlive its window.**
-A consumer that wants to keep a solution must copy the values out before returning from `on_solution`; a solver that wants to keep part of a model must copy it before returning from `run`.
+A consumer keeping a solution must copy the values out before returning from `on_solution`; a solver keeping part of a model must copy it before returning from `run`.
 
-Strings are a common trap: [`FznsoStr`](../types-and-values/#strings) and the bytes behind `FznsoValueMethods::as_string` are **not** null-terminated, and are not yours.
+Strings are the common trap: [`FznsoStr`](../types-and-values/#strings) and the bytes behind `FznsoValueMethods::as_string` are **not** null-terminated, and are not yours.
 Use the length, and copy before storing.
 
 ## The version must match exactly

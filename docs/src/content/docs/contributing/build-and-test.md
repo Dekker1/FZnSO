@@ -5,8 +5,7 @@ sidebar:
   order: 1
 ---
 
-Everything runs through [`just`](https://just.systems).
-`just --list` shows the recipes.
+Everything runs through [`just`](https://just.systems); `just --list` shows the recipes.
 
 ```sh
 just          # build + check, the default
@@ -16,16 +15,14 @@ just check    # every linter CI runs
 just format   # format everything
 ```
 
-## What you need
-
 | For | Tool |
 | --- | --- |
-| The crates and the C headers | Rust (stable + nightly for `fmt`), `cbindgen` |
+| The crates and the C headers | Rust (stable, plus nightly for `fmt`), `cbindgen` |
 | The C++ suite | a C++17 compiler; optionally `mingw-w64` for the Windows cross-build |
 | The Python suite | `uv` (the recipe creates the venv itself) |
-| The documentation site | Node and `pnpm`; `doxygen` and a nightly Rust toolchain for the reference; a Playwright browser for diagrams (`pnpm --dir docs exec playwright install chromium`) |
+| The documentation site | Node and `pnpm`; `doxygen` and nightly Rust for the reference; a Playwright browser for diagrams (`pnpm --dir docs exec playwright install chromium`) |
 
-The Windows cross-build is skipped with a message if `x86_64-w64-mingw32-g++` is absent, so it is optional.
+The Windows cross-build is skipped with a message if `x86_64-w64-mingw32-g++` is absent.
 
 ## The generated C artifacts
 
@@ -38,7 +35,6 @@ Never edit `c/*.h` or `c/*.c` by hand.
 
 To change what a C consumer sees, change the Rust doc comment or type it comes from, then run `just build`.
 `just check-headers` confirms the result still compiles as both C and C++.
-
 The prose in each generated file's preamble comes from the `header = """…"""` strings in `cbindgen_types.toml` and `cbindgen_template.toml`.
 
 ## Testing against a real solver
@@ -61,7 +57,7 @@ just miri
 
 This is not optional diligence.
 The interface passes handles as raw pointers that each side casts back to its own type, and **every bug in that class has passed the ordinary test suite first**.
-`rust/fznso/tests/abi.rs` drives the generated entry points directly so miri covers them too; miri cannot `dlopen`, so `tests/dylib.rs` is skipped under it.
+`rust/fznso/tests/abi.rs` drives the generated entry points directly so miri covers them; miri cannot `dlopen`, so `tests/dylib.rs` skips itself.
 
 ## The documentation site
 
@@ -72,20 +68,18 @@ just docs-serve   # live reload while writing
 
 Two parts of the site are **generated** and must not be edited in place:
 
-- `docs/src/content/docs/registry/` comes from `docs/registry/*.toml`.
-  Edit the TOML.
-- `docs/src/content/docs/reference/` comes from the code, via rustdoc JSON, Doxygen XML and griffe.
-  Edit the doc comment.
+- `docs/src/content/docs/registry/` comes from `docs/registry/*.toml` — edit the TOML.
+- `docs/src/content/docs/reference/` comes from the code, via rustdoc JSON, Doxygen XML and griffe — edit the doc comment.
 
 Both run from `pnpm gen`, which `dev` and `build` invoke for you; the dumps they read come from `just docs-api`.
+Doxygen and the Python toolchain are optional: a missing one skips its pages with a warning.
 
-Diagrams are written as [Mermaid](https://mermaid.js.org) in a ```` ```mermaid ```` block and rendered to inline SVG at build time, so a page ships no JavaScript to draw one and the labels stay searchable text.
-That needs a browser: `pnpm --dir docs exec playwright install chromium`, once.
-Doxygen and the Python toolchain are optional: a missing one skips its pages with a warning, so the prose stays workable without them.
+Diagrams are [Mermaid](https://mermaid.js.org) in a ```` ```mermaid ```` block, rendered to inline SVG at build time, so a page ships no JavaScript to draw one and the labels stay searchable text.
+That needs a browser once: `pnpm --dir docs exec playwright install chromium`.
 
 ## Writing documentation
 
-One rule, and it is the reason the site exists:
+One rule:
 
 > **Every fact has one home. Everywhere else links to it.**
 
@@ -96,5 +90,5 @@ One rule, and it is the reason the site exists:
 | A common name | `docs/registry/*.toml` |
 | Example code | a real file under `rust/fznso/examples/`, `cpp/tests/` or `python/tests/`, imported with `?raw` |
 
-If you find yourself pasting a paragraph into a second file, that is the signal to put it in the spec and link instead.
-CI enforces the links, so a reference that stops resolving is a build failure rather than a dead end for a reader: `cargo doc` runs with `-D warnings`, and `scripts/check-links.mjs` walks the built site checking every internal link **and anchor**.
+Pasting a paragraph into a second file is the signal to put it in the spec and link instead.
+CI enforces the links: `cargo doc` runs with `-D warnings`, and `scripts/check-links.mjs` walks the built site checking every internal link **and anchor**.

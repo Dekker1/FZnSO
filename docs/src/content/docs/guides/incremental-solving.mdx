@@ -21,16 +21,16 @@ Push a layer to add decisions and constraints as a group; pop it to retract the 
 ```python
 model = fznso.LayeredModel()
 x = model.add_decision(var_int, range(1, 101), name="x")   # base layer
-model.add_constraint("int_lin_le", [[1], [x], 50])
+model.add_constraint("int_lin_le", [[1], [x], 50])         # x <= 50
 
-solver.run(model, on_solution=record)        # solve
+solver.run(model, on_solution=record)
 
-model.push_layer()                            # everything below is now fixed
-model.add_constraint("int_lin_le", [[-1], [x], -20])   # x >= 20
-solver.run(model, on_solution=record)        # solve again, incrementally
+model.push_layer()
+model.add_constraint("int_lin_le", [[-1], [x], -20])       # x >= 20
+solver.run(model, on_solution=record)                      # solved incrementally
 
-model.pop_layer()                             # retract that constraint
-solver.run(model, on_solution=record)        # back to the original problem
+model.pop_layer()                                          # retract that constraint
+solver.run(model, on_solution=record)                      # back to the original problem
 ```
 
 </TabItem>
@@ -42,11 +42,11 @@ let x = model.add_decision(var_int, domain, Some("x".into()), false, true, vec![
 
 solver.run(&model, &mut record, ignore_messages(), dont_interrupt());
 
-model.push_layer();                       // everything below is now fixed
+model.push_layer();
 let _ = model.add_constraint("int_lin_le", vec![/* x >= 20 */], None, vec![]);
 solver.run(&model, &mut record, ignore_messages(), dont_interrupt());
 
-model.pop_layer();                        // retract that constraint
+model.pop_layer();
 solver.run(&model, &mut record, ignore_messages(), dont_interrupt());
 ```
 
@@ -59,11 +59,11 @@ fznso::Decision x = model.add_decision(INT_VAR, fznso::OwnedValue::int_range(1, 
 
 solver.run(model, record);
 
-model.push_layer();                       // everything below is now fixed
+model.push_layer();
 model.add_constraint("int_lin_le", {/* x >= 20 */});
 solver.run(model, record);
 
-model.pop_layer();                        // retract that constraint
+model.pop_layer();
 solver.run(model, record);
 ```
 
@@ -76,20 +76,16 @@ Because indices follow layer order, popping never renumbers anything that surviv
 
 **Push a plain layer** for anything you might retract: a hypothesis, a user's tentative choice, a branch of your own search.
 
-**Mark a layer permanent** when you are certain it will never be retracted.
-That is a promise, and it buys something real: the solver may fold those constraints irreversibly into its own representation, simplify against them, and discard the original form.
+**`mark_permanent()`** promises that every layer currently in the model will never be retracted, and none of them can be popped again.
+That promise buys something real: the solver may fold those constraints irreversibly into its own representation, simplify against them, and discard the original form.
 
-`model.mark_permanent()` marks the current top layer, and it can never be popped again.
-
-**Mark a permanent layer [redundant](../../spec/model/#redundant-layers)** when it has become vacuous.
-The solver *may* then drop it — which is not the same as retracting it, since a permanent layer cannot be retracted, only made irrelevant.
-
-`model.mark_redundant(layer)` does that from Rust and C++; it is not exposed to Python yet.
+**`mark_redundant(layer)`** says a permanent layer has become [vacuous](../../spec/model/#the-three-counts) — typically because a later layer's stronger constraint subsumes it.
+The solver *may* then drop it, which is not the same as retracting it: a permanent layer can only be made irrelevant, never removed.
 
 ### What the solver sees
 
-`LayeredModel` reports [the three layer counts](../../spec/model/#layers) correctly for free.
-If you implement the model over your own structures you must maintain them yourself — and reporting `layer_unchanged` as 0 every time is always correct, since it just means the solver re-reads everything.
+`LayeredModel` reports [the three layer counts](../../spec/model/#the-three-counts) correctly for free.
+Over your own structures you maintain them yourself — and reporting `layer_unchanged` as 0 every time is always correct, since it just means the solver re-reads everything.
 
 :::caution
 Reporting a layer as unchanged when it is not is the one way to get a wrong answer.
@@ -114,8 +110,5 @@ else:
     post constraints constraint_layer_end(n-1) .. constraint_len()
 ```
 
-`decision_layer_end` and `constraint_layer_end` give each layer [its range](../../spec/model/#layers).
-
-The three guarantees you build on — permanent and redundant counts only ever grow, and unchanged layers are a prefix — are stated with the callbacks that carry them.
-What you may **not** assume is that the layer count only grows.
-A pop reduces it, and a push after a pop can put different content at the same index, which is precisely why `layer_unchanged` exists rather than being inferred from the count.
+You may **not** assume the layer count only grows.
+A pop reduces it, and a push after a pop can put different content at the same index — which is why `layer_unchanged` exists rather than being inferred from the count.

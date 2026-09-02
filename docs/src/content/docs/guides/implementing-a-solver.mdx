@@ -11,20 +11,17 @@ import cppExample from '../../../../../cpp/tests/example_solver.cpp?raw';
 import threadedExample from '../../../../../rust/fznso/examples/threaded_solver.rs?raw';
 
 Implementing a solver means exporting [thirteen entry points](../../spec/entry-points/) from a dynamically loadable library.
-You do not have to write them by hand: the Rust and C++ bindings each provide a macro that writes all thirteen and leaves you the three or four methods that actually differ between solvers.
+The Rust and C++ bindings each provide a macro that writes all thirteen, leaving you the few methods that differ between solvers.
 
-## What you must decide first
+## Decide first
 
-**Your solver's name.**
-It goes in every symbol (`fznso_gecode_solver_run`) and must match the library's file name, so a loader can recover it.
-It must be a valid C identifier not starting with `lib`; see [Naming & versioning](../../spec/naming-and-versioning/).
+**Your solver's name**, which goes in every symbol (`fznso_gecode_solver_run`) and must match the library's file name: a valid C identifier not starting with `lib`.
+See [Naming & versioning](../../spec/naming-and-versioning/).
 
 **What you will declare.**
-Five capability lists say what your solver accepts.
-Start with all of them empty and add as you go; declaring nothing is [conforming](../../spec/overview/#conformance).
-Where a name appears in the [registry](../../registry/), declaring it commits you to the registry's meaning.
+Start with all five capability lists empty and add as you go — declaring nothing is [conforming](../../spec/overview/#conformance) — remembering that declaring a [registry](../../registry/) name commits you to the registry's meaning.
 
-## The three methods that matter
+## The methods that matter
 
 Everything else is bookkeeping the macros handle.
 
@@ -38,14 +35,17 @@ The model is a callback table, not a structure.
 Ask it what it holds:
 
 ```rust
-for i in 0..model.decision_count() {
-    let ty = model.decision_type(i);
-    let domain = model.decision_domain(i);   // may be absent — no explicit domain
+for d in model.decisions() {
+    let ty = d.ty();
+    let domain = d.domain();       // absent if the variable has no explicit domain
+    let wanted = d.in_solution();  // if true, every solution must assign it
 }
-for c in 0..model.constraint_count() {
-    let ident = model.constraint_ident(c);   // e.g. "int_lin_le"
-    for a in 0..model.constraint_argument_count(c) {
-        let arg = model.constraint_argument(c, a);
+
+for c in model.constraints() {
+    match c.ident() {
+        "int_lin_le" => post_lin_le(c.arguments()),
+        // Anything you did not declare in `constraint_list` cannot reach you.
+        other => unreachable!("undeclared constraint {other}"),
     }
 }
 ```
@@ -55,20 +55,20 @@ Two rules govern everything you read, and both are [stated in full](../../spec/l
 ## Reporting
 
 Call the solution callback once per solution.
-**The values you hand it are borrowed from you**, so the storage behind them must outlive the call. Build it before reporting, not inside the accessor.
+**The values you hand it are borrowed from you**, so the storage behind them must outlive the call: build it before reporting, not inside the accessor.
 
-Two callbacks are nullable, and the difference is worth honouring: a null [`on_message`](../../spec/running/#diagnostics) means skip *building* the diagnostic, not build it and discard it — both bindings expose this as a `wanted()` check — and a null [`should_stop`](../../spec/running/#stopping-early) means drop the poll from your search loop rather than call a predicate that always answers `false`.
+Honour the two nullable callbacks.
+A null [`on_message`](../../spec/running/#diagnostics) means skip *building* the diagnostic, not build it and discard it — both bindings expose this as a `wanted()` check — and a null [`should_stop`](../../spec/running/#stopping-early) means drop the poll from your search loop rather than call a predicate that always answers `false`.
 
 ## Failing
 
-Return `FznsoError` from `run`, or a message from `option_set`.
-The caller then asks for the reason through `fznso_<name>_solver_read_error`.
-Do not report failures through `on_message`; that channel is for diagnostics the search survived.
+Return `FznsoError` from `run`, or a message from `option_set`; the caller then asks for the reason through `fznso_<name>_solver_read_error`.
+Do not report failures through `on_message`, which is for diagnostics the search survived.
 
 ## A complete example
 
-This solver is deliberately trivial (it assigns every decision the lower bound of its domain and ignores the constraints) so that the *shape* is what shows through.
-It is built and run by the test suite on every commit, so it cannot drift from the interface.
+Deliberately trivial — it assigns every decision the lower bound of its domain and ignores the constraints — so the *shape* is what shows through.
+The test suite builds and runs it on every commit, so it cannot drift from the interface.
 
 <Tabs syncKey="lang">
 <TabItem label="Rust">
@@ -81,24 +81,18 @@ It is built and run by the test suite on every commit, so it cannot drift from t
 
 ## Searching on several threads
 
-If you search in parallel, the [threading contract](../../spec/threading/#summary) applies: the model is yours to read from any number of threads, but the solution and message callbacks must be driven **serially**, so funnel them through one thread.
-This example does exactly that.
+The [threading contract](../../spec/threading/#summary) applies: the model is yours to read from any number of threads, but the solution and message callbacks must be driven **serially**, so funnel them through one thread — as this example does.
 
 <Code code={threadedExample} lang="rust" title="rust/fznso/examples/threaded_solver.rs" />
 
 ## Checking your work
 
-Point the test consumers at your library.
-They exercise the whole interface: options, statistics, solutions, messages, early stopping, and a model published back across the interface and compared against the original:
+The test consumer exercises the whole interface — options, statistics, solutions, messages, early stopping, and a model published back across the interface and compared against the original:
 
 ```sh
 just test-cpp                                  # builds and runs test_consumer
 ./target/test_consumer /path/to/libmysolver.so
 ```
 
-If you are writing the solver in Rust, run the suite under miri as well.
-Every bug in the handle-casting class this interface can produce passed the ordinary test suite first:
-
-```sh
-just miri
-```
+If your solver is in Rust, run the suite under miri as well.
+Every bug in the handle-casting class this interface can produce passed the ordinary test suite first.

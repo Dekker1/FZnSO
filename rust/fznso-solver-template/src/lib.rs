@@ -12,9 +12,8 @@
 //! The entry points are named `fznso_NAME_...`. The `fznso_` marker is fixed;
 //! `NAME` is a placeholder that a real solver replaces with its library name —
 //! the base name of the built library file (e.g. `gecode` for `libgecode.so`).
-//! Prefixing every symbol this way lets several solvers be linked into one
-//! binary without colliding, and keeps them out of any wrapped library's
-//! namespace. The naming rules are specified at
+//! Prefixing every symbol this way is what lets several solvers be statically
+//! linked into one binary without colliding. The naming rules are specified at
 //! <https://fznso.minizinc.dev/spec/naming-and-versioning/>.
 //!
 //! Each function below states its own contract. The rules that hold across the
@@ -42,38 +41,37 @@ pub extern "C" fn fznso_NAME_abi_version() -> u32 {
 	fznso_types::FZNSO_ABI_VERSION
 }
 
-/// Returns the list of available constraint that can be added to the solver.
+/// Returns the constraints that can be posted to the solver.
 ///
-/// The returned array must stay valid for as long as the library is loaded, so
-/// it is `static`. The caller never frees it.
+/// The array is `static`: valid for as long as the library is loaded, and never
+/// freed by the caller.
 #[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_constraint_list() -> FznsoConstraintList<'static> {
 	unimplemented!()
 }
 
-/// Returns the list of types for which decision variable can be created by the
-/// solver.
+/// Returns the types for which the solver can create decision variables.
 ///
-/// The returned array must stay valid for as long as the library is loaded, so
-/// it is `static`. The caller never frees it.
+/// The array is `static`: valid for as long as the library is loaded, and never
+/// freed by the caller.
 #[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_decision_list() -> FznsoTypeList<'static> {
 	unimplemented!()
 }
 
-/// Returns the list of available objective that can be achieved by the solver.
+/// Returns the objective strategies the solver can pursue.
 ///
-/// The returned array must stay valid for as long as the library is loaded, so
-/// it is `static`. The caller never frees it.
+/// The array is `static`: valid for as long as the library is loaded, and never
+/// freed by the caller.
 #[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_objective_list() -> FznsoObjectiveList<'static> {
 	unimplemented!()
 }
 
-/// Returns the list of available options that can be set of the solver.
+/// Returns the options that can be set on the solver.
 ///
-/// The returned array must stay valid for as long as the library is loaded, so
-/// it is `static`. The caller never frees it.
+/// The array is `static`: valid for as long as the library is loaded, and never
+/// freed by the caller.
 #[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_option_list() -> FznsoOptionList<'static> {
 	unimplemented!()
@@ -102,13 +100,11 @@ pub unsafe extern "C" fn fznso_NAME_solver_free(solver: *mut FznsoSolver) {
 
 /// Get the current value of an option for the solver.
 ///
-/// Note that this is only valid to be called with options named by
-/// `fznso_NAME_option_list`.
+/// Only valid for options named by `fznso_NAME_option_list`.
 ///
 /// The returned value must stay valid until the next call that can change the
-/// solver (e.g. `_solver_option_set`, `_solver_run`, or `_solver_free`).
-/// Returning a borrow of the solver's own state is the intent; the caller never
-/// frees it.
+/// solver (`_solver_option_set`, `_solver_run` or `_solver_free`). Borrowing
+/// the solver's own state is the intent; the caller never frees it.
 ///
 /// # Safety
 ///
@@ -126,10 +122,10 @@ pub unsafe extern "C" fn fznso_NAME_solver_option_get<'a>(
 
 /// Set the current value of an option for the solver.
 ///
-/// Note that this is only valid to be called with options named by
-/// `fznso_NAME_option_list`, and the value must be of the correct type. This
-/// function returns `true` if the option was successfully set, and `false`
-/// otherwise.
+/// Only valid for options named by `fznso_NAME_option_list`, and the value must
+/// have the declared type. Returns `true` if the option was set, `false`
+/// otherwise; the reason is then available through
+/// [`fznso_NAME_solver_read_error`].
 ///
 /// # Safety
 ///
@@ -149,10 +145,9 @@ pub unsafe extern "C" fn fznso_NAME_solver_option_set(
 
 /// Read an error message from the solver.
 ///
-/// This function is expected to be called after solver interactions signal an
-/// error has occurred. For example, if [`fznso_NAME_solver_run`] returns
-/// [`FznsoStatus::FznsoError`] or [`fznso_NAME_solver_option_set`] returns
-/// `false`.
+/// Called after an interaction signals an error: [`fznso_NAME_solver_run`]
+/// returning [`FznsoStatus::FznsoError`], or
+/// [`fznso_NAME_solver_option_set`] returning `false`.
 ///
 /// The message is handed to `read_error` rather than returned, so it need only
 /// stay valid for the duration of that callback.
@@ -222,14 +217,13 @@ pub unsafe extern "C" fn fznso_NAME_solver_run(
 
 /// Get the current value of a statistic from the solver instance.
 ///
-/// Note that this is only valid to be called with statistics named by
-/// `fznso_NAME_statistic_list` whose `solver` flag is set; statistics carrying
-/// only the `solution` flag are read from a solution instead, using
-/// `FznsoSolutionMethods::statistic`. An unknown identifier yields a value of
-/// kind `FznsoValueAbsent`.
+/// Only valid for statistics named by `fznso_NAME_statistic_list` whose
+/// `solver` flag is set; those carrying only the `solution` flag are read from
+/// a solution, using `FznsoSolutionMethods::statistic`. An unknown identifier
+/// yields a value of kind `FznsoValueAbsent`.
 ///
-/// As with `_solver_option_get`, the returned value must stay valid until
-/// the next call that can change the solver.
+/// As with `_solver_option_get`, the returned value must stay valid until the
+/// next call that can change the solver.
 ///
 /// # Safety
 ///
@@ -245,11 +239,10 @@ pub unsafe extern "C" fn fznso_NAME_solver_statistic<'a>(
 	unimplemented!()
 }
 
-/// Returns the list of available statistical information that can be requested
-/// from the solver and its solutions.
+/// Returns the statistics that can be read from the solver and its solutions.
 ///
-/// The returned array must stay valid for as long as the library is loaded, so
-/// it is `static`. The caller never frees it.
+/// The array is `static`: valid for as long as the library is loaded, and never
+/// freed by the caller.
 #[unsafe(no_mangle)]
 pub extern "C" fn fznso_NAME_statistic_list() -> FznsoStatisticList<'static> {
 	unimplemented!()

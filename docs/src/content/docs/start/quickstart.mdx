@@ -7,11 +7,9 @@ sidebar:
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-The interface has two sides, with a quickstart for each.
-
 ## Using a solver
 
-Find a solver by name, describe a small problem, and print the solutions.
+Find a solver by name, describe a small problem, print the solutions.
 
 <Tabs syncKey="lang">
 <TabItem label="Python">
@@ -27,8 +25,8 @@ model = fznso.LayeredModel()
 var_int = fznso.Type("int", decision=True)
 a = model.add_decision(var_int, range(3, 21), name="a")   # a in 3..20
 b = model.add_decision(var_int, range(10, 21), name="b")  # b in 10..20
-model.add_constraint("int_lin_le", [[-1], [a], 0])          # a >= 0
-model.set_objective("minimize", a)
+model.add_constraint("int_lin_le", [[1, -1], [a, b], 0])  # a <= b
+model.set_objective("int_minimize", a)
 
 # 3. Configure and run.
 solver.option_set("time_limit", 10_000)  # milliseconds
@@ -41,7 +39,7 @@ print(status)  # Status.Complete
 <TabItem label="Rust">
 
 ```rust
-use fznso::{LayeredModel, Library, OwnedValue, RangeList, Solver, Status, Type, TypeBase};
+use fznso::{LayeredModel, Library, OwnedValue, RangeList, Solution, Solver, Status, Type, TypeBase};
 
 let lib = unsafe { Library::find("example_solver") }?;
 let mut solver = lib.create_solver();
@@ -56,22 +54,32 @@ let a = model.add_decision(
     true,
     vec![],
 );
+let b = model.add_decision(
+    var_int,
+    OwnedValue::IntSet(RangeList::from(10_i64..=20)),
+    Some("b".into()),
+    false,
+    true,
+    vec![],
+);
+// a <= b
 let _ = model.add_constraint(
     "int_lin_le",
     vec![
-        OwnedValue::IntList(vec![-1]),
-        OwnedValue::List(vec![OwnedValue::Decision(a)]),
+        OwnedValue::IntList(vec![1, -1]),
+        OwnedValue::List(vec![OwnedValue::Decision(a), OwnedValue::Decision(b)]),
         OwnedValue::Int(0),
     ],
     None,
     vec![],
 );
+model.set_objective(Some("int_minimize"), OwnedValue::Decision(a), vec![]);
 
 solver.option_set("time_limit", (&10_000_i64).into())?;
 let status = solver.run(
     &model,
     &mut |sol: &fznso::DynSolution<'_>| println!("{}", sol.value(0).get_int()),
-    None,
+    fznso::ignore_messages(),
     fznso::dont_interrupt(),
 );
 assert!(matches!(status, Status::Complete));
@@ -92,34 +100,34 @@ fznso::DynSolver solver = library->create_solver();
 const fznso::Type INT_VAR = fznso::Type{FznsoTypeBaseInt}.decision(true);
 fznso::LayeredModel model;
 fznso::Decision a = model.add_decision(INT_VAR, fznso::OwnedValue::int_range(3, 20), "a");
-model.add_decision(INT_VAR, fznso::OwnedValue::int_range(10, 20), "b");
-model.add_constraint("int_lin_le", {fznso::OwnedValue::int_list({-1}),
-                                    fznso::OwnedValue::list({fznso::OwnedValue{a}}),
-                                    fznso::OwnedValue{std::int64_t{0}}});
-model.set_objective("minimize", fznso::OwnedValue{a});
+fznso::Decision b = model.add_decision(INT_VAR, fznso::OwnedValue::int_range(10, 20), "b");
+model.add_constraint("int_lin_le", {fznso::OwnedValue::int_list({1, -1}),
+                                    fznso::OwnedValue::list({fznso::OwnedValue{a},
+                                                             fznso::OwnedValue{b}}),
+                                    fznso::OwnedValue{std::int64_t{0}}});  // a <= b
+model.set_objective("int_minimize", fznso::OwnedValue{a});
 
 solver.option_set("time_limit", fznso::OwnedValue{std::int64_t{10000}});
 fznso::Status status = solver.run(model, [&](const fznso::Solution& sol) {
-    std::cout << sol[a].as_int() << '\n';
+    std::cout << sol[a].as_int() << ' ' << sol[b].as_int() << '\n';
 });
 ```
 
-The C++ bindings are header-only: `#include "fznso.hpp"` and add `c/` and `cpp/` to your include path.
-Nothing to link.
+The C++ bindings are header-only: `#include "fznso.hpp"` and put `c/` and `cpp/` on your include path.
 
 </TabItem>
 </Tabs>
 
 :::caution
 The solution is valid **only inside that callback** — copy out whatever you want to keep.
-[Nothing transfers ownership](../../spec/lifetimes-and-ownership/#nothing-transfers-ownership) is the rule this is one case of.
+See [Nothing transfers ownership](../../spec/lifetimes-and-ownership/#nothing-transfers-ownership).
 :::
 
-Next: [Using a solver](../../guides/using-a-solver/) for the complete workflow, or [Installing solvers](../../guides/installing-solvers/) if `find` cannot see yours.
+Next: [Using a solver](../../guides/using-a-solver/) for the full workflow, or [Installing solvers](../../guides/installing-solvers/) if `find` cannot see yours.
 
 ## Implementing a solver
 
-Implement the interface for your own solver, and every FZnSO application can drive it.
+Implement the interface once, and every FZnSO application can drive your solver.
 
 <Tabs syncKey="lang">
 <TabItem label="Rust">
@@ -154,7 +162,7 @@ impl Solver for MySolver {
     { todo!() }
 }
 
-// What the solver declares. Every capability list defaults to empty.
+// Every capability list defaults to empty; override the ones you support.
 impl SolverType for MySolver {
     fn new() -> Self { MySolver }
 }
@@ -163,7 +171,7 @@ impl SolverType for MySolver {
 fznso::fznso_export!(MySolver, "mysolver");
 ```
 
-Build as a `cdylib`, and the file name must match the name you passed:
+Build as a `cdylib` whose file name matches the name you passed:
 
 ```toml
 [lib]
@@ -187,14 +195,8 @@ public:
 
     fznso::Status run(const fznso::Model& model, fznso::SolutionSink& solutions,
                       fznso::MessageSink& messages, const fznso::StopSignal& stop) override {
-        if (stop.requested()) {
-            return fznso::Status{fznso::Status::Kind::Incomplete, {}};
-        }
-        // `wanted()` is false when nobody is listening — skip *building* the message.
-        if (messages.wanted()) {
-            messages.message("log", fznso::Value{std::string_view{"searching"}});
-        }
-        // … search, calling solutions.solution(…) with a SolutionSource per answer …
+        // … search, calling solutions.solution(…) with a SolutionSource per answer,
+        //   polling stop.requested(), and reporting through messages if wanted() …
         return fznso::Status{fznso::Status::Kind::Complete, {}};
     }
 
@@ -206,7 +208,7 @@ public:
 FZNSO_EXPORT_SOLVER(MySolver, mysolver)
 ```
 
-Build as a shared library named `libmysolver.so` / `libmysolver.dylib` / `mysolver.dll`.
+Build as `libmysolver.so` / `libmysolver.dylib` / `mysolver.dll`.
 
 </TabItem>
 <TabItem label="C">
@@ -233,4 +235,4 @@ FznsoStatus fznso_mysolver_solver_run(
 
 The name in the symbols must match the library's file name; see [Naming & versioning](../../spec/naming-and-versioning/).
 
-Next: [Implementing a solver](../../guides/implementing-a-solver/) for the complete walkthrough with a working example.
+Next: [Implementing a solver](../../guides/implementing-a-solver/), which walks a complete working example.

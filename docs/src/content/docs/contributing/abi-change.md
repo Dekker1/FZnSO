@@ -6,9 +6,7 @@ sidebar:
 ---
 
 The interface is a set of structs with function pointers at fixed offsets, matched [exactly](../../spec/abi-stability/) between solver and application.
-There is no room for a compatible addition: a new field is a new layout, and a new layout is a new version.
-
-That makes changes expensive (every solver must be rebuilt), so they are worth getting right rather than getting soon.
+There is no room for a compatible addition: a new field is a new layout, and a new layout is a new version — so every solver has to be rebuilt.
 
 ## Check first whether you need one
 
@@ -26,28 +24,21 @@ If a proposal is really "I need to pass this extra thing", the answer is often a
 
 ## What does need a new version
 
-[ABI stability](../../spec/abi-stability/#what-forces-a-new-version) lists them: any change to a
-struct layout, an enum's variants, an entry point's signature, or **the contract of an existing
-callback**.
+[ABI stability](../../spec/abi-stability/#what-forces-a-new-version) lists them: any change to a struct layout, an enum's variants, an entry point's signature, or **the contract of an existing callback**.
 
-That last one is the easy one to miss.
+That last one is easy to miss.
 Tightening "may be called from any thread" to "must be called from the calling thread" changes no bytes and breaks every solver relying on the old promise.
-It is a version bump.
 
 ## What a proposal needs
 
-**The problem, not the patch.**
-What can you not express today?
-A worked example of a solver or application that cannot be written is worth more than a diff.
-
-**Why it cannot be a registry entry, an annotation or a value.**
-Most proposals can be, and this is the question that decides it.
-
-**The cost.**
-Which side changes, what a solver must do to migrate, and whether an old solver can report the old version and keep working alongside. It can, since [candidates of the wrong version are skipped](../../spec/discovery/), so a transition does not have to be atomic.
-
-**Both sides of the interface.**
-A change that suits solvers and burdens every application, or the reverse, usually has a better shape.
+- **The problem, not the patch.**
+  What can you not express today? A worked example of a solver or application that cannot be written is worth more than a diff.
+- **Why it cannot be a registry entry, an annotation or a value.**
+  Most proposals can be, and this is the question that decides it.
+- **The cost.**
+  Which side changes, and what a solver must do to migrate. A transition need not be atomic: an old solver can keep reporting the old version and keep working alongside, since [candidates of the wrong version are skipped](../../spec/discovery/).
+- **Both sides of the interface.**
+  A change that suits solvers and burdens every application, or the reverse, usually has a better shape.
 
 ## If it is accepted
 
@@ -61,5 +52,4 @@ A change lands as a coordinated set:
 6. the example solvers and every test suite.
 
 Steps 1 and 5 are the ones that matter for anyone reading later.
-Per-item contracts belong in the doc comment; rules that span the interface belong in the spec.
-Writing the same paragraph in both is what the documentation is structured to avoid; see [Build & test](../build-and-test/#writing-documentation).
+Per-item contracts belong in the doc comment; rules that span the interface belong in the spec, and [never both](../build-and-test/#writing-documentation).

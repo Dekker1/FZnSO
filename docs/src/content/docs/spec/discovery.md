@@ -18,13 +18,10 @@ A candidate whose `fznso_<name>_abi_version` does not match the application's is
 
 ## Why a dedicated directory
 
-The dedicated directory is there for three reasons:
+Because the names would collide otherwise.
+An FZnSO solver is usually a shim named after the library it wraps, and plenty of systems already have a `libgecode` on the library path.
 
-- **Names would otherwise collide.**
-  An FZnSO solver is usually a shim named after the library it wraps, so `libgecode.so` would sit on top of real Gecode.
-- **Enumeration stays cheap.**
-  Listing the installed solvers is a single directory listing, rather than a scan of every system library.
-- **Nothing loads one by accident.**
-  Solvers stay off the default linker search path, where nothing should find them.
+A directory of their own is also what lets a loader find a solver *by name*, from a directory listing.
+The alternative is opening every library on the system to see which ones export the right symbols — loading a great many libraries that will never be used.
 
-The third point is also what frees the [version placement](../naming-and-versioning/#where-the-version-goes) from platform convention: nothing ever links against a solver, so no soname is ever resolved.
+Nothing ever links against a solver, which is what frees the [version placement](../naming-and-versioning/#where-the-version-goes) from platform convention: no soname is ever resolved.

@@ -36,7 +36,7 @@ notes = """
 Only meaningful for a model with an objective.
 The solver keeps searching after each report, until it finds a better solution or proves none exists, so the run still ends with `FznsoComplete` if it finished.
 
-Improving solutions arrive in order, which the [serial callback contract](../../spec/threading/) guarantees.
+The solver must [report improving solutions in improving order](../../spec/running/#solutions), discarding any a worker produces out of order; the [serial callback contract](../../spec/threading/) is what preserves that order on the way out.
 """
 
 [[entry]]
@@ -64,7 +64,7 @@ notes = """
 Must be positive.
 The type carries no range, so a solver rejects a non-positive value through `option_set` rather than through the type system.
 
-Prefer this over polling a clock in `should_stop`: a solver told its budget up front can plan its search around it (sizing restart schedules, budgeting between portfolio strategies) in a way one merely being interrupted cannot.
+Prefer this over polling a clock in `should_stop`: a solver told its budget up front can plan around it — a portfolio solver decides from the time remaining whether to keep improving a solution or start proving the one it has optimal — in a way one merely being interrupted cannot.
 """
 
 [[entry]]

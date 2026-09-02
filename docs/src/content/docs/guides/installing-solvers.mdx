@@ -7,10 +7,8 @@ sidebar:
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Applications find solvers **by name**, never by path.
-For that to work, the library file has to be in a directory FZnSO searches, with a file name it can read a name back from.
-
-The rules are in [Discovery](../../spec/discovery/) and [Naming & versioning](../../spec/naming-and-versioning/); this page is the operational version.
+Applications find solvers **by name**, never by path, so the library file has to sit in a directory FZnSO searches, under a file name it can read a name back from.
+The rules are in [Discovery](../../spec/discovery/) and [Naming & versioning](../../spec/naming-and-versioning/); this is the operational version.
 
 ## Where to put it
 
@@ -22,7 +20,7 @@ Pick the first that fits:
 | Per user | `~/.local/share/fznso` (Linux), `~/Library/Application Support/fznso` (macOS), `%LOCALAPPDATA%\fznso` (Windows) | a solver you installed for yourself |
 | System | `/usr/local/lib/fznso`, `/usr/lib/fznso`, or a `fznso` directory beside the executable on Windows | a packaged solver |
 
-[Earlier entries win outright](../../spec/discovery/) — newer versions do not override the order — which is what makes the development case work.
+[Earlier entries win outright](../../spec/discovery/), even over a newer version further down, which is what makes the development case work.
 
 ```sh
 export FZNSO_SOLVER_PATH="$PWD/target/debug/examples"
@@ -44,13 +42,12 @@ gecode-6.dll             ✗  `-` cannot appear in a C identifier
 libgecode-solver.so      ✗  same problem
 ```
 
-So: a valid C identifier that does not start with `lib`, then the version, then the extension — on
-every platform, [for reasons](../../spec/naming-and-versioning/#where-the-version-goes).
+A valid C identifier that does not start with `lib`, then the version, then the extension — on every platform, [for reasons](../../spec/naming-and-versioning/#where-the-version-goes).
 Several versions can live side by side; asking for `gecode` gets the newest.
 
-## Checking what is installed
+## Listing and pinning
 
-Each binding can enumerate the search path:
+Each binding enumerates the search path, and takes a version prefix of whole components to pin a series:
 
 <Tabs syncKey="lang">
 <TabItem label="Python">
@@ -58,6 +55,9 @@ Each binding can enumerate the search path:
 ```python
 for found in fznso.Library.discover():
     print(found.name, found.version, found.path)
+
+fznso.Library.find("gecode", "6")      # any 6.x.y
+fznso.Library.find("gecode", "6.2")    # any 6.2.x, but not 6.1.0
 ```
 
 </TabItem>
@@ -67,6 +67,9 @@ for found in fznso.Library.discover():
 for found in fznso::Library::discover() {
     println!("{} {} {}", found.name, found.version, found.path.display());
 }
+
+Library::find_version("gecode", "6");     // any 6.x.y
+Library::find_version("gecode", "6.2");   // any 6.2.x, but not 6.1.0
 ```
 
 </TabItem>
@@ -76,38 +79,7 @@ for found in fznso::Library::discover() {
 for (const fznso::Library::Discovered& d : fznso::Library::discover()) {
     std::cout << d.name << ' ' << d.version << ' ' << d.path << '\n';
 }
-```
 
-</TabItem>
-</Tabs>
-
-This is a directory listing, not a load, so it also shows solvers whose ABI version does not match.
-
-## Pinning a version
-
-Asking for a name alone gets the newest installed version.
-To pin, name a prefix of whole components:
-
-<Tabs syncKey="lang">
-<TabItem label="Python">
-
-```python
-fznso.Library.find("gecode", "6")      # any 6.x.y
-fznso.Library.find("gecode", "6.2")    # any 6.2.x, but not 6.1.0
-```
-
-</TabItem>
-<TabItem label="Rust">
-
-```rust
-Library::find_version("gecode", "6")     // any 6.x.y
-Library::find_version("gecode", "6.2")   // any 6.2.x, but not 6.1.0
-```
-
-</TabItem>
-<TabItem label="C++">
-
-```cpp
 fznso::Library::find_version("gecode", "6");    // any 6.x.y
 fznso::Library::find_version("gecode", "6.2");  // any 6.2.x, but not 6.1.0
 ```
@@ -115,13 +87,14 @@ fznso::Library::find_version("gecode", "6.2");  // any 6.2.x, but not 6.1.0
 </TabItem>
 </Tabs>
 
+`discover` is a directory listing rather than a load, so it also shows solvers whose ABI version does not match.
 Components are compared numerically, so `10` is newer than `9`.
 
 ## When it will not load
 
 | Symptom | Cause |
 | --- | --- |
-| Not found, though the file is there | The file name does not yield a valid name — check the table above. Or the directory is not on the search path. |
+| Not found, though the file is there | The file name does not yield a valid name — check the list above. Or the directory is not on the search path. |
 | Found, but rejected | The solver reports a different [`FZNSO_ABI_VERSION`](../../spec/abi-stability/) than your application. Rebuild it against matching headers. |
 | A required symbol is missing | The solver does not export all [thirteen entry points](../../spec/entry-points/), or the name in the symbols does not match the file name. |
 

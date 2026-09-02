@@ -118,23 +118,22 @@ pub struct FznsoIntRange {
 /// A pointer to an FZnSO handle, tagged with the lifetime for which the handle
 /// stays valid.
 ///
-/// This is deliberately a raw pointer rather than a Rust reference, because the
-/// interface relies on two things a reference cannot do:
+/// A raw pointer rather than a Rust reference, because the interface relies on
+/// two things a reference cannot do:
 ///
-/// - **Casting back to the implementation's own type.** A handle is produced by
+/// - **Casting back to the implementation's own type.** A handle is made by
 ///   casting e.g. `*const MyModel` to `*const FznsoModel`, and the callbacks
-///   cast it back before use. A `&FznsoModel` would only carry permission to
-///   access the opaque handle type itself, so reading the larger original type
-///   through it is undefined behaviour.
-/// - **Encoding a value directly in the pointer word.** Small values such as a
+///   cast it back before use. A `&FznsoModel` would carry permission to access
+///   only the opaque handle type, so reading the larger original type through
+///   it is undefined behaviour.
+/// - **Encoding a value in the pointer word.** Small values such as a
 ///   [`FznsoDecisionIdx`] are stored *in* the pointer rather than behind it, so
-///   that handing one across the interface never requires an allocation. See
+///   handing one across the interface never allocates. See
 ///   [`FznsoPtr::from_addr`].
 ///
-/// The `'a` lifetime costs nothing at runtime. It exists so that callback
-/// signatures state how long the handle — and anything derived from it —
-/// remains valid, which is what lets the return types of
-/// [`FznsoModelMethods`] and friends borrow from their argument.
+/// The `'a` lifetime costs nothing at runtime. It states how long the handle —
+/// and anything derived from it — stays valid, which is what lets
+/// [`FznsoModelMethods`] and friends return types borrowed from their argument.
 ///
 /// cbindgen:no-export
 #[repr(transparent)]
@@ -161,8 +160,7 @@ pub struct FznsoModel(pub ffi::c_void);
 #[repr(C)]
 #[derive(Debug)]
 pub struct FznsoModelMethods {
-	/// Returns the current number of model layers currently contained in the
-	/// model.
+	/// Returns the number of layers in the model.
 	///
 	/// Layers are how an application adds and retracts groups of decision
 	/// variables and constraints between runs; see [`Self::layer_permanent`]
@@ -175,21 +173,18 @@ pub struct FznsoModelMethods {
 	pub layer_unchanged: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Returns the number of permanent layers in the model.
 	///
-	/// Permanent layers are consecutive, starting from layer 0, and can never
-	/// be retracted, so a solver may assume their number only ever grows.
+	/// Permanent layers are consecutive starting from layer 0 and can never be
+	/// retracted, so a solver may assume their number only ever grows.
 	///
-	/// Permanent layers can, however, still be found to be redundant, allowing
-	/// the solver to remove the decision variables and constraints in these
-	/// layers, if convenient. This is signaled using
+	/// A permanent layer may still be found redundant, letting the solver drop
+	/// its decision variables and constraints if convenient; see
 	/// [`Self::layer_redundant_len`] and [`Self::layer_redundant_index`].
 	pub layer_permanent: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
-	/// Returns the number of permanent layers that have been marked as
-	/// redundant.
+	/// Returns the number of permanent layers marked redundant.
 	///
-	/// The solver can remove the decision variables and constraints in these
-	/// layers, if convenient. Once a layer is marked as redundant, it can
-	/// forever be considered redundant. As such, the solver can assume that
-	/// the number of redundant layers only ever increases.
+	/// The solver may drop the decision variables and constraints in these
+	/// layers, if convenient. A layer once marked redundant stays redundant,
+	/// so this number only ever increases.
 	pub layer_redundant_len: extern "C" fn(model: FznsoPtr<'_, FznsoModel>) -> usize,
 	/// Returns the index of the n-th permanent layer that has been marked as
 	/// redundant.
@@ -211,8 +206,8 @@ pub struct FznsoModelMethods {
 	pub decision_layer_end: extern "C" fn(model: FznsoPtr<'_, FznsoModel>, layer: usize) -> usize,
 	/// Retrieve the type of the given decision variable.
 	///
-	/// This is what the type of value the decision must take, as opposed to
-	/// [`Self::decision_domain`], which says which specific values it may take.
+	/// This is the kind of value the decision must take; the specific values it
+	/// may take are [`Self::decision_domain`].
 	pub decision_type:
 		extern "C" fn(model: FznsoPtr<'_, FznsoModel>, decision: FznsoDecisionIdx) -> FznsoType,
 	/// Retrieve the domain of the given decision.
@@ -409,14 +404,13 @@ pub struct FznsoSolution(pub ffi::c_void);
 #[repr(C)]
 #[derive(Clone, Debug)]
 pub struct FznsoSolutionMethods {
-	/// Function callback to retrieve the value assigned to a decision variable
-	/// in the solution.
+	/// Returns the value assigned to a decision variable in the solution.
 	pub value: extern "C" fn(
 		data: FznsoPtr<'_, FznsoSolution>,
 		decision_index: usize,
 	) -> FznsoValueRef<'_>,
-	/// Function callback to retrieve the statistical information made available
-	/// by the solver about the search process so far.
+	/// Returns a statistic the solver makes available about the search so far,
+	/// or an absent value for an unknown identifier.
 	pub statistic: for<'a, 'i> extern "C" fn(
 		data: FznsoPtr<'a, FznsoSolution>,
 		ident: FznsoStr<'i>,
@@ -629,85 +623,69 @@ pub enum FznsoValueKind {
 #[repr(C)]
 #[derive(Clone, Debug)]
 pub struct FznsoValueMethods {
-	/// Function callback that returns the kind of the value.
+	/// Returns the kind of the value.
 	pub kind: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> FznsoValueKind,
-	/// Function callback that returns the length of the value.
+	/// Returns the length of the value, which depends on its
+	/// [`FznsoValueMethods::kind`]:
 	///
-	/// In case [`FznsoValueMethods::kind`] returns
-	/// [`FznsoValueKind::FznsoValueString`], the length is the number of bytes
-	/// in the string **not** counting any trailing null byte.  The pointer
-	/// returned by [`FznsoValueMethods::as_string`] is not required to be null-
-	/// terminated; callers must use this length to determine the string extent.
+	/// - [`FznsoValueKind::FznsoValueString`]: bytes in the string, **not**
+	///   counting any trailing null byte. [`FznsoValueMethods::as_string`] is
+	///   not required to be null-terminated, so callers must use this length to
+	///   determine the string extent.
+	/// - [`FznsoValueKind::FznsoValueList`]: elements, read with
+	///   [`FznsoValueMethods::get_element`].
+	/// - [`FznsoValueKind::FznsoValueSetInt`] or
+	///   [`FznsoValueKind::FznsoValueSetFloat`]: ranges in the set, read with
+	///   [`FznsoValueMethods::get_range_int`] or
+	///   [`FznsoValueMethods::get_range_float`].
 	///
-	/// In case [`FznsoValueMethods::kind`] returns
-	/// [`FznsoValueKind::FznsoValueList`], the length is the number of elements
-	/// in the list, accessible using [`FznsoValueMethods::get_element`].
-	///
-	/// In case [`FznsoValueMethods::kind`] returns
-	/// [`FznsoValueKind::FznsoValueSetInt`] or
-	/// [`FznsoValueKind::FznsoValueSetFloat`], the length is the number of
-	/// ranges in the set, accessible using
-	/// [`FznsoValueMethods::get_range_int`] or
-	/// [`FznsoValueMethods::get_range_float`].
-	///
-	/// Requires [`FznsoValueMethods::kind`] to return one of
-	/// [`FznsoValueKind::FznsoValueString`],
-	/// [`FznsoValueKind::FznsoValueList`],
-	/// [`FznsoValueKind::FznsoValueSetInt`], or
-	/// [`FznsoValueKind::FznsoValueSetFloat`].
+	/// Requires `kind` to return one of those four.
 	pub len: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> usize,
-	/// Function callback that returns the decision variable index contained in
-	/// the value.
+	/// Returns the decision variable index contained in the value.
 	///
 	/// Requires [`FznsoValueMethods::kind`] to return
 	/// [`FznsoValueKind::FznsoValueDecision`].
 	pub as_decision: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> FznsoDecisionIdx,
-	/// Function callback that returns the constraint index contained in the
-	/// value.
+	/// Returns the constraint index contained in the value.
 	///
 	/// Requires [`FznsoValueMethods::kind`] to return
 	/// [`FznsoValueKind::FznsoValueConstraint`].
 	pub as_constraint: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> FznsoConstraintIdx,
-	/// Function callback that returns the integer value contained in the value.
+	/// Returns the integer contained in the value.
 	///
 	/// Requires [`FznsoValueMethods::kind`] to return
 	/// [`FznsoValueKind::FznsoValueInt`].
 	pub as_int: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> i64,
-	/// Function callback that returns the floating point value contained in the
-	/// value.
+	/// Returns the float contained in the value.
 	///
 	/// Requires [`FznsoValueMethods::kind`] to return
 	/// [`FznsoValueKind::FznsoValueFloat`].
 	pub as_float: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> f64,
-	/// Function callback that returns a pointer to the UTF-8 bytes of a string
-	/// value.  The pointer is valid for [`FznsoValueMethods::len`] bytes and is
-	/// **not** required to be null-terminated (a trailing null byte may or may
-	/// not be present).
+	/// Returns a pointer to the UTF-8 bytes of a string value, valid for
+	/// [`FznsoValueMethods::len`] bytes and **not** required to be
+	/// null-terminated (a trailing null byte may or may not be present).
 	///
 	/// Requires [`FznsoValueMethods::kind`] to return
 	/// [`FznsoValueKind::FznsoValueString`].
 	pub as_string: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> *const ffi::c_char,
-	/// Function callback that returns the Boolean value contained in the value.
+	/// Returns the Boolean contained in the value.
 	///
 	/// Requires [`FznsoValueMethods::kind`] to return
 	/// [`FznsoValueKind::FznsoValueBool`].
 	pub as_bool: extern "C" fn(FznsoPtr<'_, FznsoValue>) -> bool,
-	/// Function callback that returns a range from a range list representing
-	/// the integer set contained in the value.
+	/// Returns one range of the integer set contained in the value.
 	///
 	/// Requires [`FznsoValueMethods::kind`] to return
 	/// [`FznsoValueKind::FznsoValueSetInt`], and `index` to be below
 	/// [`FznsoValueMethods::len`].
 	pub get_range_int: extern "C" fn(FznsoPtr<'_, FznsoValue>, index: usize) -> FznsoIntRange,
-	/// Function callback that returns a range from a range list representing
-	/// the floating point set contained in the value.
+	/// Returns one range of the float set contained in the value.
 	///
 	/// Requires [`FznsoValueMethods::kind`] to return
 	/// [`FznsoValueKind::FznsoValueSetFloat`], and `index` to be below
 	/// [`FznsoValueMethods::len`].
 	pub get_range_float: extern "C" fn(FznsoPtr<'_, FznsoValue>, index: usize) -> FznsoFloatRange,
-	/// Function callback that returns an element from the list contained in the
-	/// value.
+	/// Returns one element of the list contained in the value.
 	///
 	/// Requires [`FznsoValueMethods::kind`] to return
 	/// [`FznsoValueKind::FznsoValueList`], and `index` to be below

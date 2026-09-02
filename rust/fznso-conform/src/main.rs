@@ -187,6 +187,33 @@ fn coverage(registry: &Registry, library: &Path) -> Result<ExitCode, String> {
 		.filter(|p| p.extension().is_some_and(|e| e == "mzn"))
 		.collect();
 	dir.sort();
+
+	// A registry name that is also a FlatZinc builtin needs no route: MiniZinc
+	// emits the builtin under that very name, and a solver declaring the
+	// identifier matches it directly. Only a constraint MiniZinc reaches under
+	// some *other* name needs an `fzn_<ident>` to bridge the two.
+	//
+	// `flatzinc_builtins.mzn` sits in `std`, one directory up from the overlay.
+	let builtins = library
+		.parent()
+		.map(|p| p.join("std/flatzinc_builtins.mzn"));
+	if let Some(path) = builtins.filter(|p| p.exists()) {
+		let text =
+			std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+		for line in text.lines() {
+			let Some(rest) = line.trim_start().strip_prefix("predicate ") else {
+				continue;
+			};
+			let ident: String = rest
+				.chars()
+				.take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+				.collect();
+			if !ident.is_empty() {
+				declared.insert(ident);
+			}
+		}
+	}
+
 	for path in &dir {
 		let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
 		for line in text.lines() {
@@ -222,7 +249,8 @@ fn coverage(registry: &Registry, library: &Path) -> Result<ExitCode, String> {
 	let total = registry.constraints.len();
 	let absent: usize = missing.values().map(Vec::len).sum();
 	println!(
-		"{} of {total} registry names are reachable from {}",
+		"{} of {total} registry names are reachable — an `fzn_<ident>` in {}, or a\n\
+		 FlatZinc builtin of the same name, which needs no rewriting.",
 		total - absent,
 		library.display()
 	);
