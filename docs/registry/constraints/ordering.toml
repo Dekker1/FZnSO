@@ -367,26 +367,36 @@ ident = "int_value_precede"
 args = ["int: s", "int: t", "list of var int: xs"]
 summary = "If the second value occurs at all, the first occurs somewhere before it."
 definition = '\forall j : xs_j = t \rightarrow \exists i < j : xs_i = s'
-notes = "Breaks the symmetry between interchangeable values, for example colours in a graph colouring. A chain of precedences is this constraint applied to each consecutive pair."
 
 [[entry]]
 ident = "set_of_int_value_precede"
 args = ["int: s", "int: t", "list of var set of int: xs"]
-summary = "If the second value occurs in any set, the first occurs in an earlier one."
-definition = '\forall j : t \in xs_j \rightarrow \exists i < j : s \in xs_i'
+summary = "If a set holds the second value without the first, an earlier set holds the first without the second."
+definition = '\forall j : \left( t \in xs_j \wedge s \notin xs_j \right) \rightarrow \exists i < j : \left( s \in xs_i \wedge t \notin xs_i \right)'
+
+[[entry]]
+ident = "int_value_precede_chain"
+args = ["list of int: values", "list of var int: xs"]
+summary = "Each listed value occurs before the next one does, all along the chain."
+definition = '\forall k < \lvert values \rvert : \forall j : xs_j = values_{k+1} \rightarrow \exists i < j : xs_i = values_k'
+
+[[entry]]
+ident = "set_of_int_value_precede_chain"
+args = ["list of int: values", "list of var set of int: xs"]
+summary = "Each listed value precedes the next one all along the chain, in the sense set_of_int_value_precede gives it."
+definition = '\forall k < \lvert values \rvert : \forall j : \left( values_{k+1} \in xs_j \wedge values_k \notin xs_j \right) \rightarrow \exists i < j : \left( values_k \in xs_i \wedge values_{k+1} \notin xs_i \right)'
 
 [[entry]]
 ident = "int_seq_precede_chain"
 args = ["list of var int: xs"]
-summary = "A value may only be used once every smaller non-negative value has already been used."
-definition = '\forall j : xs_j > 0 \rightarrow \exists i < j : xs_i = xs_j - 1'
-notes = "The canonical symmetry break for problems where values name interchangeable groups."
+summary = "Any value above one may only be used once the value below it has already been used earlier in the sequence."
+definition = '\forall j : xs_j > 1 \rightarrow \exists i < j : xs_i = xs_j - 1'
 
 [[entry]]
 ident = "set_of_int_seq_precede_chain"
 args = ["list of var set of int: xs"]
-summary = "A value may only appear in a set once every smaller non-negative value has appeared in an earlier one."
-definition = '\forall j, v > 0 : v \in xs_j \rightarrow \exists i < j : v - 1 \in xs_i'
+summary = "A value above one may only appear in a set once the value below it has appeared in an earlier one."
+definition = '\forall j, v > 1 : v \in xs_j \rightarrow \exists i < j : v - 1 \in xs_i'
 
 # ---------------------------------------------------------------------------
 # Channelling
