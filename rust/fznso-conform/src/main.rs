@@ -345,11 +345,14 @@ fn main() -> ExitCode {
 	// The solver's own name, which its prefixed names must start with. It is
 	// not exposed by `Library`, so it comes from the file it was loaded from —
 	// which is where the entry-point prefix comes from too.
+	// Everything from the first `.` on is the extension and any version, as
+	// `Library` reads it: `libgecode.6.4.dylib` is named `gecode`.
 	let name = lib_path
-		.file_stem()
+		.file_name()
 		.map(|s| s.to_string_lossy())
 		.map_or_else(String::new, |s| {
-			s.strip_prefix("lib").unwrap_or(&s).to_string()
+			let s = s.strip_prefix("lib").unwrap_or(&s);
+			s.split('.').next().unwrap_or(s).to_string()
 		});
 	let prefix = format!("{name}_");
 	println!(

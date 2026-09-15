@@ -9,7 +9,7 @@
 /// several solvers be linked into one binary without colliding — with each other
 /// or with any wrapped library — and lets a loader recover the name from the file
 /// name. The naming rules are specified at
-/// <https://fznso.minizinc.dev/spec/naming-and-versioning/>.
+/// <https://fznso.minizinc.org/spec/naming-and-versioning/>.
 ///
 /// The rules that hold across the whole interface — opaque handles, accessor
 /// preconditions, what stays valid for how long, and how the version is matched —
@@ -144,8 +144,8 @@ void fznso_NAME_solver_read_error(FznsoSolver *solver,
  * The full contracts — when `should_stop` must be polled, and what a
  * multi-threaded solver may do with the callbacks and the model — are
  * specified once at
- * <https://fznso.minizinc.dev/spec/running/> and
- * <https://fznso.minizinc.dev/spec/threading/>.
+ * <https://fznso.minizinc.org/spec/running/> and
+ * <https://fznso.minizinc.org/spec/threading/>.
  *
  * # Safety
  *

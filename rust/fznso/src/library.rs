@@ -3,8 +3,8 @@
 //! Solvers are found by name rather than by path, from a fixed list of
 //! directories. The search order, the per-platform locations, and the rules a
 //! file name must satisfy for a name to be recovered from it are specified at
-//! <https://fznso.minizinc.dev/spec/discovery/> and
-//! <https://fznso.minizinc.dev/spec/naming-and-versioning/>.
+//! <https://fznso.minizinc.org/spec/discovery/> and
+//! <https://fznso.minizinc.org/spec/naming-and-versioning/>.
 
 use std::{ffi, mem, sync::Arc};
 
@@ -254,8 +254,8 @@ where
 	let ctx = ctx as *const RunCallbacks<F, G, H>;
 	// SAFETY: see `wrap_on_message_cb` — shared borrow of the struct only.
 	let cbs = unsafe { &*ctx };
-	// SAFETY: `on_solution` points at the caller's live closure, exclusive by the
-	// serial-callback contract; `F: Send` covers the calling thread.
+	// SAFETY: `on_solution` points at the caller's live closure, exclusive by
+	// the serial-callback contract; `F: Send` covers the calling thread.
 	let on_solution = unsafe { &mut *cbs.on_solution };
 	let sol = DynSolution { inner: sol };
 	on_solution(&sol);
@@ -271,12 +271,13 @@ extern "C" fn wrap_read_error_cb<F: FnMut(&str)>(ctx: *mut ffi::c_void, msg: Fzn
 	let bytes = if msg.ptr.is_null() {
 		&[][..]
 	} else {
-		// SAFETY: the library guarantees `ptr` covers `len` bytes for this call.
+		// SAFETY: the library guarantees `ptr` covers `len` bytes for this
+		// call.
 		unsafe { std::slice::from_raw_parts(msg.ptr.cast::<u8>(), msg.len) }
 	};
-	// A solver may emit non-UTF-8 bytes; lossily convert rather than panic across
-	// the FFI boundary (which would abort the whole process while reporting an
-	// error).
+	// A solver may emit non-UTF-8 bytes; lossily convert rather than panic
+	// across the FFI boundary (which would abort the whole process while
+	// reporting an error).
 	read_err(&String::from_utf8_lossy(bytes));
 }
 
@@ -315,7 +316,8 @@ fn is_valid_name(name: &str) -> bool {
 impl Library {
 	/// Get the list of constraints supported by solvers from this library.
 	pub fn constraint_types(&self) -> FznsoConstraintList<'_> {
-		// SAFETY: The symbol is a valid function pointer for as long as self lives.
+		// SAFETY: The symbol is a valid function pointer for as long as self
+		// lives.
 		unsafe { (*self.constraint_list)() }
 	}
 
@@ -333,7 +335,8 @@ impl Library {
 	/// Get the list of decision-variable types supported by solvers from this
 	/// library.
 	pub fn decision_types(&self) -> FznsoTypeList<'_> {
-		// SAFETY: The symbol is a valid function pointer for as long as self lives.
+		// SAFETY: The symbol is a valid function pointer for as long as self
+		// lives.
 		unsafe { (*self.decision_list)() }
 	}
 
@@ -349,8 +352,9 @@ impl Library {
 		lib: &libloading::Library,
 		symbol: &[u8],
 	) -> Result<Symbol<'static, T>, libloading::Error> {
-		// SAFETY: The symbol's true lifetime is that of `lib`. The Library struct
-		// keeps `_lib` alive as long as any symbol is reachable, making 'static safe.
+		// SAFETY: The symbol's true lifetime is that of `lib`. The Library
+		// struct keeps `_lib` alive as long as any symbol is reachable,
+		// making 'static safe.
 		let sym: Symbol<'static, T> = unsafe { mem::transmute(lib.get::<T>(symbol)?) };
 		Ok(sym)
 	}
@@ -433,7 +437,8 @@ impl Library {
 				derived: name.to_owned(),
 			});
 		}
-		// SAFETY: Caller guarantees the library is a valid FZnSO solver library.
+		// SAFETY: Caller guarantees the library is a valid FZnSO solver
+		// library.
 		let lib = unsafe {
 			let lib = libloading::Library::new(filename)?;
 			let sym = |suffix: &str| format!("fznso_{name}{suffix}\0");
@@ -483,13 +488,15 @@ impl Library {
 	/// Get the list of objective strategies supported by solvers from this
 	/// library.
 	pub fn objective_list(&self) -> FznsoObjectiveList<'_> {
-		// SAFETY: The symbol is a valid function pointer for as long as self lives.
+		// SAFETY: The symbol is a valid function pointer for as long as self
+		// lives.
 		unsafe { (*self.objective_list)() }
 	}
 
 	/// Get the list of options accepted by solvers from this library.
 	pub fn option_list(&self) -> FznsoOptionList<'static> {
-		// SAFETY: The symbol is a valid function pointer for as long as self lives.
+		// SAFETY: The symbol is a valid function pointer for as long as self
+		// lives.
 		unsafe { (*self.option_list)() }
 	}
 
@@ -536,7 +543,8 @@ impl Library {
 	fn solver_read_error<F: FnMut(&str)>(&self, solver: *mut FznsoSolver, mut read_err: F) {
 		let ctx: *mut F = &mut read_err;
 		// SAFETY: ctx points to a live F on the stack; wrap_read_error_cb casts
-		// it back to &mut F inside the callback, which cannot outlive this call.
+		// it back to &mut F inside the callback, which cannot outlive this
+		// call.
 		unsafe {
 			(*self.solver_read_error)(solver, ctx as *mut ffi::c_void, wrap_read_error_cb::<F>);
 		}
@@ -561,8 +569,9 @@ impl Library {
 		H: Fn() -> bool + Send + Sync,
 	{
 		let model = crate::model::model_ref(model);
-		// Raw pointers, and a *shared* context: `should_stop` may be polled while
-		// a solution callback is running, so nothing may hold this exclusively.
+		// Raw pointers, and a *shared* context: `should_stop` may be polled
+		// while a solution callback is running, so nothing may hold this
+		// exclusively.
 		let callbacks = RunCallbacks {
 			on_solution: std::ptr::from_mut(on_solution),
 			on_message: on_message.map(std::ptr::from_mut),
@@ -581,9 +590,10 @@ impl Library {
 			None
 		};
 		let ctx: *const RunCallbacks<F, G, H> = &callbacks;
-		// SAFETY: ctx points to live callbacks on the stack; the trampolines cast
-		// it back in the callbacks, which are only called during this function.
-		// model is a valid FznsoModelRef for the duration of the call.
+		// SAFETY: ctx points to live callbacks on the stack; the trampolines
+		// cast it back in the callbacks, which are only called during this
+		// function. model is a valid FznsoModelRef for the duration of the
+		// call.
 		let status = unsafe {
 			(*self.solver_run)(
 				solver,
@@ -618,7 +628,8 @@ impl Library {
 
 	/// Get the list of statistics produced by solvers from this library.
 	pub fn statistic_list(&self) -> FznsoStatisticList<'_> {
-		// SAFETY: The symbol is a valid function pointer for as long as self lives.
+		// SAFETY: The symbol is a valid function pointer for as long as self
+		// lives.
 		unsafe { (*self.statistic_list)() }
 	}
 }
@@ -657,8 +668,8 @@ mod tests {
 			assert!(is_valid_name(derive(file)), "{file}");
 		}
 
-		// Rejected rather than left to fail as a missing symbol: a dotfile yields
-		// nothing, and a versioned Windows name yields a `-`.
+		// Rejected rather than left to fail as a missing symbol: a dotfile
+		// yields nothing, and a versioned Windows name yields a `-`.
 		assert_eq!(derive(".hidden.so"), "");
 		assert!(!is_valid_name(derive(".hidden.so")));
 		assert_eq!(derive("gecode-6.dll"), "gecode-6");
@@ -669,8 +680,8 @@ mod tests {
 		assert!(is_valid_name("_private"));
 		assert!(is_valid_name("or_tools2"));
 
-		// Rule 2: a name starting with `lib` reads back differently per platform,
-		// which is exactly why such names are forbidden.
+		// Rule 2: a name starting with `lib` reads back differently per
+		// platform, which is exactly why such names are forbidden.
 		assert_eq!(derive("liblibssat.so"), "libssat");
 		assert_eq!(derive("libssat.dll"), "ssat");
 	}
@@ -737,8 +748,9 @@ mod tests {
 			.iter()
 			.map(|d| (d.name.as_str(), d.version.as_str()))
 			.collect();
-		// chuffed and gecode only; the txt file and the digit-led name are skipped.
-		// gecode appears twice, its highest version first, each with its version.
+		// chuffed and gecode only; the txt file and the digit-led name are
+		// skipped. gecode appears twice, its highest version first, each with
+		// its version.
 		assert_eq!(
 			listed,
 			vec![("chuffed", ""), ("gecode", "10"), ("gecode", "6")]
@@ -750,10 +762,11 @@ mod tests {
 	/// The version is parsed out of the file name across the platform schemes.
 	#[test]
 	fn versions_are_parsed_from_file_names() {
-		// Only the marker for the current platform is recognised, so test that one.
+		// Only the marker for the current platform is recognised, so test that
+		// one.
 		let marker = super::LIB_MARKER;
-		// The convention: the version sits between the name and the extension on
-		// every platform.
+		// The convention: the version sits between the name and the extension
+		// on every platform.
 		assert_eq!(
 			version_from_filename(&format!("libgecode.6.2.1{marker}")),
 			"6.2.1"
@@ -877,7 +890,8 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 			(None, Some(_)) => return std::cmp::Ordering::Less,
 			(Some(_), None) => return std::cmp::Ordering::Greater,
 			(Some(p), Some(q)) if p.is_ascii_digit() && q.is_ascii_digit() => {
-				// A longer digit run is the larger number once zeros are trimmed.
+				// A longer digit run is the larger number once zeros are
+				// trimmed.
 				let (dx, dy) = (take_digits(&mut x), take_digits(&mut y));
 				match dx.len().cmp(&dy.len()).then_with(|| dx.cmp(dy)) {
 					std::cmp::Ordering::Equal => {}
@@ -973,7 +987,7 @@ impl Library {
 	/// `$FZNSO_SOLVER_PATH`, then the per-user directory, then the system
 	/// directories. The per-platform locations, and why solvers live in a
 	/// directory of their own, are specified at
-	/// <https://fznso.minizinc.dev/spec/discovery/>.
+	/// <https://fznso.minizinc.org/spec/discovery/>.
 	pub fn search_paths() -> Vec<std::path::PathBuf> {
 		let system: Vec<String> = if cfg!(target_os = "windows") {
 			std::env::current_exe()

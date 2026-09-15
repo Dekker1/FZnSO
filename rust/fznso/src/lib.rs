@@ -63,11 +63,18 @@
 /// `libmysolver.so` / `libmysolver.2.1.dylib` / `mysolver.dll` — so that
 /// [`Library`] can recover it when loading. The rules a name must satisfy, and
 /// where the version goes, are specified at
-/// <https://fznso.minizinc.dev/spec/naming-and-versioning/>.
+/// <https://fznso.minizinc.org/spec/naming-and-versioning/>.
 ///
 /// A failing `option_set` or a `Status::Error` from `run` stores its message on
 /// the solver instance, and the generated `fznso_<name>_solver_read_error`
 /// returns it, so the caller sees the reason for the failure.
+///
+/// A panic escaping `option_set` or `run` is caught and reported the same way,
+/// rather than unwinding into a caller that is not Rust — which would abort it.
+/// That only works when the library is built with `panic = "unwind"`, the
+/// default; a profile that sets `panic = "abort"` still aborts the application.
+/// The solver instance is left however the panic left it, so an application
+/// should free it rather than run it again.
 #[macro_export]
 macro_rules! fznso_export {
 	($T:ty, $name:literal $(,)?) => {
@@ -155,7 +162,11 @@ macro_rules! fznso_export {
 			let state: &mut ($T, ::std::string::String) = unsafe { &mut *solver.cast() };
 			// SAFETY: the caller guarantees `ident` is valid UTF-8 for this call.
 			let name = unsafe { ident.as_str() }.unwrap_or_default();
-			match <$T as $crate::Solver>::option_set(&mut state.0, name, value) {
+			let result = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+				<$T as $crate::Solver>::option_set(&mut state.0, name, value)
+			}))
+			.unwrap_or_else(|payload| ::std::result::Result::Err($crate::panic_message(payload)));
+			match result {
 				::std::result::Result::Ok(()) => true,
 				::std::result::Result::Err(message) => {
 					state.1 = message;
@@ -231,19 +242,23 @@ macro_rules! fznso_export {
 					poll(context.0)
 				}
 			});
-			let status = <$T as $crate::Solver>::run(
-				&mut state.0,
-				&adapter,
-				&mut move |sol| {
-					// Rebind so the closure captures the whole `SendCtx`, not just its
-					// `*mut c_void` field — edition-2021 disjoint capture would otherwise
-					// grab the raw pointer directly and drop the `Send` we added.
-					let context = context;
-					on_solution(context.0, $crate::solution_ref(sol))
-				},
-				message.as_mut(),
-				stop.as_ref(),
-			);
+			let status = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {
+				<$T as $crate::Solver>::run(
+					&mut state.0,
+					&adapter,
+					&mut move |sol| {
+						// Rebind so the closure captures the whole `SendCtx`, not just
+						// its `*mut c_void` field — edition-2021 disjoint capture would
+						// otherwise grab the raw pointer directly and drop the `Send`
+						// we added.
+						let context = context;
+						on_solution(context.0, $crate::solution_ref(sol))
+					},
+					message.as_mut(),
+					stop.as_ref(),
+				)
+			}))
+			.unwrap_or_else(|payload| $crate::Status::Error($crate::panic_message(payload)));
 			match status {
 				$crate::Status::Complete => $crate::fznso_types::FznsoStatus::FznsoComplete,
 				$crate::Status::Incomplete => $crate::fznso_types::FznsoStatus::FznsoIncomplete,
@@ -343,6 +358,22 @@ pub type Value<'a> = FznsoValueRef<'a>;
 ///
 /// Prefer matching on [`ValueView`], which carries the payload with it.
 pub type ValueKind = FznsoValueKind;
+
+/// The error message for a panic caught by [`fznso_export`].
+///
+/// Only reachable so that [`fznso_export`] can name it in the code it
+/// generates; there is no reason to call it directly.
+#[doc(hidden)]
+pub fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+	let detail = payload
+		.downcast_ref::<&str>()
+		.copied()
+		.or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+	match detail {
+		Some(detail) => format!("the solver panicked: {detail}"),
+		None => "the solver panicked".to_owned(),
+	}
+}
 
 impl From<Status> for fznso_types::FznsoStatus {
 	fn from(s: Status) -> Self {
@@ -448,7 +479,8 @@ mod tests {
 			if let Some(emit) = &mut on_message {
 				emit("warn", (&String::from("ignoring all constraints")).into());
 			}
-			// Read back through the model vtable, so the model handle is exercised.
+			// Read back through the model vtable, so the model handle is
+			// exercised.
 			assert_eq!(model.constraint_len(), 1);
 			assert_eq!(model.constraint_ident(FznsoConstraintIdx(0)), "int_le");
 			assert_eq!(model.decision_name(FznsoDecisionIdx(0)), Some("x"));
@@ -550,8 +582,8 @@ mod tests {
 
 		let m = model();
 		let mut out = Collected::default();
-		// SAFETY: `solver` came from `fznso_solver_create`, and `out` outlives the
-		// call.
+		// SAFETY: `solver` came from `fznso_solver_create`, and `out` outlives
+		// the call.
 		let status = unsafe {
 			fznso_solver_run(
 				solver,
@@ -570,7 +602,107 @@ mod tests {
 			vec![("warn".to_owned(), "ignoring all constraints".to_owned())]
 		);
 
-		// SAFETY: `solver` came from `fznso_solver_create` and is not used after.
+		// SAFETY: `solver` came from `fznso_solver_create` and is not used
+		// after.
 		unsafe { fznso_solver_free(solver) };
+	}
+
+	mod panics {
+		//! A panic inside a solver reaches the caller as an error, not an
+		//! abort.
+
+		use std::ffi;
+
+		use fznso_types::{FznsoStatus, FznsoStr};
+
+		use crate::{Model, Solver, SolverType, Status, Value, model::model_ref};
+
+		/// A solver that panics in every entry point that can fail.
+		struct PanickingSolver;
+
+		impl Solver for PanickingSolver {
+			type Solution<'s> = super::TestSolution;
+
+			fn option_get(&self, _: &str) -> Value<'_> {
+				(&()).into()
+			}
+
+			fn option_set(&mut self, name: &str, _: Value<'_>) -> Result<(), String> {
+				panic!("no option {name}")
+			}
+
+			fn run<M, F, G, H>(
+				&mut self,
+				_: &M,
+				_: &mut F,
+				_: Option<&mut G>,
+				_: Option<&H>,
+			) -> Status
+			where
+				M: Model + Sync,
+				F: for<'s> FnMut(&'s Self::Solution<'s>) + Send,
+				G: FnMut(&str, Value<'_>) + Send,
+				H: Fn() -> bool + Send + Sync,
+			{
+				panic!("out of cheese")
+			}
+		}
+
+		impl SolverType for PanickingSolver {
+			fn new() -> Self {
+				PanickingSolver
+			}
+		}
+
+		crate::fznso_export!(PanickingSolver, "panicking_solver");
+
+		/// Stores the error message in the `String` behind `ctx`.
+		extern "C" fn read_into(ctx: *mut ffi::c_void, message: FznsoStr<'_>) {
+			// SAFETY: `ctx` is the `&mut String` handed to
+			// `fznso_solver_read_error`.
+			let out = unsafe { &mut *(ctx as *mut String) };
+			// SAFETY: the message is valid UTF-8 for the duration of this call.
+			unsafe { message.as_str() }
+				.unwrap_or_default()
+				.clone_into(out);
+		}
+
+		#[test]
+		fn panics_are_reported_as_errors() {
+			let solver = fznso_solver_create();
+			let mut message = String::new();
+
+			// SAFETY: `solver` came from `fznso_solver_create`.
+			let set =
+				unsafe { fznso_solver_option_set(solver, FznsoStr::new("seed"), (&1_i64).into()) };
+			assert!(!set);
+			// SAFETY: `solver` came from `fznso_solver_create`, and `message`
+			// outlives the call.
+			unsafe { fznso_solver_read_error(solver, (&raw mut message).cast(), read_into) };
+			assert_eq!(message, "the solver panicked: no option seed");
+
+			let m = super::model();
+			let mut out = super::Collected::default();
+			// SAFETY: `solver` came from `fznso_solver_create`, and `out`
+			// outlives the call.
+			let status = unsafe {
+				fznso_solver_run(
+					solver,
+					model_ref(&m),
+					(&raw mut out).cast(),
+					super::collect,
+					None,
+					None,
+				)
+			};
+			assert_eq!(status, FznsoStatus::FznsoError);
+			// SAFETY: as above, for `message`.
+			unsafe { fznso_solver_read_error(solver, (&raw mut message).cast(), read_into) };
+			assert_eq!(message, "the solver panicked: out of cheese");
+
+			// SAFETY: `solver` came from `fznso_solver_create` and is not used
+			// after.
+			unsafe { fznso_solver_free(solver) };
+		}
 	}
 }

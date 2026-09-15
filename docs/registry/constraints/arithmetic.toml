@@ -83,7 +83,7 @@ args = ["var int: a", "var int: b", "var int: c"]
 functional = true
 summary = "The third integer is the first raised to the power of the second."
 definition = 'c = a^{b}'
-notes = "Undefined when `b` is negative and `a` is neither 1 nor -1."
+notes = "A negative `b` gives must give result in `c = 1 div pow(a, abs(b))`"
 
 [[entry]]
 ident = "int_to_float"

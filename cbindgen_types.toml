@@ -30,7 +30,7 @@ header = """
 ///
 /// Each rule, and the exact window every kind of borrow is valid for, is
 /// specified at
-/// <https://fznso.minizinc.dev/spec/lifetimes-and-ownership/>."""
+/// <https://fznso.minizinc.org/spec/lifetimes-and-ownership/>."""
 include_guard = "fznso_types_h"
 documentation_style = "doxy"
 sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]

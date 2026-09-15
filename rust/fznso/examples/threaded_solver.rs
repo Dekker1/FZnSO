@@ -70,9 +70,9 @@ impl Solver for ThreadedSolver {
 		G: FnMut(&str, Value<'_>) + Send,
 		H: Fn() -> bool + Send + Sync,
 	{
-		// A scoped thread, so the borrowed model and callbacks need no `'static`.
-		// Reading the model here is what requires `M: Sync`; reporting from here
-		// is what requires the callbacks to be `Send`.
+		// A scoped thread, so the borrowed model and callbacks need no
+		// `'static`. Reading the model here is what requires `M: Sync`;
+		// reporting from here is what requires the callbacks to be `Send`.
 		std::thread::scope(|scope| {
 			let mut on_message = on_message;
 			let stopped = || should_stop.is_some_and(|poll| poll());

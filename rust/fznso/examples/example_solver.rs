@@ -126,8 +126,8 @@ impl Solver for ExampleSolver {
 	{
 		self.runs += 1;
 
-		// This fixture ignores the constraints, which is worth saying out loud —
-		// but only builds the message if someone is listening for it.
+		// This fixture ignores the constraints, which is worth saying out loud
+		// — but only builds the message if someone is listening for it.
 		let mut on_message = on_message;
 		if let Some(emit) = &mut on_message {
 			let warning = format!("ignoring {} constraint(s)", model.constraint_len());
@@ -216,13 +216,14 @@ impl Solver for ExampleSolver {
 
 		// Absent means "never asks to stop", so there is nothing to poll.
 		let stopped = || should_stop.is_some_and(|poll| poll());
-		// Polled before starting, and again after each solution is reported, so a
-		// caller can stop from inside its own callback.
+		// Polled before starting, and again after each solution is reported, so
+		// a caller can stop from inside its own callback.
 		if stopped() {
 			return Status::Incomplete;
 		}
 		for i in 0..self.solution_limit {
-			// Shift the first variable each round so successive solutions differ.
+			// Shift the first variable each round so successive solutions
+			// differ.
 			let mut values = base.clone();
 			if let Some(first) = values.first_mut() {
 				*first += i;

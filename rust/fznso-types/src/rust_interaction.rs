@@ -380,8 +380,8 @@ impl<'a> From<&'a str> for FznsoStr<'a> {
 impl<'a> FznsoAnnotationRef<'a> {
 	/// The annotation's identifier string (e.g. `"output_var"`).
 	pub fn ident(&self) -> &'a str {
-		// SAFETY: The string returned by the annotation vtable is valid UTF-8 for
-		// at least as long as the annotation reference, i.e. 'a.
+		// SAFETY: The string returned by the annotation vtable is valid UTF-8
+		// for at least as long as the annotation reference, i.e. 'a.
 		unsafe { (self.methods.ident)(self.data).as_str() }.unwrap_or("")
 	}
 
@@ -405,7 +405,72 @@ impl<'a> FznsoAnnotationRef<'a> {
 	}
 }
 
+impl FznsoValueRef<'static> {
+	/// The absent value.
+	///
+	/// Unlike `(&()).into()`, this can be used in a `const` item, such as the
+	/// default of an option in a solver's option list.
+	pub const fn absent() -> Self {
+		Self {
+			data: FznsoPtr::from_addr(0),
+			methods: Self::FZNSO_DEFAULT_VALUE_METHODS,
+		}
+	}
+
+	/// A Boolean value.
+	///
+	/// The value is stored in the pointer word itself, so nothing is borrowed.
+	/// Unlike `value.into()`, this can be used in a `const` item, such as the
+	/// default of an option in a solver's option list.
+	pub const fn from_bool(value: bool) -> Self {
+		extern "C" fn kind(_: FznsoPtr<'_, FznsoValue>) -> FznsoValueKind {
+			FznsoValueKind::FznsoValueBool
+		}
+		extern "C" fn as_bool(val: FznsoPtr<'_, FznsoValue>) -> bool {
+			// The value is encoded in the pointer word itself.
+			val.addr() != 0
+		}
+		const FZNSO_BOOL_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
+			kind,
+			as_bool,
+			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
+		};
+
+		Self {
+			// The value is encoded in the pointer word; nothing is dereferenced.
+			data: FznsoPtr::from_addr(value as usize),
+			methods: FZNSO_BOOL_VALUE_METHODS,
+		}
+	}
+}
+
 impl<'a> FznsoValueRef<'a> {
+	/// An integer value, borrowed from `value`.
+	///
+	/// Unlike `value.into()`, this can be used in a `const` item, such as the
+	/// default of an option in a solver's option list.
+	pub const fn from_int(value: &'a i64) -> Self {
+		extern "C" fn kind(_: FznsoPtr<'_, FznsoValue>) -> FznsoValueKind {
+			FznsoValueKind::FznsoValueInt
+		}
+		extern "C" fn as_int(val: FznsoPtr<'_, FznsoValue>) -> i64 {
+			// SAFETY: The value is a &'a i64, but was transmuted to a &'a
+			// FznsoValue to fit [`FznsoValueRef`].
+			let val: &i64 = unsafe { &*val.cast() };
+			*val
+		}
+		const FZNSO_I64_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
+			kind,
+			as_int,
+			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
+		};
+
+		Self {
+			data: FznsoPtr::from_ref(value),
+			methods: FZNSO_I64_VALUE_METHODS,
+		}
+	}
+
 	/// Default [`FznsoValueMethods`] implementation, which can be used for
 	/// absent values or as a base for other value types.
 	pub const FZNSO_DEFAULT_VALUE_METHODS: &'static FznsoValueMethods = &FznsoValueMethods {
@@ -535,8 +600,8 @@ impl<'a> From<&'a FznsoConstraintIdx> for FznsoValueRef<'a> {
 			FznsoValueKind::FznsoValueConstraint
 		}
 		extern "C" fn as_constraint(val: FznsoPtr<'_, FznsoValue>) -> FznsoConstraintIdx {
-			// SAFETY: The value is a &'a FznsoConstraintIdx, but was transmuted to a
-			// &'a FznsoValue to fit [`FznsoValueRef`].
+			// SAFETY: The value is a &'a FznsoConstraintIdx, but was transmuted
+			// to a &'a FznsoValue to fit [`FznsoValueRef`].
 			let val: &FznsoConstraintIdx = unsafe { &*val.cast() };
 			*val
 		}
@@ -615,8 +680,8 @@ impl<'a> From<&'a bool> for FznsoValueRef<'a> {
 			FznsoValueKind::FznsoValueBool
 		}
 		extern "C" fn as_bool(val: FznsoPtr<'_, FznsoValue>) -> bool {
-			// SAFETY: The value is a &'a bool, but was transmuted to a &'a FznsoValue
-			// to fit [`FznsoValueRef`].
+			// SAFETY: The value is a &'a bool, but was transmuted to a &'a
+			// FznsoValue to fit [`FznsoValueRef`].
 			let val: &bool = unsafe { &*val.cast() };
 			*val
 		}
@@ -640,8 +705,8 @@ impl<'a> From<&'a f64> for FznsoValueRef<'a> {
 			FznsoValueKind::FznsoValueFloat
 		}
 		extern "C" fn as_float(val: FznsoPtr<'_, FznsoValue>) -> f64 {
-			// SAFETY: The value is a &'a f64, but was transmuted to a &'a FznsoValue
-			// to fit [`FznsoValueRef`].
+			// SAFETY: The value is a &'a f64, but was transmuted to a &'a
+			// FznsoValue to fit [`FznsoValueRef`].
 			let val: &f64 = unsafe { &*val.cast() };
 			*val
 		}
@@ -679,8 +744,8 @@ impl<'a> From<&'a ffi::CStr> for FznsoValueRef<'a> {
 			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
 		};
 
-		// data points to the first byte of the CStr content; as_string returns it
-		// directly and len re-derives the length from the null byte.
+		// data points to the first byte of the CStr content; as_string returns
+		// it directly and len re-derives the length from the null byte.
 		let data = FznsoPtr::new(value.as_ptr().cast());
 		Self {
 			data,
@@ -697,26 +762,7 @@ impl<'a> From<&'a ffi::CString> for FznsoValueRef<'a> {
 
 impl<'a> From<&'a i64> for FznsoValueRef<'a> {
 	fn from(value: &'a i64) -> Self {
-		extern "C" fn kind(_: FznsoPtr<'_, FznsoValue>) -> FznsoValueKind {
-			FznsoValueKind::FznsoValueInt
-		}
-		extern "C" fn as_int(val: FznsoPtr<'_, FznsoValue>) -> i64 {
-			// SAFETY: The value is a &'a i64, but was transmuted to a &'a FznsoValue
-			// to fit [`FznsoValueRef`].
-			let val: &i64 = unsafe { &*val.cast() };
-			*val
-		}
-		const FZNSO_I64_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
-			kind,
-			as_int,
-			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
-		};
-
-		let data = FznsoPtr::from_ref(value);
-		Self {
-			data,
-			methods: FZNSO_I64_VALUE_METHODS,
-		}
+		Self::from_int(value)
 	}
 }
 
@@ -768,24 +814,7 @@ impl From<FznsoDecisionIdx> for FznsoValueRef<'static> {
 
 impl From<bool> for FznsoValueRef<'static> {
 	fn from(value: bool) -> Self {
-		extern "C" fn kind(_: FznsoPtr<'_, FznsoValue>) -> FznsoValueKind {
-			FznsoValueKind::FznsoValueBool
-		}
-		extern "C" fn as_bool(val: FznsoPtr<'_, FznsoValue>) -> bool {
-			// The value is encoded in the pointer word itself.
-			val.addr() != 0
-		}
-		const FZNSO_BOOL_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
-			kind,
-			as_bool,
-			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
-		};
-
-		Self {
-			// The value is encoded in the pointer word; nothing is dereferenced.
-			data: FznsoPtr::from_addr(value as usize),
-			methods: FZNSO_BOOL_VALUE_METHODS,
-		}
+		Self::from_bool(value)
 	}
 }
 

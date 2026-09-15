@@ -14,12 +14,12 @@
 //! the base name of the built library file (e.g. `gecode` for `libgecode.so`).
 //! Prefixing every symbol this way is what lets several solvers be statically
 //! linked into one binary without colliding. The naming rules are specified at
-//! <https://fznso.minizinc.dev/spec/naming-and-versioning/>.
+//! <https://fznso.minizinc.org/spec/naming-and-versioning/>.
 //!
 //! Each function below states its own contract. The rules that hold across the
 //! whole interface — opaque handles, accessor preconditions, what stays valid
 //! for how long, and how the version is matched — are specified once at
-//! <https://fznso.minizinc.dev/spec/lifetimes-and-ownership/>.
+//! <https://fznso.minizinc.org/spec/lifetimes-and-ownership/>.
 
 #![allow(
 	non_snake_case,
@@ -188,8 +188,8 @@ pub unsafe extern "C" fn fznso_NAME_solver_read_error(
 /// The full contracts — when `should_stop` must be polled, and what a
 /// multi-threaded solver may do with the callbacks and the model — are
 /// specified once at
-/// <https://fznso.minizinc.dev/spec/running/> and
-/// <https://fznso.minizinc.dev/spec/threading/>.
+/// <https://fznso.minizinc.org/spec/running/> and
+/// <https://fznso.minizinc.org/spec/threading/>.
 ///
 /// # Safety
 ///

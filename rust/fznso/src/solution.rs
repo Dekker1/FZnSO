@@ -49,7 +49,8 @@ extern "C" fn wrap_sol_statistic<'a, S: Solution + 'static>(
 	data: FznsoPtr<'a, FznsoSolution>,
 	ident: FznsoStr<'_>,
 ) -> fznso_types::FznsoValueRef<'a> {
-	// SAFETY: data was created from &S in SolutionWrapper::into_ref via transmute.
+	// SAFETY: data was created from &S in SolutionWrapper::into_ref via
+	// transmute.
 	let sol: &S = unsafe { &*data.cast::<S>() };
 	// SAFETY: the caller guarantees `ident` is valid UTF-8 for this call.
 	let name = unsafe { ident.as_str() }.unwrap_or_default();
@@ -61,15 +62,16 @@ extern "C" fn wrap_sol_value<S: Solution + 'static>(
 	data: FznsoPtr<'_, FznsoSolution>,
 	decision_index: usize,
 ) -> fznso_types::FznsoValueRef<'_> {
-	// SAFETY: data was created from &S in SolutionWrapper::into_ref via transmute.
+	// SAFETY: data was created from &S in SolutionWrapper::into_ref via
+	// transmute.
 	let sol: &S = unsafe { &*data.cast::<S>() };
 	sol.value(decision_index)
 }
 
 impl Solution for DynSolution<'_> {
 	fn statistic(&self, name: &str) -> Value<'_> {
-		// The identifier crosses as a pointer/length pair, so no re-encoding (and
-		// no interior-nul failure mode) is involved.
+		// The identifier crosses as a pointer/length pair, so no re-encoding
+		// (and no interior-nul failure mode) is involved.
 		(self.inner.methods.statistic)(self.inner.data, FznsoStr::from(name))
 	}
 

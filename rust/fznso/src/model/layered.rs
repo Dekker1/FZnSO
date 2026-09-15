@@ -214,7 +214,8 @@ fn list_value(items: &Vec<OwnedValue>) -> FznsoValueRef<'_> {
 		FznsoValueKind::FznsoValueList
 	}
 	extern "C" fn len(val: FznsoPtr<'_, FznsoValue>) -> usize {
-		// SAFETY: val was created from &Vec<OwnedValue> via transmute in list_value.
+		// SAFETY: val was created from &Vec<OwnedValue> via transmute in
+		// list_value.
 		let val: &Vec<OwnedValue> = unsafe { &*val.cast() };
 		val.len()
 	}
@@ -222,7 +223,8 @@ fn list_value(items: &Vec<OwnedValue>) -> FznsoValueRef<'_> {
 		val: FznsoPtr<'_, FznsoValue>,
 		index: usize,
 	) -> FznsoValueRef<'a> {
-		// SAFETY: val was created from &Vec<OwnedValue> via transmute in list_value.
+		// SAFETY: val was created from &Vec<OwnedValue> via transmute in
+		// list_value.
 		let val: &Vec<OwnedValue> = unsafe { &*val.cast() };
 		FznsoValueRef::from(&val[index])
 	}
@@ -379,6 +381,8 @@ impl LayeredModel {
 			"cannot pop a permanent layer"
 		);
 		let _ = self.layers.pop();
+		// A popped layer is not one the solver saw, so it cannot be unchanged.
+		self.unchanged = self.unchanged.min(self.layers.len());
 	}
 
 	/// Push a new (empty) layer onto the model.
@@ -556,12 +560,14 @@ impl OwnedAnnotation {
 	/// vtable.  Used when returning annotations from the [`Model`] impl below.
 	fn as_fznso_ann_ref(&self) -> FznsoAnnotationRef<'_> {
 		extern "C" fn ident<'a>(ptr: FznsoPtr<'_, FznsoAnnotation>) -> FznsoStr<'a> {
-			// SAFETY: ptr was created from &OwnedAnnotation via transmute below.
+			// SAFETY: ptr was created from &OwnedAnnotation via transmute
+			// below.
 			let ann: &OwnedAnnotation = unsafe { &*ptr.cast() };
 			ann.ident.as_str().into()
 		}
 		extern "C" fn argument_len(ptr: FznsoPtr<'_, FznsoAnnotation>) -> usize {
-			// SAFETY: ptr was created from &OwnedAnnotation via transmute below.
+			// SAFETY: ptr was created from &OwnedAnnotation via transmute
+			// below.
 			let ann: &OwnedAnnotation = unsafe { &*ptr.cast() };
 			ann.arguments.len()
 		}
@@ -569,7 +575,8 @@ impl OwnedAnnotation {
 			ptr: FznsoPtr<'a, FznsoAnnotation>,
 			index: usize,
 		) -> FznsoValueRef<'a> {
-			// SAFETY: ptr was created from &OwnedAnnotation via transmute below.
+			// SAFETY: ptr was created from &OwnedAnnotation via transmute
+			// below.
 			let ann: &OwnedAnnotation = unsafe { &*ptr.cast() };
 			ann.arguments
 				.get(index)

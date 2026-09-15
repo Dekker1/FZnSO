@@ -13,7 +13,7 @@ header = """
 /// several solvers be linked into one binary without colliding — with each other
 /// or with any wrapped library — and lets a loader recover the name from the file
 /// name. The naming rules are specified at
-/// <https://fznso.minizinc.dev/spec/naming-and-versioning/>.
+/// <https://fznso.minizinc.org/spec/naming-and-versioning/>.
 ///
 /// The rules that hold across the whole interface — opaque handles, accessor
 /// preconditions, what stays valid for how long, and how the version is matched —

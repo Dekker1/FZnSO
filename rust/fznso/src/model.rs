@@ -6,7 +6,8 @@ pub(crate) mod adapter;
 /// [`Model`] implementation for `flatzinc_serde::FlatZinc`.
 #[cfg(feature = "flatzinc-serde")]
 mod flatzinc;
-/// [`SimpleModel`]: in-memory layered [`Model`] implementation.
+/// [`LayeredModel`](layered::LayeredModel): in-memory layered [`Model`]
+/// implementation.
 pub(crate) mod layered;
 
 use std::{fmt, mem};
@@ -46,7 +47,8 @@ const unsafe fn as_borrowing_thunk<Raw: Copy, Borrowed: Copy>(thunk: Raw) -> Bor
 }
 
 /// Wraps `&'a A` so it can be converted into [`FznsoAnnotationRef`] via a
-/// static vtable.  Used internally by [`ann_ref`] and [`SimpleModel`].
+/// static vtable.  Used internally by [`ann_ref`] and
+/// [`LayeredModel`](layered::LayeredModel).
 pub(crate) struct AnnWrapper<'a, A: Annotation>(pub(crate) &'a A);
 
 /// Helper trait for types that can be used as annotations in a [`Model`].
@@ -532,7 +534,8 @@ extern "C" fn wrap_constraint_annotation<M: Model>(
 	con: FznsoConstraintIdx,
 	index: usize,
 ) -> FznsoAnnotationRef<'static> {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	// SAFETY: transmuting 'model to 'static; the caller (ModelRefAdapter) must
 	// not use the returned reference past the model's actual lifetime.
@@ -544,7 +547,8 @@ extern "C" fn wrap_constraint_annotation_len<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 	index: FznsoConstraintIdx,
 ) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.constraint_annotation_len(index)
 }
@@ -555,7 +559,8 @@ extern "C" fn wrap_constraint_argument<M: Model>(
 	con: FznsoConstraintIdx,
 	index: usize,
 ) -> FznsoValueRef<'static> {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	// SAFETY: transmuting 'model to 'static; the caller (ModelRefAdapter) must
 	// not use the returned reference past the model's actual lifetime.
@@ -567,7 +572,8 @@ extern "C" fn wrap_constraint_argument_len<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 	index: FznsoConstraintIdx,
 ) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.constraint_argument_len(index)
 }
@@ -578,7 +584,8 @@ extern "C" fn wrap_constraint_defines<M: Model>(
 	ptr: *const fznso_types::FznsoModel,
 	index: FznsoConstraintIdx,
 ) -> FznsoValueRef<'static> {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	match model.constraint_defines(index) {
 		// From<FznsoDecisionIdx> for FznsoValueRef<'static> encodes the index
@@ -610,14 +617,16 @@ extern "C" fn wrap_constraint_layer_end<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 	layer: usize,
 ) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.constraint_layer_end(layer)
 }
 
 /// Vtable thunk: delegates to [`Model::constraint_len`].
 extern "C" fn wrap_constraint_len<M: Model>(ptr: FznsoPtr<'_, fznso_types::FznsoModel>) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.constraint_len()
 }
@@ -628,7 +637,8 @@ extern "C" fn wrap_decision_annotation<M: Model>(
 	decision: FznsoDecisionIdx,
 	index1: usize,
 ) -> FznsoAnnotationRef<'static> {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	// SAFETY: transmuting 'model to 'static; the caller (ModelRefAdapter) must
 	// not use the returned reference past the model's actual lifetime.
@@ -640,7 +650,8 @@ extern "C" fn wrap_decision_annotation_len<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 	index: FznsoDecisionIdx,
 ) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.decision_annotation_len(index)
 }
@@ -650,7 +661,8 @@ extern "C" fn wrap_decision_defined<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 	index: FznsoDecisionIdx,
 ) -> bool {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.decision_defined(index)
 }
@@ -660,7 +672,8 @@ extern "C" fn wrap_decision_in_solution<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 	index: FznsoDecisionIdx,
 ) -> bool {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.decision_in_solution(index)
 }
@@ -670,7 +683,8 @@ extern "C" fn wrap_decision_domain<M: Model>(
 	ptr: *const fznso_types::FznsoModel,
 	index: FznsoDecisionIdx,
 ) -> FznsoValueRef<'static> {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	// SAFETY: transmuting 'model to 'static; the caller (ModelRefAdapter) must
 	// not use the returned reference past the model's actual lifetime.
@@ -682,7 +696,8 @@ extern "C" fn wrap_decision_type<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 	index: FznsoDecisionIdx,
 ) -> FznsoType {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.decision_type(index)
 }
@@ -692,14 +707,16 @@ extern "C" fn wrap_decision_layer_end<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 	layer: usize,
 ) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.decision_layer_end(layer)
 }
 
 /// Vtable thunk: delegates to [`Model::decision_len`].
 extern "C" fn wrap_decision_len<M: Model>(ptr: FznsoPtr<'_, fznso_types::FznsoModel>) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.decision_len()
 }
@@ -722,14 +739,16 @@ extern "C" fn wrap_decision_name<M: Model>(
 
 /// Vtable thunk: delegates to [`Model::layer_len`].
 extern "C" fn wrap_layer_len<M: Model>(ptr: FznsoPtr<'_, fznso_types::FznsoModel>) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.layer_len()
 }
 
 /// Vtable thunk: delegates to [`Model::layer_permanent`].
 extern "C" fn wrap_layer_permanent<M: Model>(ptr: FznsoPtr<'_, fznso_types::FznsoModel>) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.layer_permanent()
 }
@@ -739,7 +758,8 @@ extern "C" fn wrap_layer_redundant_index<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 	index: usize,
 ) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.layer_redundant_index(index)
 }
@@ -748,14 +768,16 @@ extern "C" fn wrap_layer_redundant_index<M: Model>(
 extern "C" fn wrap_layer_redundant_len<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 ) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.layer_redundant_len()
 }
 
 /// Vtable thunk: delegates to [`Model::layer_unchanged`].
 extern "C" fn wrap_layer_unchanged<M: Model>(ptr: FznsoPtr<'_, fznso_types::FznsoModel>) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.layer_unchanged()
 }
@@ -765,7 +787,8 @@ extern "C" fn wrap_objective_annotation<M: Model>(
 	ptr: *const fznso_types::FznsoModel,
 	index: usize,
 ) -> FznsoAnnotationRef<'static> {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	// SAFETY: transmuting 'model to 'static; the caller (ModelRefAdapter) must
 	// not use the returned reference past the model's actual lifetime.
@@ -776,7 +799,8 @@ extern "C" fn wrap_objective_annotation<M: Model>(
 extern "C" fn wrap_objective_annotation_len<M: Model>(
 	ptr: FznsoPtr<'_, fznso_types::FznsoModel>,
 ) -> usize {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	model.objective_annotation_len()
 }
@@ -785,7 +809,8 @@ extern "C" fn wrap_objective_annotation_len<M: Model>(
 extern "C" fn wrap_objective_arg<M: Model>(
 	ptr: *const fznso_types::FznsoModel,
 ) -> FznsoValueRef<'static> {
-	// SAFETY: ptr was created from &M in ModelWrapper's From impl via transmute.
+	// SAFETY: ptr was created from &M in ModelWrapper's From impl via
+	// transmute.
 	let model: &M = unsafe { &*ptr.cast::<M>() };
 	// SAFETY: transmuting 'model to 'static; the caller (ModelRefAdapter) must
 	// not use the returned reference past the model's actual lifetime.

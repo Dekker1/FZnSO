@@ -21,7 +21,7 @@
 ///
 /// Each rule, and the exact window every kind of borrow is valid for, is
 /// specified at
-/// <https://fznso.minizinc.dev/spec/lifetimes-and-ownership/>.
+/// <https://fznso.minizinc.org/spec/lifetimes-and-ownership/>.
 
 #ifndef fznso_types_h
 #define fznso_types_h

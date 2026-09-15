@@ -16,7 +16,7 @@ import rehypeMermaid from 'rehype-mermaid';
 // Grep for them if it ever moves.
 // `||`, not `??`: a step that did not run hands its outputs down as empty
 // strings rather than as nothing at all.
-const SITE = process.env.SITE || 'https://fznso.minizinc.dev';
+const SITE = process.env.SITE || 'https://fznso.minizinc.org';
 const BASE = process.env.BASE || '/';
 const REPO = 'https://github.com/Dekker1/FZnSO';
 

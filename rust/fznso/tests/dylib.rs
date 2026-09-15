@@ -198,8 +198,8 @@ fn load_and_run_a_dynamic_solver() {
 	assert!(matches!(status, Status::Complete), "got {status:?}");
 	// The solver-level statistic reflects state accumulated by the run.
 	assert_eq!(solver.statistic("runs").get_int(), 1);
-	// The fixture assigns each domain's lower bound, shifting the first variable
-	// by the solution index.
+	// The fixture assigns each domain's lower bound, shifting the first
+	// variable by the solution index.
 	assert_eq!(solutions, vec![(3, 10, 0), (4, 10, 1), (5, 10, 2)]);
 	// The fixture warns that it ignores the model's single constraint.
 	assert_eq!(
@@ -211,8 +211,8 @@ fn load_and_run_a_dynamic_solver() {
 #[test]
 #[cfg_attr(miri, ignore = "miri cannot dynamically load a library")]
 fn find_loads_a_solver_from_the_search_path() {
-	// Stage the built example under a name matching the file it will be found by,
-	// in a directory pointed at by FZNSO_SOLVER_PATH.
+	// Stage the built example under a name matching the file it will be found
+	// by, in a directory pointed at by FZNSO_SOLVER_PATH.
 	let built = example_path("example_solver");
 	let dir = env::temp_dir().join(format!("fznso-find-{}", std::process::id()));
 	let _ = std::fs::remove_dir_all(&dir);
@@ -317,8 +317,8 @@ fn a_watchdog_thread_can_stop_a_run() {
 	// SAFETY: the library is this workspace's own example solver.
 	let lib = unsafe { Library::new(&path) }.expect("load example solver");
 	let mut solver = lib.create_solver();
-	// Far more solutions than the watchdog will allow, so that finishing the loop
-	// (rather than being stopped) fails the assertion instead of hanging.
+	// Far more solutions than the watchdog will allow, so that finishing the
+	// loop (rather than being stopped) fails the assertion instead of hanging.
 	let limit = 100_000_i64;
 	solver
 		.option_set("solution_limit", (&limit).into())

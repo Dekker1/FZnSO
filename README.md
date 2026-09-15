@@ -5,9 +5,9 @@ An incremental solver protocol for combinatorial solving using dynamically loada
 FZnSO lets an application drive a constraint or optimisation solver through a plain C interface, with the solver loaded at run time as an ordinary library.
 No subprocess, no text format, and no re-flattening the problem between solves — which is what makes the *solve → inspect → add a constraint → solve again* loop cheap.
 
-## 📖 [Documentation](https://fznso.minizinc.dev/)
+## 📖 [Documentation](https://fznso.minizinc.org/)
 
-Everything is on the site: the [specification](https://fznso.minizinc.dev/spec/overview/), guides for [using](https://fznso.minizinc.dev/guides/using-a-solver/) and [implementing](https://fznso.minizinc.dev/guides/implementing-a-solver/) a solver, the [registry](https://fznso.minizinc.dev/registry/) of common constraint, option and objective names, and generated API references for all four language surfaces.
+Everything is on the site: the [specification](https://fznso.minizinc.org/spec/overview/), guides for [using](https://fznso.minizinc.org/guides/using-a-solver/) and [implementing](https://fznso.minizinc.org/guides/implementing-a-solver/) a solver, the [registry](https://fznso.minizinc.org/registry/) of common constraint, option and objective names, and generated API references for all four language surfaces.
 
 ## Repository layout
 
@@ -31,12 +31,12 @@ just test     # Rust, C++ and Python suites
 just docs     # the documentation site, including all three API references
 ```
 
-See [Build & test](https://fznso.minizinc.dev/contributing/build-and-test/) for what you need installed, and why `c/` must never be edited by hand.
+See [Build & test](https://fznso.minizinc.org/contributing/build-and-test/) for what you need installed, and why `c/` must never be edited by hand.
 
 ## Contributing
 
-- [Adding a registry entry](https://fznso.minizinc.dev/contributing/registry-entry/) — proposing a common name
-- [Proposing an ABI change](https://fznso.minizinc.dev/contributing/abi-change/) — what counts as breaking, and what a proposal needs
+- [Adding a registry entry](https://fznso.minizinc.org/contributing/registry-entry/) — proposing a common name
+- [Proposing an ABI change](https://fznso.minizinc.org/contributing/abi-change/) — what counts as breaking, and what a proposal needs
 
 ## Licence
 

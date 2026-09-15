@@ -81,7 +81,7 @@ jobs:
             --no-progress
             --root-dir '${{ github.workspace }}/docs/dist'
             --exclude '^https?://github\.com/${{ github.repository }}'
-            --exclude '^https?://fznso\.minizinc\.dev'
+            --exclude '^https?://fznso\.minizinc\.org'
             'docs/dist/**/*.html'
           fail: true
 
