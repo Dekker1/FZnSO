@@ -8,9 +8,36 @@ use fznso_types::{
 use rangelist::RangeList;
 
 use crate::{
-	AnnotationRef, ConstraintIdx, DecisionIdx, Value,
+	AnnotationRef, ConstraintIdx, DecisionIdx, Value, ValueExt, ValueView,
 	model::{Annotation, Model},
 };
+
+/// (De)serialize a [`RangeList`] as a list of `(min, max)` pairs, since
+/// `rangelist` has no serde support.
+#[cfg(feature = "serde")]
+mod ranges {
+	use rangelist::RangeList;
+	use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+	/// Serialize the ranges of `ranges`.
+	pub(super) fn serialize<E, S>(ranges: &RangeList<E>, serializer: S) -> Result<S::Ok, S::Error>
+	where
+		E: Copy + PartialOrd + Serialize,
+		S: Serializer,
+	{
+		serializer.collect_seq(ranges.iter().map(|r| (*r.start(), *r.end())))
+	}
+
+	/// Deserialize a list of ranges.
+	pub(super) fn deserialize<'de, E, D>(deserializer: D) -> Result<RangeList<E>, D::Error>
+	where
+		E: rangelist::Adjacent + Clone + PartialOrd + Deserialize<'de>,
+		D: Deserializer<'de>,
+	{
+		let pairs = Vec::<(E, E)>::deserialize(deserializer)?;
+		Ok(pairs.into_iter().map(|(min, max)| min..=max).collect())
+	}
+}
 
 /// Stores the data for a single constraint within a layer.
 #[derive(Clone, Debug, Default)]
@@ -99,7 +126,8 @@ pub struct LayeredModel {
 }
 
 /// An annotation for use with [`LayeredModel`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct OwnedAnnotation {
 	/// The annotation identifier (e.g. `"output_var"`).
 	ident: String,
@@ -110,7 +138,14 @@ pub struct OwnedAnnotation {
 /// An owned value for use with [`LayeredModel`].
 ///
 /// Mirrors all variants of [`FznsoValueKind`] but owns the contained data.
-#[derive(Clone, Debug, Default)]
+///
+/// Copy a borrowed [`Value`] with [`From`]. That copy stores a set as a
+/// [`RangeList`], which merges adjacent integer ranges such as `1..=2` and
+/// `3..=4`.
+///
+/// With the `serde` feature, a set serializes as a list of `(min, max)` pairs.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OwnedValue {
 	/// The absent / null value.
 	#[default]
@@ -128,9 +163,9 @@ pub enum OwnedValue {
 	/// A reference to a constraint by its global index.
 	Constraint(ConstraintIdx),
 	/// Integer set as a list of inclusive `[min, max]` ranges.
-	IntSet(RangeList<i64>),
+	IntSet(#[cfg_attr(feature = "serde", serde(with = "ranges"))] RangeList<i64>),
 	/// Float set as a list of inclusive `[min, max]` ranges.
-	FloatSet(RangeList<f64>),
+	FloatSet(#[cfg_attr(feature = "serde", serde(with = "ranges"))] RangeList<f64>),
 	/// An ordered list of nested values.
 	List(Vec<OwnedValue>),
 }
@@ -257,6 +292,27 @@ impl<'a> From<&'a OwnedValue> for FznsoValueRef<'a> {
 	}
 }
 
+impl From<Value<'_>> for OwnedValue {
+	fn from(value: Value<'_>) -> Self {
+		match value.view() {
+			ValueView::Absent => Self::Absent,
+			ValueView::Bool(b) => Self::Bool(b),
+			ValueView::Constraint(c) => Self::Constraint(c),
+			ValueView::Decision(d) => Self::Decision(d),
+			ValueView::Float(f) => Self::Float(f),
+			ValueView::FloatSet(ranges) => {
+				Self::FloatSet(ranges.iter().map(|(min, max)| min..=max).collect())
+			}
+			ValueView::Int(i) => Self::Int(i),
+			ValueView::IntSet(ranges) => {
+				Self::IntSet(ranges.iter().map(|(min, max)| min..=max).collect())
+			}
+			ValueView::List(items) => Self::List(items.iter().map(Self::from).collect()),
+			ValueView::Str(s) => Self::String(s.to_owned()),
+		}
+	}
+}
+
 impl LayeredModel {
 	/// Add a constraint to the current (top) layer.
 	///
@@ -360,6 +416,22 @@ impl LayeredModel {
 		self.permanent = self.layers.len();
 	}
 
+	/// Mark layers `0..n` as permanent.
+	///
+	/// # Panics
+	///
+	/// Panics if `n` is below the number of layers already permanent, or above
+	/// the number of layers.
+	pub fn mark_permanent_to(&mut self, n: usize) {
+		assert!(
+			(self.permanent..=self.layers.len()).contains(&n),
+			"cannot mark {n} layers permanent: {} already are, and there are {}",
+			self.permanent,
+			self.layers.len()
+		);
+		self.permanent = n;
+	}
+
 	/// Mark a permanent layer as redundant.
 	///
 	/// `layer` must be a valid permanent layer index (0..permanent).
@@ -376,13 +448,8 @@ impl LayeredModel {
 	///
 	/// Panics if there are no layers, or if the top layer is permanent.
 	pub fn pop_layer(&mut self) {
-		assert!(
-			self.layers.len() > self.permanent,
-			"cannot pop a permanent layer"
-		);
-		let _ = self.layers.pop();
-		// A popped layer is not one the solver saw, so it cannot be unchanged.
-		self.unchanged = self.unchanged.min(self.layers.len());
+		assert!(!self.layers.is_empty(), "no layers in model");
+		self.truncate(self.layers.len() - 1);
 	}
 
 	/// Push a new (empty) layer onto the model.
@@ -410,18 +477,45 @@ impl LayeredModel {
 	pub fn set_unchanged(&mut self, n: usize) {
 		self.unchanged = n;
 	}
+
+	/// Pop every layer from `n` upward, keeping layers `0..n`.
+	///
+	/// Does nothing if the model has `n` layers or fewer.
+	///
+	/// # Panics
+	///
+	/// Panics if a layer to pop is permanent, that is if `n` is less than
+	/// the number of permanent layers.
+	pub fn truncate(&mut self, n: usize) {
+		assert!(n >= self.permanent, "cannot pop a permanent layer");
+		self.layers.truncate(n);
+		// A popped layer is not one the solver saw, so it cannot be unchanged.
+		self.unchanged = self.unchanged.min(self.layers.len());
+	}
+
+	/// Create a model with no layers, and so no permanent layers.
+	///
+	/// Push a layer before adding anything. [`Default`] is the usual
+	/// starting point; this is for a caller that must control which layers are
+	/// permanent from the first one on.
+	pub fn empty() -> Self {
+		Self {
+			layers: Vec::new(),
+			objective: ObjectiveData::default(),
+			permanent: 0,
+			redundant: Vec::new(),
+			unchanged: 0,
+		}
+	}
 }
 
 impl Default for LayeredModel {
 	/// Create a model with one permanent base layer.
 	fn default() -> Self {
-		Self {
-			layers: vec![LayerData::default()],
-			objective: ObjectiveData::default(),
-			permanent: 1,
-			redundant: Vec::new(),
-			unchanged: 0,
-		}
+		let mut model = Self::empty();
+		model.push_layer();
+		model.mark_permanent();
+		model
 	}
 }
 

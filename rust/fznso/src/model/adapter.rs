@@ -34,6 +34,10 @@ impl<'a> ModelRefAdapter<'a> {
 }
 
 impl<'a> Model for ModelRefAdapter<'a> {
+	fn as_raw(&self) -> Option<FznsoModelRef<'_>> {
+		Some(self.0)
+	}
+
 	fn constraint_annotation(&self, con: ConstraintIdx, index: usize) -> AnnotationRef<'_> {
 		(self.0.methods.constraint_annotation)(self.0.data, con, index)
 	}

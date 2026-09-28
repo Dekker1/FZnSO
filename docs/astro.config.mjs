@@ -75,6 +75,7 @@ export default defineConfig({
 						{ label: 'Using a solver', slug: 'guides/using-a-solver' },
 						{ label: 'Implementing a solver', slug: 'guides/implementing-a-solver' },
 						{ label: 'Incremental solving', slug: 'guides/incremental-solving' },
+						{ label: 'Recording and replaying', slug: 'guides/record-replay' },
 					],
 				},
 				{

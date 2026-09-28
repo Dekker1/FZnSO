@@ -56,6 +56,8 @@ pub struct FznsoAnnotationRef<'a> {
 /// Wrapper type for the indexes that represent constraints in the model.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct FznsoConstraintIdx(pub usize);
 
 /// A list of [`FznsoConstraintType`]s.
@@ -91,6 +93,8 @@ pub struct FznsoConstraintType<'a> {
 /// Wrapper type for the indexes that represent decision variables in the model.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct FznsoDecisionIdx(pub usize);
 
 /// An inclusive `[min, max]` float range, returned by
@@ -524,6 +528,7 @@ pub enum FznsoStatus {
 /// correct type.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FznsoType {
 	/// Whether the type is a list of values.
 	pub list_of: bool,
@@ -542,14 +547,19 @@ pub struct FznsoType {
 /// Representation of the base type of a value.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum FznsoTypeBase {
 	/// Boolean type
+	#[cfg_attr(feature = "serde", serde(rename = "Bool"))]
 	FznsoTypeBaseBool,
 	/// Integer numeric type
+	#[cfg_attr(feature = "serde", serde(rename = "Int"))]
 	FznsoTypeBaseInt,
 	/// Floating point numeric type
+	#[cfg_attr(feature = "serde", serde(rename = "Float"))]
 	FznsoTypeBaseFloat,
 	/// Character string type
+	#[cfg_attr(feature = "serde", serde(rename = "String"))]
 	FznsoTypeBaseString,
 }
 

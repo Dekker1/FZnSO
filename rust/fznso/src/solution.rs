@@ -15,6 +15,14 @@ pub struct DynSolution<'a> {
 	pub(crate) inner: FznsoSolutionRef<'a>,
 }
 
+impl<'a> DynSolution<'a> {
+	/// The inner [`FznsoSolutionRef`], to hand the solution on across the C ABI
+	/// unchanged.
+	pub fn as_raw(&self) -> FznsoSolutionRef<'a> {
+		self.inner.clone()
+	}
+}
+
 /// Trait implemented by solution types produced by a [`Solver`](crate::Solver).
 ///
 /// Implement this alongside [`Solver`](crate::Solver) to describe the values

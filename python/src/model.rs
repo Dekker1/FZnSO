@@ -538,6 +538,20 @@ impl LayeredModel {
 		self.inner.pop_layer();
 	}
 
+	/// Pop every layer from `n` upward, keeping layers `0..n`.
+	///
+	/// Raises `IndexError` if that would pop a permanent layer.
+	fn truncate(&mut self, n: usize) -> PyResult<()> {
+		let permanent = self.inner.layer_permanent();
+		if n < permanent {
+			return Err(PyIndexError::new_err(format!(
+				"cannot pop permanent layers (0..{permanent} are permanent)"
+			)));
+		}
+		self.inner.truncate(n);
+		Ok(())
+	}
+
 	/// Mark every current layer as permanent.
 	fn mark_permanent(&mut self) {
 		self.inner.mark_permanent();

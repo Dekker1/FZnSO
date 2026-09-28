@@ -210,20 +210,9 @@ macro_rules! fznso_export {
 			// SAFETY: the handle was produced by fznso_solver_create.
 			let state: &mut ($T, ::std::string::String) = unsafe { &mut *solver.cast() };
 			let adapter = $crate::ModelRefAdapter::new(model);
-			// The consumer's `context` is a raw pointer, so it is not `Send` by
-			// itself. The `Solver::run` threading contract lets the solver forward
-			// a callback from any thread but never concurrently, and the consumer
-			// guarantees its `context` is safe to use under that rule — so wrap it
-			// to carry it across the `Send` bound on the callbacks.
-			#[derive(Clone, Copy)]
-			struct SendCtx(*mut ::core::ffi::c_void);
-			// SAFETY: upheld by the `Solver::run` threading contract, as above.
-			unsafe impl ::core::marker::Send for SendCtx {}
-			// SAFETY: `should_stop` is the one callback the ABI allows to be polled
-			// concurrently, so the consumer guarantees its `context` tolerates being
-			// read from several threads at once — which is what `Sync` asserts here.
-			unsafe impl ::core::marker::Sync for SendCtx {}
-			let context = SendCtx(context);
+			// Carry the consumer's raw `context` across the `Send` bounds on the
+			// callbacks; see `SendCtx` for why that is sound.
+			let context = $crate::SendCtx(context);
 			// Both optional callbacks stay absent if the consumer passed null, so the
 			// solver sees `None` and can skip the work rather than calling a sink
 			// that discards. `stop` is `Fn`, not `FnMut`: the solver may poll it from
@@ -337,7 +326,8 @@ pub type StatisticList<'a> = FznsoStatisticList<'a>;
 ///
 /// This is an extended version of [`fznso_types::FznsoStatus`], which does not
 /// include the actual error message when an error occurs.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Status {
 	/// The solver explored the full search space.
 	Complete,
@@ -358,6 +348,30 @@ pub type Value<'a> = FznsoValueRef<'a>;
 ///
 /// Prefer matching on [`ValueView`], which carries the payload with it.
 pub type ValueKind = FznsoValueKind;
+
+/// The consumer's `context` pointer for the callbacks of `fznso_solver_run`,
+/// made `Send` and `Sync`.
+///
+/// A raw pointer is neither by itself. The `Solver::run` threading contract
+/// lets the solver forward a callback from any thread but never concurrently,
+/// and the consumer guarantees its `context` is safe to use under that rule.
+///
+/// A closure must capture the whole wrapper, not its field: rebind it
+/// (`let context = context;`) before reading `context.0`, or edition-2021
+/// disjoint capture takes the raw pointer alone and loses `Send`.
+///
+/// Only reachable so that [`fznso_export`] and other hand-written entry
+/// points can name it; there is no reason to use it otherwise.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug)]
+pub struct SendCtx(pub *mut std::ffi::c_void);
+
+// SAFETY: upheld by the `Solver::run` threading contract, as above.
+unsafe impl Send for SendCtx {}
+// SAFETY: `should_stop` is the one callback the ABI allows to be polled
+// concurrently, so the consumer guarantees its `context` tolerates being read
+// from several threads at once — which is what `Sync` asserts here.
+unsafe impl Sync for SendCtx {}
 
 /// The error message for a panic caught by [`fznso_export`].
 ///

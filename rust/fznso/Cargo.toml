@@ -9,12 +9,16 @@ license.workspace = true
 [features]
 default = []
 flatzinc-serde = ["dep:flatzinc-serde"]
+# `Serialize`/`Deserialize` for the owned model data: `OwnedValue`,
+# `OwnedAnnotation`, `Status`, and the types and indices of `fznso-types`.
+serde = ["dep:serde", "fznso-types/serde"]
 
 [dependencies]
 fznso-types = { path = "../fznso-types", version = "0.1.0" }
 rangelist = "0.5.0"
 flatzinc-serde = { version = "0.5.1", optional = true }
 libloading = "0.8.9"
+serde = { version = "1.0.229", features = ["derive"], optional = true }
 
 # Example solvers, built as `cdylib`s so the loaders can `dlopen` them. They are
 # the canonical Rust solver implementations the whole workspace tests against.

@@ -1,0 +1,26 @@
+[package]
+name = "fznso-record"
+description = "Record the calls into an FZnSO solver, and replay them without the application"
+repository.workspace = true
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The proxy solver. The library name is its symbol prefix: `librecord` exports
+# `fznso_record_*`.
+[lib]
+name = "record"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "fznso-replay"
+path = "src/bin/fznso-replay.rs"
+
+[dependencies]
+fznso = { path = "../fznso", version = "0.1.0", features = ["serde"] }
+rmp-serde = "1.3.1"
+serde = { version = "1.0.229", features = ["derive"] }
+
+[lints]
+workspace = true

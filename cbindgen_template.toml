@@ -26,6 +26,9 @@ usize_is_size_t = true
 
 [parse]
 parse_deps = true
+# Only the ABI crate: with its `serde` feature on, the other dependencies
+# would add their own types to the template.
+include = ["fznso-types"]
 
 [export]
 exclude = [

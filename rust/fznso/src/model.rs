@@ -421,6 +421,15 @@ pub trait Model {
 	/// satisfaction.
 	fn objective_ident(&self) -> &str;
 
+	/// The ABI handle this model already is, if any, so that passing it back
+	/// across the ABI does not wrap it a second time.
+	///
+	/// Only [`ModelRefAdapter`](adapter::ModelRefAdapter) overrides this.
+	#[doc(hidden)]
+	fn as_raw(&self) -> Option<FznsoModelRef<'_>> {
+		None
+	}
+
 	// --- Provided ergonomic accessors ---
 
 	/// A view into the constraint at `idx`.
@@ -491,7 +500,7 @@ pub(crate) struct ModelWrapper<'a, M: Model>(pub(crate) &'a M);
 /// Used by [`Library::solver_run`](crate::Library) and by the crate's own
 /// tests; callers of the library never construct an ABI handle themselves.
 pub(crate) fn model_ref<M: Model>(model: &M) -> FznsoModelRef<'_> {
-	ModelWrapper(model).into()
+	model.as_raw().unwrap_or_else(|| ModelWrapper(model).into())
 }
 
 /// Convert a reference to an [`Annotation`] implementation into an
@@ -1005,6 +1014,47 @@ mod tests {
 		);
 		m.set_objective(Some("minimize"), OwnedValue::Decision(x), vec![]);
 		m
+	}
+
+	#[test]
+	fn truncate_keeps_lower_layers() {
+		let mut m = sample();
+		m.push_layer();
+		m.set_unchanged(3);
+		m.truncate(1);
+		assert_eq!(m.layer_len(), 1);
+		assert_eq!(m.layer_unchanged(), 1);
+		assert_eq!(m.decision_len(), 2);
+		assert_eq!(m.constraint_len(), 1);
+		// Already short enough: nothing happens.
+		m.truncate(5);
+		assert_eq!(m.layer_len(), 1);
+
+		let mut e = LayeredModel::empty();
+		assert_eq!((e.layer_len(), e.layer_permanent()), (0, 0));
+		e.push_layer();
+		e.truncate(0);
+		assert_eq!(e.layer_len(), 0);
+	}
+
+	#[test]
+	fn mark_permanent_to_part_of_the_layers() {
+		let mut m = sample();
+		m.push_layer();
+		m.mark_permanent_to(2);
+		assert_eq!((m.layer_len(), m.layer_permanent()), (3, 2));
+	}
+
+	#[test]
+	#[should_panic(expected = "cannot mark 0 layers permanent")]
+	fn mark_permanent_to_cannot_lower() {
+		sample().mark_permanent_to(0);
+	}
+
+	#[test]
+	#[should_panic(expected = "cannot pop a permanent layer")]
+	fn truncate_refuses_permanent_layers() {
+		sample().truncate(0);
 	}
 
 	/// Every getter must give the same answer before and after a round trip
