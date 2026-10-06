@@ -206,6 +206,38 @@ pub trait SolverType: Solver + Sized {
 
 	/// Create a new solver instance, exported as `fznso_solver_create`.
 	fn new() -> Self;
+
+	/// The constraint list to export. Override this instead of
+	/// [`CONSTRAINT_LIST`](Self::CONSTRAINT_LIST) only if the list is not known
+	/// until the library runs; it must then stay valid and unchanged for as
+	/// long as the library is loaded. The same holds for the four lists below.
+	fn constraint_list() -> ConstraintList<'static> {
+		Self::CONSTRAINT_LIST
+	}
+
+	/// The decision-type list to export; see
+	/// [`constraint_list`](Self::constraint_list).
+	fn decision_list() -> TypeList<'static> {
+		Self::DECISION_LIST
+	}
+
+	/// The objective list to export; see
+	/// [`constraint_list`](Self::constraint_list).
+	fn objective_list() -> ObjectiveList<'static> {
+		Self::OBJECTIVE_LIST
+	}
+
+	/// The option list to export; see
+	/// [`constraint_list`](Self::constraint_list).
+	fn option_list() -> OptionList<'static> {
+		Self::OPTION_LIST
+	}
+
+	/// The statistic list to export; see
+	/// [`constraint_list`](Self::constraint_list).
+	fn statistic_list() -> StatisticList<'static> {
+		Self::STATISTIC_LIST
+	}
 }
 
 impl DynSolver {

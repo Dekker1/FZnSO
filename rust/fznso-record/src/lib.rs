@@ -1,10 +1,10 @@
-//! Record the calls into an FZnSO solver, to replay them without the
-//! application.
+//! Record the calls into an FZnSO solver, to replay them later.
 //!
 //! Built as `librecord`, this crate is a solver named `record` that passes
-//! every call on to another solver and writes it to a log. `fznso-replay`
-//! reads the log and makes the same calls on a solver, with nothing of the
-//! application needed.
+//! every call on to another solver and writes it to a log. The `fznso-replay`
+//! crate replays a log in either direction: its binary makes the same calls
+//! on a solver, with nothing of the application needed, and its library
+//! answers an application from the log, with no solver.
 //!
 //! The ABI has no way to configure a solver before it is created, so the
 //! recorder reads two environment variables:
@@ -14,10 +14,7 @@
 //! - `FZNSO_RECORD_FILE`: the log to write. By default
 //!   `fznso-record-<pid>.msgpack` in the current directory.
 //!
-//! The log format is in [`format`].
-
-pub mod format;
-mod snapshot;
+//! The log format is in [`fznso_record_format::format`].
 
 use std::{
 	ffi::c_void,
@@ -31,18 +28,19 @@ use std::{
 };
 
 use fznso::{
-	ConstraintList, DynSolution, DynSolver, Library, LoadError, ModelRefAdapter, ObjectiveList,
-	OptionList, OwnedValue, SendCtx, Solution, Solver, StatisticList, Status, TypeList, Value,
+	ConstraintList, DynSolution, DynSolver, Library, ModelRefAdapter, ObjectiveList, OptionList,
+	OwnedValue, SendCtx, Solution, Solver, StatisticList, Status, TypeList, Value,
 	fznso_types::{
 		FZNSO_ABI_VERSION, FznsoModelRef, FznsoPtr, FznsoSolutionRef, FznsoSolver, FznsoStatus,
 		FznsoStr,
 	},
 	panic_message,
 };
-
-use crate::{
-	format::{Entry, Event, Header},
-	snapshot::Seen,
+use fznso_record_format::{
+	capabilities::Capabilities,
+	format::{self, Entry, Event, Header},
+	load_solver,
+	snapshot::{self, Seen},
 };
 
 /// The process-wide state of the recorder, set up by the first call that
@@ -56,6 +54,8 @@ struct Global {
 	log: Mutex<BufWriter<File>>,
 	/// The id of the next solver instance.
 	next_id: AtomicU32,
+	/// The statistics the recorded solver declares for solutions.
+	solution_statistics: Vec<String>,
 }
 
 /// A solver instance of the recorder.
@@ -69,23 +69,6 @@ struct Recorder {
 	error: String,
 	/// The model of the previous run.
 	seen: Option<Seen>,
-}
-
-/// Load the solver `spec` names: a path if it contains a path separator, and
-/// otherwise a name to find on the search path.
-///
-/// # Safety
-///
-/// As for [`Library::new`]: the library must be an FZnSO solver.
-pub unsafe fn load_solver(spec: &str) -> Result<Arc<Library>, LoadError> {
-	// SAFETY: forwarded to the caller.
-	unsafe {
-		if spec.contains(['/', '\\']) {
-			Library::new(spec)
-		} else {
-			Library::find(spec)
-		}
-	}
 }
 
 /// The recorder's state, set up on first use.
@@ -118,11 +101,19 @@ impl Global {
 			.unwrap_or_else(|_| format!("fznso-record-{}.msgpack", std::process::id()));
 		let file = File::create(&path).map_err(|e| format!("cannot create `{path}`: {e}"))?;
 		let mut out = BufWriter::new(file);
+		let capabilities = Capabilities::of(&lib);
+		let solution_statistics = capabilities
+			.statistics
+			.iter()
+			.filter(|s| s.solution)
+			.map(|s| s.ident.clone())
+			.collect();
 		let header = Header {
 			magic: format::MAGIC.to_owned(),
 			format: format::FORMAT,
 			abi: FZNSO_ABI_VERSION,
 			solver,
+			capabilities,
 		};
 		format::write(&mut out, &header)
 			.and_then(|()| out.flush())
@@ -131,6 +122,7 @@ impl Global {
 			lib,
 			log: Mutex::new(out),
 			next_id: AtomicU32::new(0),
+			solution_statistics,
 		})
 	}
 
@@ -353,12 +345,24 @@ pub unsafe extern "C" fn solver_run(
 	let mut solution = move |sol: &DynSolution<'_>| {
 		let context = context;
 		let values = in_solution.iter().map(|&d| sol.value(d).into()).collect();
-		g.log(id, &Event::Solution { values });
+		let statistics = g
+			.solution_statistics
+			.iter()
+			.map(|name| (name.clone(), sol.statistic(name).into()))
+			.collect();
+		g.log(id, &Event::Solution { values, statistics });
 		on_solution(context.0, sol.as_raw());
 	};
 	let mut message = on_message.map(|emit| {
 		move |scope: &str, value: Value<'_>| {
 			let context = context;
+			g.log(
+				id,
+				&Event::Message {
+					scope: scope.to_owned(),
+					value: value.into(),
+				},
+			);
 			emit(context.0, scope.into(), value);
 		}
 	});

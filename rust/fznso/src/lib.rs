@@ -85,27 +85,27 @@ macro_rules! fznso_export {
 
 		#[unsafe(export_name = concat!("fznso_", $name, "_constraint_list"))]
 		pub extern "C" fn fznso_constraint_list() -> $crate::ConstraintList<'static> {
-			<$T as $crate::SolverType>::CONSTRAINT_LIST
+			<$T as $crate::SolverType>::constraint_list()
 		}
 
 		#[unsafe(export_name = concat!("fznso_", $name, "_decision_list"))]
 		pub extern "C" fn fznso_decision_list() -> $crate::TypeList<'static> {
-			<$T as $crate::SolverType>::DECISION_LIST
+			<$T as $crate::SolverType>::decision_list()
 		}
 
 		#[unsafe(export_name = concat!("fznso_", $name, "_objective_list"))]
 		pub extern "C" fn fznso_objective_list() -> $crate::ObjectiveList<'static> {
-			<$T as $crate::SolverType>::OBJECTIVE_LIST
+			<$T as $crate::SolverType>::objective_list()
 		}
 
 		#[unsafe(export_name = concat!("fznso_", $name, "_option_list"))]
 		pub extern "C" fn fznso_option_list() -> $crate::OptionList<'static> {
-			<$T as $crate::SolverType>::OPTION_LIST
+			<$T as $crate::SolverType>::option_list()
 		}
 
 		#[unsafe(export_name = concat!("fznso_", $name, "_statistic_list"))]
 		pub extern "C" fn fznso_statistic_list() -> $crate::StatisticList<'static> {
-			<$T as $crate::SolverType>::STATISTIC_LIST
+			<$T as $crate::SolverType>::statistic_list()
 		}
 
 		#[unsafe(export_name = concat!("fznso_", $name, "_solver_create"))]

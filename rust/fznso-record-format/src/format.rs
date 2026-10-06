@@ -10,6 +10,8 @@ use std::io::{self, Read, Write};
 use fznso::{DecisionIdx, OwnedAnnotation, OwnedValue, Status, Type};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
+use crate::capabilities::Capabilities;
+
 /// The `magic` field of every log's [`Header`].
 pub const MAGIC: &str = "fznso-record";
 
@@ -28,6 +30,8 @@ pub struct Header {
 	/// The recorded solver, as given in `FZNSO_RECORD_SOLVER`: a name or a
 	/// path.
 	pub solver: String,
+	/// What the recorded solver declares it supports.
+	pub capabilities: Capabilities,
 }
 
 /// One recorded event, and the solver instance it belongs to.
@@ -45,9 +49,9 @@ pub struct Entry<E = Event> {
 /// A recorded event.
 ///
 /// The events of one `run` are a [`Run`](Event::Run), then any
-/// [`Solution`](Event::Solution)s and at most one [`StopAt`](Event::StopAt),
-/// then a [`RunEnd`](Event::RunEnd). A log whose solver crashed ends
-/// without the `RunEnd`.
+/// [`Solution`](Event::Solution)s and [`Message`](Event::Message)s and at
+/// most one [`StopAt`](Event::StopAt), then a [`RunEnd`](Event::RunEnd). A log
+/// whose solver crashed ends without the `RunEnd`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
 	/// `solver_create`.
@@ -92,6 +96,16 @@ pub enum Event {
 	Solution {
 		/// The values.
 		values: Vec<OwnedValue>,
+		/// Each statistic the solver declares for solutions, with the value
+		/// this solution reports for it.
+		statistics: Vec<(String, OwnedValue)>,
+	},
+	/// A diagnostic the solver passed to `on_message`.
+	Message {
+		/// The scope.
+		scope: String,
+		/// The value.
+		value: OwnedValue,
 	},
 	/// The first `should_stop` call that returned `true`, counted from 0.
 	StopAt {
@@ -109,6 +123,20 @@ pub enum Event {
 		/// What was wrong.
 		message: String,
 	},
+}
+
+impl Event {
+	/// Whether this event belongs to the run that the latest
+	/// [`Run`](Event::Run) of its solver started.
+	pub fn in_run(&self) -> bool {
+		matches!(
+			self,
+			Self::Solution { .. }
+				| Self::Message { .. }
+				| Self::StopAt { .. }
+				| Self::RunEnd { .. }
+		)
+	}
 }
 
 /// A model as a run saw it, from layer `from_layer` upward.
@@ -295,7 +323,12 @@ mod tests {
 				should_stop: false,
 			},
 			Event::Solution {
-				values: vec![all_values],
+				values: vec![all_values.clone()],
+				statistics: vec![("nodes".into(), OwnedValue::Int(3))],
+			},
+			Event::Message {
+				scope: "warn".into(),
+				value: all_values,
 			},
 			Event::StopAt { call: 12 },
 			Event::RunEnd {
@@ -312,6 +345,15 @@ mod tests {
 			format: FORMAT,
 			abi: 1,
 			solver: "example".into(),
+			capabilities: Capabilities {
+				decisions: vec![Type::new(TypeBase::FznsoTypeBaseInt).decision(true)],
+				options: vec![crate::capabilities::OptionDecl {
+					ident: "threads".into(),
+					ty: Type::new(TypeBase::FznsoTypeBaseInt),
+					default: OwnedValue::Int(1),
+				}],
+				..Capabilities::default()
+			},
 		};
 		let mut buf = Vec::new();
 		write(&mut buf, &header).unwrap();

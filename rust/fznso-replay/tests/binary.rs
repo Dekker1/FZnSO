@@ -20,7 +20,7 @@ use std::{
 use fznso::{
 	DynSolution, LayeredModel, Library, OwnedValue, RangeList, Solver, Status, Type, TypeBase,
 };
-use record::format::{self, Entry, Event, Header};
+use fznso_record_format::format::{self, Entry, Event, Header};
 
 /// The directory cargo builds this test's profile into, such as
 /// `target/debug`.
@@ -103,7 +103,7 @@ fn int_decision(m: &mut LayeredModel, name: &str, lb: i64) {
 #[test]
 #[cfg_attr(miri, ignore = "miri cannot dynamically load a library")]
 fn record_and_replay() {
-	let dir = env::temp_dir().join(format!("fznso-record-test-{}", std::process::id()));
+	let dir = env::temp_dir().join(format!("fznso-replay-binary-test-{}", std::process::id()));
 	std::fs::create_dir_all(&dir).unwrap();
 	let log = dir.join("session.msgpack");
 	let (recorder, example) = build();
@@ -221,7 +221,7 @@ fn record_and_replay() {
 	format::write(&mut file, &header).unwrap();
 	let mut changed = false;
 	for mut entry in entries {
-		if let Event::Solution { values } = &mut entry.event
+		if let Event::Solution { values, .. } = &mut entry.event
 			&& !changed
 		{
 			values[0] = OwnedValue::Int(-1);

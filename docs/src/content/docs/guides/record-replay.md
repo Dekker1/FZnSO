@@ -1,6 +1,6 @@
 ---
 title: Recording and replaying
-description: Record every call an application makes into a solver, and replay them later without the application.
+description: Record every call an application makes into a solver, then replay either side of it: the application's calls without the application, or the solver's answers without the solver.
 sidebar:
   order: 5
 ---
@@ -8,10 +8,11 @@ sidebar:
 A solver bug often shows only inside one application.
 The recorder captures what that application asks of the solver, so you can reproduce the bug with nothing but the log and the solver library.
 
-The `fznso-record` crate builds two things:
+A log works in both directions:
 
-- `librecord`, a solver named `record` that passes every call on to another solver and writes it to a log.
-- `fznso-replay`, which makes the same calls on a solver and checks that it answers the same.
+- `librecord` (crate `fznso-record`) is a solver named `record` that passes every call on to another solver and writes it to a log.
+- The `fznso-replay` binary (crate `fznso-replay`) replays the application's side: it makes the same calls on a solver and checks that it answers the same.
+- `libreplay` (crate `fznso-replay`) replays the solver's side: it is a solver named `replay` that answers an application from the log, with no solver.
 
 ## Record
 
@@ -27,7 +28,7 @@ The ABI has no way to configure a solver before it exists, so the recorder reads
 
 The recorder flushes the log after each call, so the log is complete up to the moment a solver crashes.
 
-## Replay
+## Replay to a solver
 
 ```sh
 fznso-replay session.msgpack
@@ -46,6 +47,29 @@ It compares option results, solutions and the status of each run.
 It asks for statistics too, but does not compare them, because they may measure time.
 
 The exit status is 0 if every answer matches, 2 if some differ, and 1 if the replay cannot go on, such as for an unreadable log.
+
+## Replay to an application
+
+To debug an application, such as a modelling system, without the solver, point it at the solver `replay` and name the log:
+
+| Variable | Meaning |
+| --- | --- |
+| `FZNSO_REPLAY_FILE` | Required. The log to answer from. |
+
+The replay solver declares the constraints, decision types, objectives, options and statistics that the recorded solver declared.
+It returns the recorded option and statistic values, and each run reports the recorded messages and solutions and returns the recorded status.
+It asks `should_stop` before a run and after each solution, as a solver does, and stops the run there if the answer is yes.
+
+Before each run it reads the application's model and compares it with the recorded one.
+If they differ, it names the first place on standard error, for example `decision 4 of layer 1 differs`, with both versions.
+That shows where a changed modelling system starts to produce a different model, without a solver run.
+The run still plays the recorded solutions.
+
+The application is expected to make the recorded calls in the recorded order, for each solver instance.
+Where it does not, the replay solver says so on standard error and goes on:
+
+- A call the log holds further on is answered from there, and the recorded calls before it are skipped. The search stops at the next run.
+- A call the log does not hold gets an empty answer: an absent value, a successful `option_set`, or an error from `run`.
 
 ## Model checks
 
@@ -78,4 +102,4 @@ for entry in msgpack.Unpacker(open("session.msgpack", "rb")):
     print(entry)
 ```
 
-The log types are in `rust/fznso-record/src/format.rs`. Values, annotations, types and statuses use the optional `serde` feature of the `fznso` crate.
+The log types are in `rust/fznso-record-format/src/format.rs`. Values, annotations, types and statuses use the optional `serde` feature of the `fznso` crate.

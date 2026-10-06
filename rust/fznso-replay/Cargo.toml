@@ -1,0 +1,26 @@
+[package]
+name = "fznso-replay"
+description = "Replay a log of an FZnSO solver: the application's side to a solver, or the solver's side to an application"
+repository.workspace = true
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The stand-in solver, which replays the solver's side of a log. The library
+# name is its symbol prefix: `libreplay` exports `fznso_replay_*`.
+[lib]
+name = "replay"
+crate-type = ["cdylib"]
+
+# Replays the application's side of a log to a solver.
+[[bin]]
+name = "fznso-replay"
+path = "src/bin/fznso-replay.rs"
+
+[dependencies]
+fznso = { path = "../fznso", version = "0.1.0", features = ["serde"] }
+fznso-record-format = { path = "../fznso-record-format", version = "0.1.0" }
+
+[lints]
+workspace = true

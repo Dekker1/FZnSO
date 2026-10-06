@@ -23,7 +23,7 @@ use std::{
 };
 
 use fznso::{DynSolution, DynSolver, LayeredModel, Model, OwnedValue, Solution, Solver};
-use record::{
+use fznso_record_format::{
 	format::{self, Entry, Event, Snapshot},
 	load_solver,
 };
@@ -153,18 +153,19 @@ fn replay() -> Result<(usize, usize), String> {
 				// how it ended. A run without an end is one the recorded
 				// solver did not return from.
 				let (mut recorded, mut stop_at, mut end) = (Vec::new(), None, None);
-				while let Some(entry) = entries.next_if(|e| {
-					matches!(e, Ok(Entry { solver, event: Event::Solution { .. } | Event::StopAt { .. } | Event::RunEnd { .. } }) if *solver == id)
-				}) {
+				while let Some(entry) = entries.next_if(
+					|e| matches!(e, Ok(Entry { solver, event }) if *solver == id && event.in_run()),
+				) {
 					count += 1;
 					match entry.map_err(bad)?.event {
-						Event::Solution { values } => recorded.push(values),
+						Event::Solution { values, .. } => recorded.push(values),
 						Event::StopAt { call } => stop_at = Some(call),
+						Event::Message { .. } => {}
 						Event::RunEnd { status } => {
 							end = Some(status);
 							break;
 						}
-						_ => unreachable!("only the events of a run pass `next_if`"),
+						_ => unreachable!("`in_run` is false for every other event"),
 					}
 				}
 
@@ -209,7 +210,10 @@ fn replay() -> Result<(usize, usize), String> {
 					),
 				}
 			}
-			Event::Solution { .. } | Event::StopAt { .. } | Event::RunEnd { .. } => {
+			Event::Solution { .. }
+			| Event::Message { .. }
+			| Event::StopAt { .. }
+			| Event::RunEnd { .. } => {
 				return Err(format!("{at}: {event:?} outside a run"));
 			}
 		}

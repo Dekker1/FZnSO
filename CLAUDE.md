@@ -62,7 +62,9 @@ So, when writing either side:
 | `cpp/` | header-only C++ bindings for both roles |
 | `rust/fznso-types` | the ABI in Rust; cbindgen generates `c/` from it |
 | `rust/fznso` | Rust bindings, plus `LayeredModel` and a FlatZinc adapter |
-| `rust/fznso-record` | `librecord` proxy solver and `fznso-replay`, for debugging |
+| `rust/fznso-record` | `librecord`, a proxy solver that logs every call, for debugging |
+| `rust/fznso-record-format` | the log format that `fznso-record` and `fznso-replay` share |
+| `rust/fznso-replay` | replays a log: the `fznso-replay` binary to a solver, `libreplay` to an application |
 | `python/` | pyo3 bindings |
 | `docs/registry/*.toml` | the shared constraint/option/statistic vocabulary |
 | `solver_impls/` | real solvers behind the interface |

@@ -10,7 +10,7 @@ use crate::format::{Constraint, Decision, Layer, Objective, Snapshot};
 
 /// What the recorder remembers of a solver's previous run.
 #[derive(Debug)]
-pub(crate) struct Seen {
+pub struct Seen {
 	/// Every layer of the model. The layers the snapshot holds are missing
 	/// until [`Seen::restore`] puts them back.
 	layers: Vec<Layer>,
@@ -22,13 +22,13 @@ pub(crate) struct Seen {
 
 /// A snapshot to write, with what the recorder needs from it during the run.
 #[derive(Debug)]
-pub(crate) struct Taken {
+pub struct Taken {
 	/// The part of the model not written before.
-	pub(crate) snapshot: Snapshot,
+	pub snapshot: Snapshot,
 	/// The index of every decision with `decision_in_solution`.
-	pub(crate) in_solution: Vec<usize>,
+	pub in_solution: Vec<usize>,
 	/// A message for each rule the model breaks.
-	pub(crate) violations: Vec<String>,
+	pub violations: Vec<String>,
 }
 
 /// Copies a model, and collects the rules it breaks on the way.
@@ -55,7 +55,7 @@ struct Reader<'m, M> {
 ///
 /// The snapshot's layers move out of `seen` rather than being copied: give
 /// them back with [`Seen::restore`] once the snapshot is written.
-pub(crate) fn take<M: Model>(model: &M, seen: &mut Option<Seen>) -> Taken {
+pub fn take<M: Model>(model: &M, seen: &mut Option<Seen>) -> Taken {
 	let mut reader = Reader {
 		model,
 		decision_len: model.decision_len(),
@@ -171,9 +171,59 @@ pub(crate) fn take<M: Model>(model: &M, seen: &mut Option<Seen>) -> Taken {
 	}
 }
 
+/// Describe the first place where the snapshot `now` differs from the
+/// `recorded` one, if any.
+pub fn difference(recorded: &Snapshot, now: &Snapshot) -> Option<String> {
+	/// Describe a field that differs.
+	fn field<T: PartialEq + std::fmt::Debug>(what: &str, recorded: &T, now: &T) -> Option<String> {
+		(recorded != now)
+			.then(|| format!("{what} differs\n  recorded: {recorded:?}\n  now:      {now:?}"))
+	}
+	/// Describe the first of `recorded` and `now` that differs.
+	fn items<T: PartialEq + std::fmt::Debug>(
+		what: &str,
+		layer: usize,
+		recorded: &[T],
+		now: &[T],
+	) -> Option<String> {
+		field(
+			&format!("the number of {what}s in layer {layer}"),
+			&recorded.len(),
+			&now.len(),
+		)
+		.or_else(|| {
+			(recorded.iter().zip(now).enumerate())
+				.find_map(|(i, (r, n))| field(&format!("{what} {i} of layer {layer}"), r, n))
+		})
+	}
+	field(
+		"the first changed layer",
+		&recorded.from_layer,
+		&now.from_layer,
+	)
+	.or_else(|| field("layer_unchanged", &recorded.unchanged, &now.unchanged))
+	.or_else(|| field("layer_permanent", &recorded.permanent, &now.permanent))
+	.or_else(|| field("the redundant layers", &recorded.redundant, &now.redundant))
+	.or_else(|| {
+		field(
+			"the number of layers",
+			&(recorded.from_layer + recorded.layers.len()),
+			&(now.from_layer + now.layers.len()),
+		)
+	})
+	.or_else(|| {
+		(recorded.layers.iter().zip(&now.layers).enumerate()).find_map(|(i, (r, n))| {
+			let layer = recorded.from_layer + i;
+			items("decision", layer, &r.decisions, &n.decisions)
+				.or_else(|| items("constraint", layer, &r.constraints, &n.constraints))
+		})
+	})
+	.or_else(|| field("the objective", &recorded.objective, &now.objective))
+}
+
 impl Seen {
 	/// Put back the layers [`take`] lent to the snapshot.
-	pub(crate) fn restore(&mut self, layers: &mut Vec<Layer>) {
+	pub fn restore(&mut self, layers: &mut Vec<Layer>) {
 		self.layers.append(layers);
 	}
 }
@@ -343,5 +393,40 @@ fn value_problem(
 			.iter()
 			.find_map(|v| value_problem(v, decision_len, constraint_len)),
 		_ => None,
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use fznso::{LayeredModel, RangeList, Type, TypeBase};
+
+	use super::*;
+
+	/// A model with one integer decision whose domain starts at `lb`.
+	fn model(lb: i64) -> LayeredModel {
+		let mut m = LayeredModel::default();
+		let _ = m.add_decision(
+			Type::new(TypeBase::FznsoTypeBaseInt).decision(true),
+			OwnedValue::IntSet(RangeList::from(lb..=9)),
+			None,
+			false,
+			true,
+			vec![],
+		);
+		m
+	}
+
+	#[test]
+	fn difference_names_the_first_changed_item() {
+		let recorded = take(&model(0), &mut None).snapshot;
+		assert_eq!(
+			difference(&recorded, &take(&model(0), &mut None).snapshot),
+			None
+		);
+		let changed = difference(&recorded, &take(&model(1), &mut None).snapshot).unwrap();
+		assert!(
+			changed.starts_with("decision 0 of layer 0 differs"),
+			"{changed}"
+		);
 	}
 }

@@ -1,6 +1,6 @@
 [package]
 name = "fznso-record"
-description = "Record the calls into an FZnSO solver, and replay them without the application"
+description = "Record the calls into an FZnSO solver, to replay them later"
 repository.workspace = true
 version.workspace = true
 authors.workspace = true
@@ -11,16 +11,11 @@ license.workspace = true
 # `fznso_record_*`.
 [lib]
 name = "record"
-crate-type = ["cdylib", "rlib"]
-
-[[bin]]
-name = "fznso-replay"
-path = "src/bin/fznso-replay.rs"
+crate-type = ["cdylib"]
 
 [dependencies]
 fznso = { path = "../fznso", version = "0.1.0", features = ["serde"] }
-rmp-serde = "1.3.1"
-serde = { version = "1.0.229", features = ["derive"] }
+fznso-record-format = { path = "../fznso-record-format", version = "0.1.0" }
 
 [lints]
 workspace = true
