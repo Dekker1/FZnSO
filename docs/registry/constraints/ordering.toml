@@ -155,8 +155,9 @@ notes = "`permutations` is flattened row-major, one permutation per row; no row 
 [[entry]]
 ident = "int_lex_least_under_transposition"
 args = ["list of var int: xs", "int: columns"]
-summary = "A square matrix is lexicographically no greater than its transpose, or any row and column permutation of itself."
-definition = '\left( xs_{(i-1)c+j} \right)_{i,j} \preceq \left( xs_{(j-1)c+i} \right)_{i,j} \quad \text{where } c = columns'
+summary = "A square matrix is lexicographically no greater than any rotation or reflection of itself."
+definition = '\forall \sigma \in D_4 : \left( xs_{(i-1)c+j} \right)_{i,j} \preceq \left( xs_{\sigma(i,\,j)} \right)_{i,j} \quad \text{where } c = columns'
+notes = "`D_4` is the eight symmetries of the square, the four rotations and the four reflections, each read as a permutation of the positions. The transpose is one of them."
 
 [[entry]]
 ident = "int_global_cardinality"

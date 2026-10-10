@@ -9,8 +9,6 @@ Constraints that place tasks in time or shapes in space without overlapping a li
 Tasks are described by parallel arrays: `start`, `duration` and where relevant `resource`, all
 indexed alike, so task *i* occupies the half-open interval from `start[i]` to
 `start[i] + duration[i]`.
-A task with an optional start is **absent** when its start takes the absent value, and an absent
-task consumes nothing; $\bot$ is that absent value.
 
 Rectangle packing is `int_no_overlap` rather than `diffn`: the name says what the constraint
 enforces, and its arguments pair position with extent per dimension (`x, dx, y, dy`) rather than
@@ -38,8 +36,8 @@ notes = "`start`, `duration` and `resource` must have equal length. Durations an
 ident = "int_cumulatives"
 args = ["list of var int: start", "list of var int: duration", "list of var int: resource", "list of var int: machine", "list of var int: capacity", "int: capacity_offset", "bool: is_upper_bound"]
 summary = "As int_cumulative, but each task runs on one of several machines, each with its own capacity."
-notes = "`capacity` is numbered from `capacity_offset`, the lowest machine number. With `is_upper_bound` false the capacities are lower bounds instead, and the inequality reverses."
-definition = '\forall m, t : \sum_{i \,:\, machine_i = m \,\wedge\, start_i \leq t < start_i + duration_i} resource_i \;\leq\; capacity_{m - capacity_offset + 1}'
+notes = "`capacity` is numbered from `capacity_offset`, the lowest machine number. With `is_upper_bound` false the capacities are lower bounds instead, and the inequality reverses. The bound binds only at times when some task occupies the machine, which is what makes the lower bound usable."
+definition = '\forall m, t : \left( \exists i : machine_i = m \wedge start_i \leq t < start_i + duration_i \right) \rightarrow \sum_{i \,:\, machine_i = m \,\wedge\, start_i \leq t < start_i + duration_i} resource_i \;\leq\; capacity_{m - capacity_offset + 1}'
 
 [[entry]]
 ident = "int_disjunctive"
@@ -54,21 +52,6 @@ args = ["list of var int: start", "list of var int: duration"]
 summary = "No two tasks overlap, and a zero-duration task may not fall inside another task."
 definition = '\forall i < j : start_i + duration_i \leq start_j \;\vee\; start_j + duration_j \leq start_i'
 notes = "Differs from `int_disjunctive` only for zero-duration tasks, which here must still be separated."
-
-[[entry]]
-ident = "int_alternative"
-args = ["list of var int: start", "list of var int: duration", "var int: span_start", "var int: span_duration"]
-summary = "Exactly one of the alternative tasks is present, and it fills the enclosing task exactly."
-definition = '\lvert \{\, i \mid start_i \neq \bot \,\} \rvert = 1 \;\wedge\; \forall i : start_i \neq \bot \rightarrow \left( start_i = span_start \;\wedge\; duration_i = span_duration \right)'
-notes = "Models a job that can be done in one of several ways. The alternatives must have optional starts."
-
-[[entry]]
-ident = "int_span"
-args = ["list of var int: start", "list of var int: duration", "var int: span_start", "var int: span_duration"]
-functional = true
-summary = "The enclosing task starts with the earliest present sub-task and ends with the latest."
-definition = 'span_start = \min_{i \,:\, start_i \neq \bot} start_i \;\wedge\; span_start + span_duration = \max_{i \,:\, start_i \neq \bot} \left( start_i + duration_i \right)'
-notes = "Minimum and maximum are taken over the present sub-tasks only."
 
 # ---------------------------------------------------------------------------
 # Bin packing
@@ -95,7 +78,7 @@ ident = "int_knapsack"
 args = ["list of int: weight", "list of int: profit", "list of var int: xs", "var int: total_weight", "var int: total_profit"]
 functional = true
 summary = "Items are selected in given quantities, with their total weight and total profit reported."
-definition = 'total_weight = \sum_{i} weight_i \cdot xs_i \;\wedge\; total_profit = \sum_{i} profit_i \cdot xs_i'
+definition = '\left( \forall i : xs_i \geq 0 \right) \;\wedge\; 0 \leq total_weight = \sum_{i} weight_i \cdot xs_i \;\wedge\; 0 \leq total_profit = \sum_{i} profit_i \cdot xs_i'
 notes = "`xs` holds the quantity chosen of each item. Bound `total_weight` to impose the knapsack's capacity."
 
 # ---------------------------------------------------------------------------

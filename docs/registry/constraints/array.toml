@@ -173,17 +173,17 @@ notes = "`xs` must be non-empty. `index` is given in the caller's numbering, whi
 ident = "bool_array_arg_max"
 args = ["list of var bool: xs", "int: offset", "var int: index"]
 functional = true
-summary = "The index holds the position of the first element that holds."
-definition = 'xs_{index - offset + 1} \;\wedge\; \forall j < index : \neg xs_{j - offset + 1}'
-notes = "`index` is given in the caller's numbering, which starts at `offset`."
+summary = "The index holds the position of the first element that holds, or the first position when none does."
+definition = '\left( xs_{index - offset + 1} \leftrightarrow \exists j : xs_j \right) \;\wedge\; \forall j < index : \neg xs_{j - offset + 1}'
+notes = "`index` is given in the caller's numbering, which starts at `offset`. This is the integer argument extremum over `false < true`: when no element holds, the extreme value is the other one and the lowest position wins."
 
 [[entry]]
 ident = "bool_array_arg_min"
 args = ["list of var bool: xs", "int: offset", "var int: index"]
 functional = true
-summary = "The index holds the position of the first element that does not hold."
-definition = '\neg xs_{index - offset + 1} \;\wedge\; \forall j < index : xs_{j - offset + 1}'
-notes = "`index` is given in the caller's numbering, which starts at `offset`."
+summary = "The index holds the position of the first element that does not hold, or the first position when all of them do."
+definition = '\left( \neg xs_{index - offset + 1} \leftrightarrow \exists j : \neg xs_j \right) \;\wedge\; \forall j < index : xs_{j - offset + 1}'
+notes = "`index` is given in the caller's numbering, which starts at `offset`. This is the integer argument extremum over `false < true`: when no element does not hold, the extreme value is the other one and the lowest position wins."
 
 [[entry]]
 ident = "float_array_arg_max"
@@ -287,7 +287,7 @@ ident = "int_array_arg_sort"
 args = ["list of var int: xs", "int: offset", "list of var int: permutation"]
 functional = true
 summary = "The permutation lists the positions of the array's elements in sorted order."
-definition = '\forall i < j : xs_{permutation_i - offset + 1} \leq xs_{permutation_j - offset + 1}'
+definition = '\left( \forall i : permutation_i \in [offset, offset + \lvert xs \rvert) \right) \;\wedge\; \left( \forall i \neq j : permutation_i \neq permutation_j \right) \;\wedge\; \forall i < j : xs_{permutation_i - offset + 1} \leq xs_{permutation_j - offset + 1}'
 notes = "`permutation` holds positions in `xs`, numbered from `offset`. Ties resolve to the lower original position, so the result is unique."
 
 [[entry]]
@@ -295,4 +295,4 @@ ident = "float_array_arg_sort"
 args = ["list of var float: xs", "int: offset", "list of var int: permutation"]
 functional = true
 summary = "The permutation lists the positions of the array's elements in sorted order."
-definition = '\forall i < j : xs_{permutation_i - offset + 1} \leq xs_{permutation_j - offset + 1}'
+definition = '\left( \forall i : permutation_i \in [offset, offset + \lvert xs \rvert) \right) \;\wedge\; \left( \forall i \neq j : permutation_i \neq permutation_j \right) \;\wedge\; \forall i < j : xs_{permutation_i - offset + 1} \leq xs_{permutation_j - offset + 1}'

@@ -125,13 +125,15 @@ notes = "The well-formedness condition every other graph constraint here assumes
 ident = "graph_connected"
 args = ["list of int: from", "list of int: to", "int: node_offset", "list of var bool: nodes", "list of var bool: edges"]
 summary = "The selected subgraph is connected."
-definition = '\forall u, v \in N : u \rightsquigarrow v'
+definition = '\exists r \in N : \forall v \in N : r \rightsquigarrow v'
+notes = "The empty selection does not satisfy this: some node has to be the root that the others are reached from."
 
 [[entry]]
 ident = "graph_connected_directed"
 args = ["list of int: from", "list of int: to", "int: node_offset", "list of var bool: nodes", "list of var bool: edges"]
-summary = "The selected directed subgraph is strongly connected."
-definition = '\forall u, v \in N : u \rightsquigarrow v'
+summary = "Every selected node of the directed subgraph is reachable from one of them."
+definition = '\exists r \in N : \forall v \in N : r \rightsquigarrow v'
+notes = "One-way reachability from a single root, not strong connectivity: an arc each way between two nodes is not asked for. This is the reading the MiniZinc library's `dconnected` implements. The empty selection does not satisfy it."
 
 [[entry]]
 ident = "graph_reachable"
@@ -215,8 +217,8 @@ definition = '\forall v \in V : \deg^{-}(v) = [\, v \neq root \,] \;\wedge\; roo
 ident = "graph_network_flow"
 args = ["list of int: from", "list of int: to", "int: node_offset", "list of int: balance", "list of var int: flow"]
 summary = "The flow on each arc satisfies the given supply and demand at every node."
-definition = '\forall v : \sum_{e \,:\, to_e = v} flow_e \;-\; \sum_{e \,:\, from_e = v} flow_e \;=\; balance_{v - node_offset + 1}'
-notes = "The graph is given as `from` and `to`, one entry per arc, the same way every other constraint here takes one. `balance` is numbered from `node_offset`: a positive value is demand, a negative one supply. Unlike the rest of the family there are no selector arrays, because every arc carries a flow rather than being in or out."
+definition = '\forall v : \sum_{e \,:\, from_e = v} flow_e \;-\; \sum_{e \,:\, to_e = v} flow_e \;=\; balance_{v - node_offset + 1}'
+notes = "The graph is given as `from` and `to`, one entry per arc, the same way every other constraint here takes one. `balance` is numbered from `node_offset`: a positive value is supply, a negative one demand. Unlike the rest of the family there are no selector arrays, because every arc carries a flow rather than being in or out."
 
 [[entry]]
 ident = "graph_network_flow_cost"
