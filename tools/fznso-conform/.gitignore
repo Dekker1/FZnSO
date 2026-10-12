@@ -1,0 +1,13 @@
+# uv's virtual environment. `uv.lock` is committed, so the versions the paper
+# reports are the versions a rerun gets.
+.venv/
+
+# Build and byte-code artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

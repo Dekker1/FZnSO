@@ -76,6 +76,16 @@ test-python:
     maturin develop
     pytest -q
 
+# Hold every built solver to the registry, in types and in answers.
+test-conformance:
+    #!/usr/bin/env sh
+    set -e
+    # Needs a built solver library and an `.msc` naming it, which is why this
+    # is not part of `just test`. `FZNSO_SOLVER_PATH` says where those
+    # configurations live, and `FZNSO_SOLVERS` narrows which ones run.
+    cd tools/fznso-conform
+    uv run pytest -q
+
 # Run the Rust suite under miri.
 #
 # `--lib --tests` is not optional: a plain `--workspace` also builds the

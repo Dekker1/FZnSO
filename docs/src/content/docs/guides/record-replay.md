@@ -102,4 +102,4 @@ for entry in msgpack.Unpacker(open("session.msgpack", "rb")):
     print(entry)
 ```
 
-The log types are in `rust/fznso-record-format/src/format.rs`. Values, annotations, types and statuses use the optional `serde` feature of the `fznso` crate.
+The log types are in `tools/fznso-record-format/src/format.rs`. Values, annotations, types and statuses use the optional `serde` feature of the `fznso` crate.

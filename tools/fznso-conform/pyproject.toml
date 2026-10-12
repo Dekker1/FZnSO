@@ -1,0 +1,27 @@
+[project]
+name = "fznso-conform"
+version = "0.1.0"
+description = "Holds a solver to the FZnSO registry: the types it declares, and the answers it gives"
+requires-python = ">=3.11"
+dependencies = ["minizinc>=0.9.0", "pytest>=8", "fznso"]
+
+[project.scripts]
+fznso-conform = "fznso_conform.__main__:main_argv"
+
+# The bindings read a solver library's declared signatures straight through
+# the ABI, which is what the signature check holds to the registry.
+[tool.uv.sources]
+fznso = { path = "../../python", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+# A console script needs the project installed, so it needs a backend.
+[build-system]
+requires = ["uv_build>=0.9,<0.10"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "fznso_conform"
+module-root = ""

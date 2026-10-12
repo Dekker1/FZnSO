@@ -14,7 +14,7 @@ name = "record"
 crate-type = ["cdylib"]
 
 [dependencies]
-fznso = { path = "../fznso", version = "0.1.0", features = ["serde"] }
+fznso = { path = "../../rust/fznso", version = "0.1.0", features = ["serde"] }
 fznso-record-format = { path = "../fznso-record-format", version = "0.1.0" }
 
 [lints]

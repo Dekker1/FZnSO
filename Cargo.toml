@@ -2,10 +2,9 @@
 
 members = [
   "rust/fznso",
-  "rust/fznso-conform",
-  "rust/fznso-record",
-  "rust/fznso-record-format",
-  "rust/fznso-replay",
+  "tools/fznso-record",
+  "tools/fznso-record-format",
+  "tools/fznso-replay",
   "rust/fznso-solver-template",
   "rust/fznso-types",
 ]
