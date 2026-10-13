@@ -253,37 +253,45 @@ impl Capabilities {
 
 #[cfg(test)]
 mod tests {
+	use std::sync::OnceLock;
+
 	use fznso::TypeBase;
 
 	use super::*;
+
+	/// Where the test keeps its lists, as a solver would: memory a static
+	/// reaches is not a leak to miri, and anything `leak` strands still is.
+	static LISTS: OnceLock<Lists> = OnceLock::new();
 
 	/// Leaked lists read back as the capabilities they came from.
 	#[test]
 	fn leak_keeps_every_field() {
 		let int = Type::new(TypeBase::FznsoTypeBaseInt);
-		let lists = Capabilities {
-			constraints: vec![ConstraintDecl {
-				ident: "int_le".into(),
-				arguments: vec![int, int.decision(true)],
-			}],
-			decisions: vec![int.decision(true)],
-			objectives: vec![ObjectiveDecl {
-				ident: "minimize".into(),
-				ty: int.decision(true),
-			}],
-			options: vec![OptionDecl {
-				ident: "threads".into(),
-				ty: int,
-				default: OwnedValue::Int(1),
-			}],
-			statistics: vec![StatisticDecl {
-				ident: "nodes".into(),
-				ty: int,
-				solution: true,
-				solver: false,
-			}],
-		}
-		.leak();
+		let lists = LISTS.get_or_init(|| {
+			Capabilities {
+				constraints: vec![ConstraintDecl {
+					ident: "int_le".into(),
+					arguments: vec![int, int.decision(true)],
+				}],
+				decisions: vec![int.decision(true)],
+				objectives: vec![ObjectiveDecl {
+					ident: "minimize".into(),
+					ty: int.decision(true),
+				}],
+				options: vec![OptionDecl {
+					ident: "threads".into(),
+					ty: int,
+					default: OwnedValue::Int(1),
+				}],
+				statistics: vec![StatisticDecl {
+					ident: "nodes".into(),
+					ty: int,
+					solution: true,
+					solver: false,
+				}],
+			}
+			.leak()
+		});
 
 		// SAFETY: `leak` made each list valid for its length.
 		unsafe {
