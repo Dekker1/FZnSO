@@ -1,6 +1,6 @@
 ---
 title: Recording and replaying
-description: Record every call an application makes into a solver, then replay either side of it: the application's calls without the application, or the solver's answers without the solver.
+description: "Record every call an application makes into a solver, then replay either side of it: the application's calls without the application, or the solver's answers without the solver."
 sidebar:
   order: 5
 ---
