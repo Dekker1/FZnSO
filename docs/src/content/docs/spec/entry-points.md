@@ -52,7 +52,7 @@ A solver must not declare an argument **wider** than the registry's signature: a
 
 | Symbol | Purpose |
 | --- | --- |
-| `fznso_<name>_solver_create` | Create an instance. Returns `FznsoSolver *`. |
+| `fznso_<name>_solver_create` | Create an instance. Returns `FznsoSolver *`, never null. |
 | `fznso_<name>_solver_free` | Destroy an instance and release everything it holds. |
 | `fznso_<name>_solver_option_set` | Set one option. Returns `false` on failure. |
 | `fznso_<name>_solver_option_get` | Read one option's current value. |
@@ -72,6 +72,11 @@ The caller then calls `fznso_<name>_solver_read_error`, which passes the message
 
 This is the only error channel.
 The `on_message` callback during a run [is not for failures](../running/#diagnostics).
+
+`fznso_<name>_solver_create` cannot fail.
+It returns a valid instance even when the solver cannot work, for example because a licence is missing.
+The instance records the failure and reports it through the channel above: the next `option_set` returns `false`, or the next `run` returns `FznsoError`.
+The application therefore always has an instance to call `fznso_<name>_solver_read_error` on, and to free.
 
 ## The template
 

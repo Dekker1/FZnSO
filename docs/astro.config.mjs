@@ -66,6 +66,7 @@ export default defineConfig({
 						{ label: 'What is FZnSO?', slug: 'start/what-is-fznso' },
 						{ label: 'Concepts', slug: 'start/concepts' },
 						{ label: 'Quickstart', slug: 'start/quickstart' },
+						{ label: 'Implementations & tools', slug: 'start/implementations' },
 					],
 				},
 				{

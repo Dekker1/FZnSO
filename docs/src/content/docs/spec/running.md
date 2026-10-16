@@ -75,5 +75,5 @@ A solver that cannot continue returns `FznsoError` and reports the reason throug
 | `FznsoIncomplete` | The search stopped early — a time limit, a `should_stop`, or any other termination condition. Additional or better solutions may exist. |
 | `FznsoError` | The solver could not continue. Read the reason with `fznso_<name>_solver_read_error`. |
 
-`FznsoComplete` with an objective and no `should_stop` means the last solution reported is optimal.
+`FznsoComplete` with an objective means the last solution reported is optimal.
 `FznsoIncomplete` means only that the solutions reported are valid, not that they are the best.
