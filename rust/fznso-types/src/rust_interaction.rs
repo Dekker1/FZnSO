@@ -437,7 +437,8 @@ impl FznsoValueRef<'static> {
 		};
 
 		Self {
-			// The value is encoded in the pointer word; nothing is dereferenced.
+			// The value is encoded in the pointer word; nothing is
+			// dereferenced.
 			data: FznsoPtr::from_addr(value as usize),
 			methods: FZNSO_BOOL_VALUE_METHODS,
 		}
@@ -468,6 +469,40 @@ impl<'a> FznsoValueRef<'a> {
 		Self {
 			data: FznsoPtr::from_ref(value),
 			methods: FZNSO_I64_VALUE_METHODS,
+		}
+	}
+
+	/// A string value, borrowed from `value`.
+	///
+	/// Takes a reference to the string slice rather than the slice itself, so
+	/// that the two words of the slice have an address to hand out. Unlike
+	/// `value.into()`, this can be used in a `const` item, such as the default
+	/// of an option in a solver's option list: `FznsoValueRef::from_str(&"x")`.
+	pub const fn from_str(value: &'a &'a str) -> Self {
+		extern "C" fn kind(_: FznsoPtr<'_, FznsoValue>) -> FznsoValueKind {
+			FznsoValueKind::FznsoValueString
+		}
+		extern "C" fn as_string(val: FznsoPtr<'_, FznsoValue>) -> *const ffi::c_char {
+			// SAFETY: The value is a &'a &'a str, but was transmuted to a &'a
+			// FznsoValue to fit [`FznsoValueRef`].
+			let s: &&str = unsafe { &*val.cast() };
+			s.as_ptr() as *const ffi::c_char
+		}
+		extern "C" fn len(val: FznsoPtr<'_, FznsoValue>) -> usize {
+			// SAFETY: as in `as_string`.
+			let s: &&str = unsafe { &*val.cast() };
+			s.len()
+		}
+		const FZNSO_STR_VALUE_METHODS: &FznsoValueMethods = &FznsoValueMethods {
+			kind,
+			as_string,
+			len,
+			..*FznsoValueRef::FZNSO_DEFAULT_VALUE_METHODS
+		};
+
+		Self {
+			data: FznsoPtr::from_ref(value),
+			methods: FZNSO_STR_VALUE_METHODS,
 		}
 	}
 
@@ -782,7 +817,8 @@ impl From<FznsoConstraintIdx> for FznsoValueRef<'static> {
 		};
 
 		Self {
-			// The index is encoded in the pointer word; nothing is dereferenced.
+			// The index is encoded in the pointer word; nothing is
+			// dereferenced.
 			data: FznsoPtr::from_addr(value.0),
 			methods: FZNSO_DECISION_VALUE_METHODS,
 		}
@@ -805,7 +841,8 @@ impl From<FznsoDecisionIdx> for FznsoValueRef<'static> {
 		};
 
 		Self {
-			// The index is encoded in the pointer word; nothing is dereferenced.
+			// The index is encoded in the pointer word; nothing is
+			// dereferenced.
 			data: FznsoPtr::from_addr(value.0),
 			methods: FZNSO_DECISION_VALUE_METHODS,
 		}
