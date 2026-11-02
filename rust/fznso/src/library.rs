@@ -102,6 +102,8 @@ pub struct Library {
 	/// The underlying dynamic library handle; kept alive as long as this struct
 	/// lives.
 	_lib: libloading::Library,
+	/// The file the library was loaded from.
+	path: std::path::PathBuf,
 	/// Symbol for `fznso_<name>_constraint_list`.
 	constraint_list: Symbol<'static, unsafe extern "C" fn() -> FznsoConstraintList<'static>>,
 	/// Symbol for `fznso_<name>_decision_list`.
@@ -468,6 +470,7 @@ impl Library {
 			let statistic_list = Self::get_symbol(&lib, sym("_statistic_list").as_bytes())?;
 			Self {
 				_lib: lib,
+				path: std::path::PathBuf::from(filename),
 				constraint_list,
 				decision_list,
 				objective_list,
@@ -483,6 +486,12 @@ impl Library {
 			}
 		};
 		Ok(Arc::new(lib))
+	}
+
+	/// The file this library was loaded from, as given to [`Library::new`] or
+	/// chosen by [`Library::find`] and [`Library::find_version`].
+	pub fn path(&self) -> &std::path::Path {
+		&self.path
 	}
 
 	/// Get the list of objective strategies supported by solvers from this

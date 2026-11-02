@@ -233,6 +233,11 @@ fn find_loads_a_solver_from_the_search_path() {
 	// ...and loading by name runs it just like loading by path.
 	// SAFETY: the staged library is this workspace's own example solver.
 	let lib = unsafe { Library::find("example_solver") }.expect("find example solver");
+	assert_eq!(
+		lib.path(),
+		staged,
+		"path() reports the file that find chose"
+	);
 	let solver = lib.create_solver();
 	assert_eq!(solver.option_get("solution_limit").get_int(), 1);
 

@@ -209,6 +209,8 @@ int main(int argc, char** argv) {
 		check(listed, "the staged solver is discovered by name");
 
 		std::unique_ptr<fznso::Library> lib = fznso::Library::find(derived);
+		check(lib->path() == dir / fs::path{argv[1]}.filename(),
+		      "path() reports the file that find chose");
 		fznso::DynSolver solver = lib->create_solver();
 		check(solver.option_get("solution_limit").as_int() == 1, "loaded-by-name solver runs");
 

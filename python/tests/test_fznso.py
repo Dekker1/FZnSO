@@ -445,8 +445,10 @@ def test_find_loads_a_solver_from_the_search_path(tmp_path, monkeypatch):
     assert found[0].version == ""
     assert found[0].path == str(tmp_path / built.name)
 
-    # Loading by name works just like loading by path.
-    solver = fznso.Library.find("example_solver").create_solver()
+    # Loading by name works just like loading by path, and reports the file.
+    lib = fznso.Library.find("example_solver")
+    assert lib.path == str(tmp_path / built.name)
+    solver = lib.create_solver()
     assert solver.option_get("solution_limit") == 1
 
     # The staged example carries no version, so a specific request misses.

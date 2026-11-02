@@ -1943,6 +1943,7 @@ public:
 			                         "fznso_<name>_ entry points)"};
 		}
 		load(path, name);
+		path_ = path;
 	}
 
 	Library(const Library&) = delete;
@@ -1961,6 +1962,10 @@ public:
 	FznsoObjectiveList objectives() const { return objective_list_(); }
 	FznsoOptionList options() const { return option_list_(); }
 	FznsoStatisticList statistics() const { return statistic_list_(); }
+
+	/// The file this library was loaded from, as given to the constructor or
+	/// chosen by [`find`] and [`find_version`].
+	const std::filesystem::path& path() const { return path_; }
 
 private:
 	friend class DynSolver;
@@ -2061,6 +2066,7 @@ private:
 		return message;
 	}
 
+	std::filesystem::path path_;
 	detail::LibraryHandle handle_ = nullptr;
 	ConstraintListFn constraint_list_ = nullptr;
 	TypeListFn decision_list_ = nullptr;

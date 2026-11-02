@@ -235,6 +235,13 @@ impl Library {
 		Ok(Self { inner })
 	}
 
+	/// The file this library was loaded from, as given to the constructor or
+	/// chosen by `find`.
+	#[getter]
+	fn path(&self) -> String {
+		self.inner.path().to_string_lossy().into_owned()
+	}
+
 	/// Create a solver instance.
 	fn create_solver(&self) -> DynSolver {
 		DynSolver {
